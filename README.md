@@ -156,5 +156,9 @@ hardware GPU, assistive technology and installer behavior remain platform follow
 No rich text, merging nonempty blocks, drag/drop, cross-page moves or persistent
 undo/collapse state was added.
 
-Next work requires separate authorization. Markdown import/export,
+Milestone 3A adds page renaming and today's/date-selected journals. Journal identity
+remains the local Gregorian civil date even when its page title changes. Navigation,
+rename and journal creation flush drafts first; failures leave the current editor intact.
+
+Markdown import/export,
 plugins, routines, sync, CLI, AI, and calendar presentation remain future work.

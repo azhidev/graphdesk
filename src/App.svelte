@@ -5,6 +5,7 @@
   import { api, editorApi, type Page } from './lib/api';
   import { EditorController, errorMessage } from './lib/editor/controller';
   import PageEditor from './lib/editor/PageEditor.svelte';
+  import { localDate } from './lib/dates';
 
   let path = $state('');
   let pages = $state<Page[]>([]);
@@ -13,6 +14,8 @@
   let busy = $state(false);
   let error = $state('');
   let title = $state('');
+  let renameTitle = $state('');
+  let journalDate = $state(localDate());
   let revision = $state(0);
   const editor = new EditorController(editorApi, () => { revision += 1; });
   const locked = $derived.by(() => { revision; return busy || editor.working; });
@@ -31,7 +34,23 @@
     });
   }
   async function select(page: Page) {
-    await run(async () => { await editor.load(page.id); selected = page; });
+    await run(async () => { await editor.load(page.id); selected = page; renameTitle = page.title; });
+  }
+  function rememberPage(page: Page) {
+    pages = [...pages.filter(p => p.id !== page.id), page].sort((a, b) => a.title.localeCompare(b.title));
+    selected = page; renameTitle = page.title;
+  }
+  async function rename(event: SubmitEvent) {
+    event.preventDefault();
+    if (!session || !selected) return;
+    await run(async () => { await editor.flush(); rememberPage(await api.renamePage(session!, selected!.id, renameTitle)); });
+  }
+  async function journal(date: string) {
+    if (!session) return;
+    await run(async () => {
+      await editor.flush(); const page = await api.journal(session!, date);
+      await editor.load(page.id); rememberPage(page);
+    });
   }
   async function addPage(event: SubmitEvent) {
     event.preventDefault();
@@ -40,7 +59,7 @@
       await editor.flush();
       const page = await api.createPage(session!, title);
       pages = [...pages, page]; title = '';
-      await editor.load(page.id); selected = page;
+      await editor.load(page.id); rememberPage(page);
     });
   }
   onMount(() => {
@@ -73,6 +92,10 @@
     <div class="workspace">
       <aside>
         <h2>Pages</h2>
+        <button disabled={locked} onclick={() => journal(localDate())}>Today's journal</button>
+        <label for="journal-date">Journal date</label>
+        <input id="journal-date" type="date" bind:value={journalDate} disabled={locked} />
+        <button disabled={locked || !journalDate} onclick={() => journal(journalDate)}>Open journal</button>
         <form onsubmit={addPage}>
           <label for="title">New page title</label>
           <input id="title" bind:value={title} disabled={locked} />
@@ -81,7 +104,13 @@
         <ul>{#each pages as page (page.id)}<li><button disabled={locked} aria-current={selected?.id === page.id ? 'page' : undefined} onclick={() => select(page)}>{page.title}</button></li>{/each}</ul>
       </aside>
       <section aria-label="Page content">
-        {#if selected}<h2>{selected.title}</h2><PageEditor {editor} {revision} disabled={busy} />
+        {#if selected}<h2>{selected.title}</h2>
+          <form onsubmit={rename}>
+            <label for="rename-title">Page title</label>
+            <input id="rename-title" bind:value={renameTitle} disabled={locked} />
+            <button disabled={locked || !renameTitle.trim()}>Rename page</button>
+          </form>
+          <PageEditor {editor} {revision} disabled={busy} />
         {:else}<p>Select or create a page.</p>{/if}
       </section>
     </div>

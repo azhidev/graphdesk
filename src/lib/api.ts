@@ -5,6 +5,8 @@ export type { Page, Block } from './editor/types';
 export const api = {
   open: (path: string, create: boolean) => invoke<{ token: string; pages: Page[] }>('editor_open', { path, create }),
   createPage: (session: string, title: string) => invoke<Page>('editor_create_page', { session, title }),
+  renamePage: (session: string, pageId: string, title: string) => invoke<Page>('editor_rename_page', { session, pageId, title }),
+  journal: (session: string, date: string) => invoke<Page>('editor_journal', { session, date }),
 };
 
 export const editorApi: EditorTransport = {

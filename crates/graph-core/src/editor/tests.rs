@@ -1,4 +1,19 @@
 use super::*;
+
+#[test]
+fn page_workflows_preserve_identity_and_block_history() -> Result<()> {
+    let (mut editor, page, id) = setup("before")?;
+    save(&mut editor, page, id, "before", "after", None)?;
+    assert_eq!(editor.rename_page(page, "  سلام  ")?.id, page);
+    assert!(editor.rename_page(page, " ").is_err());
+    let journal = editor.journal("2024-02-29")?;
+    editor.rename_page(journal.id, "Leap day")?;
+    assert_eq!(editor.journal("2024-02-29")?.id, journal.id);
+    assert!(editor.journal("2023-02-29").is_err());
+    editor.history(page, false)?;
+    assert_eq!(editor.graph().page_blocks(page)?[0].content, "before");
+    Ok(())
+}
 use crate::TaskStatus;
 
 fn setup(content: &str) -> Result<(Editor, Uuid, Uuid)> {

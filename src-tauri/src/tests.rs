@@ -61,12 +61,12 @@ fn commands_roundtrip_and_preserve_state_on_errors() {
 fn graph_commands_are_denied_outside_main_window() {
     let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
     let window = tauri::WebviewWindowBuilder::new(&app, "untrusted", Default::default()).build().unwrap();
-    for command in ["open_graph", "create_page", "create_journal", "list_blocks", "create_block", "editor_open", "editor_page", "editor_apply", "editor_history", "editor_create_page"] {
+    for command in ["open_graph", "create_page", "create_journal", "list_blocks", "create_block", "editor_open", "editor_page", "editor_apply", "editor_history", "editor_create_page", "editor_rename_page", "editor_journal"] {
         let error = invoke(&window, command, json!({})).unwrap_err();
         assert!(error.as_str().unwrap().contains("not allowed"), "{error}");
     }
     let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
-    for command in ["open_graph", "create_page", "create_journal", "list_blocks", "create_block", "editor_open", "editor_page", "editor_apply", "editor_history", "editor_create_page"] {
+    for command in ["open_graph", "create_page", "create_journal", "list_blocks", "create_block", "editor_open", "editor_page", "editor_apply", "editor_history", "editor_create_page", "editor_rename_page", "editor_journal"] {
         let error = invoke_from(&main, command, json!({}), "https://example.invalid").unwrap_err();
         assert!(error.as_str().unwrap().contains("not allowed"), "{error}");
     }
@@ -81,6 +81,12 @@ fn editor_session_transactions_and_structured_errors() {
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
     let session = invoke(&window, "editor_open", json!({"path":path,"create":true})).unwrap()["token"].clone();
     let page = invoke(&window, "editor_create_page", json!({"session":session,"title":"Outline"})).unwrap()["id"].clone();
+    let renamed = invoke(&window, "editor_rename_page", json!({"session":session,"pageId":page,"title":"Renamed"})).unwrap();
+    assert_eq!(renamed["id"], page);
+    assert_eq!(renamed["title"], "Renamed");
+    let journal = invoke(&window, "editor_journal", json!({"session":session,"date":"2026-10-22"})).unwrap();
+    assert_eq!(invoke(&window, "editor_journal", json!({"session":session,"date":"2026-10-22"})).unwrap(), journal);
+    assert!(invoke(&window, "editor_journal", json!({"session":session,"date":"2026-02-30"})).is_err());
     let apply = |action: Value| invoke(&window, "editor_apply", json!({"session":session,"pageId":page,"action":action,"group":null}));
     let id = apply(json!({"kind":"append"})).unwrap()["focus_id"].clone();
     assert_eq!(apply(json!({"kind":"save","id":id,"expected":"wrong","content":"lost"})).unwrap_err()["code"], "conflict");
@@ -97,6 +103,8 @@ fn editor_session_transactions_and_structured_errors() {
     assert!(invoke(&window,"editor_open",json!({"path":path,"create":true})).is_err());
     assert!(invoke(&window,"editor_page",json!({"session":session,"pageId":page})).is_ok());
     invoke(&window,"editor_open",json!({"path":other,"create":true})).unwrap();
+    assert_eq!(invoke(&window,"editor_rename_page",json!({"session":session,"pageId":page,"title":"stale"})).unwrap_err()["code"],"stale_session");
+    assert_eq!(invoke(&window,"editor_journal",json!({"session":session,"date":"2026-10-23"})).unwrap_err()["code"],"stale_session");
     assert_eq!(apply(json!({"kind":"save","id":id,"expected":"سلام","content":"wrong graph"})).unwrap_err()["code"],"stale_session");
     assert_eq!(invoke(&window,"editor_history",json!({"session":session,"pageId":page,"redo":false})).unwrap_err()["code"],"stale_session");
     assert!(invoke(&window,"editor_apply",json!({"session":"invalid","pageId":page,"action":{"kind":"append"}})).is_err());

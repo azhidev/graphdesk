@@ -82,3 +82,15 @@ pub(crate) async fn editor_create_page(session: Uuid, title: String, state: Stat
     let state = state.inner().clone();
     blocking(move || with_session(&state, session, |g| g.editor.create_page(&title))).await
 }
+
+#[tauri::command]
+pub(crate) async fn editor_rename_page(session: Uuid, page_id: Uuid, title: String, state: State<'_, AppState>) -> Result<Page, EditorError> {
+    let state = state.inner().clone();
+    blocking(move || with_session(&state, session, |g| g.editor.rename_page(page_id, &title))).await
+}
+
+#[tauri::command]
+pub(crate) async fn editor_journal(session: Uuid, date: String, state: State<'_, AppState>) -> Result<Page, EditorError> {
+    let state = state.inner().clone();
+    blocking(move || with_session(&state, session, |g| g.editor.journal(&date))).await
+}

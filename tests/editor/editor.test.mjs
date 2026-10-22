@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import { EditorController } from '../../src/lib/editor/controller.ts';
 import { visibleRows } from '../../src/lib/editor/outline.ts';
 import { keyIntent } from '../../src/lib/editor/keyboard.ts';
+import { localDate } from '../../src/lib/dates.ts';
+
+test('journal date uses local civil fields rather than UTC serialization', () => {
+  assert.equal(localDate(new Date(2024, 1, 29, 23, 59)), '2024-02-29');
+});
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const block = (id, content = '', parent_id = null, position = 0) => ({ id, content, parent_id, position, page_id: 'page', task_status: null });

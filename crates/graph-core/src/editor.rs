@@ -52,6 +52,13 @@ impl Editor {
     /// Creating an unrelated empty page cannot invalidate block history.
     pub fn create_page(&mut self, title: &str) -> Result<crate::Page> { self.graph.create_page(title) }
 
+    pub fn rename_page(&mut self, id: Uuid, title: &str) -> Result<crate::Page> {
+        self.graph.rename_page(id, title)?;
+        self.graph.pages()?.into_iter().find(|p| p.id == id).ok_or(Error::NotFound)
+    }
+
+    pub fn journal(&mut self, date: &str) -> Result<crate::Page> { self.graph.create_journal(date) }
+
     /// Any non-editor mutation may invalidate replay preconditions.
     pub fn graph_mut(&mut self) -> &mut Graph {
         self.history.clear();

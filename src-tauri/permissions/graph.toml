@@ -1,4 +1,4 @@
 [[permission]]
 identifier = "graph-access"
 description = "Access the graph explicitly selected by the local main window."
-commands.allow = ["open_graph", "create_page", "create_journal", "list_blocks", "create_block", "editor_open", "editor_page", "editor_apply", "editor_history", "editor_create_page"]
+commands.allow = ["open_graph", "create_page", "create_journal", "list_blocks", "create_block", "editor_open", "editor_page", "editor_apply", "editor_history", "editor_create_page", "editor_rename_page", "editor_journal"]
