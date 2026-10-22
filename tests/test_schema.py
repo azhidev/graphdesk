@@ -37,6 +37,7 @@ class SchemaTests(unittest.TestCase):
         self.db.execute("BEGIN IMMEDIATE")
         apply_sql(self.db, "001_initial.sql")
         apply_sql(self.db, "002_search.sql")
+        apply_sql(self.db, "003_inline_references.sql")
         self.db.execute("COMMIT")
         self.page = self.add_page("Notes")
 
@@ -44,6 +45,19 @@ class SchemaTests(unittest.TestCase):
         id_ = str(uuid4())
         self.db.execute("INSERT INTO pages(id,title,title_key) VALUES(?,?,?)", (id_, title, title.lower()))
         return id_
+
+    def test_inline_bindings_foreign_keys_uniqueness_and_cascades(self):
+        source = self.block()
+        target = self.add_page("Target")
+        self.db.execute("INSERT INTO inline_references VALUES(?,?,?,?)", (source, "target", "Target", target))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("INSERT INTO inline_references VALUES(?,?,?,?)", (source, "target", "Target", target))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("INSERT INTO inline_references VALUES(?,?,?,?)", (str(uuid4()), "missing", "Missing", None))
+        self.db.execute("DELETE FROM pages WHERE id=?", (target,))
+        self.assertEqual(self.db.execute("SELECT label,target_page_id FROM inline_references").fetchall(), [("Target", None)])
+        self.db.execute("DELETE FROM blocks WHERE id=?", (source,))
+        self.assertEqual(self.db.execute("SELECT count(*) FROM inline_references").fetchone()[0], 0)
 
     def block(self, page=None, parent=None, position=0, content="hello"):
         id_ = str(uuid4())

@@ -1,7 +1,12 @@
 <script lang="ts">
   import BlockRow from './BlockRow.svelte';
   import type { EditorController } from './controller';
-  let { editor, revision, disabled = false }: { editor: EditorController; revision: number; disabled?: boolean } = $props();
+  import type { Page } from './types';
+  import type { InlineReference } from '../references';
+  let { editor, revision, disabled = false, pages, references, onReference }: {
+    editor: EditorController; revision: number; disabled?: boolean; pages: Page[];
+    references: InlineReference[]; onReference: (reference: InlineReference) => void;
+  } = $props();
   const view = $derived.by(() => { revision; return {
     rows: editor.rows(), active: editor.activeId, focus: editor.focus,
     busy: editor.working || disabled, status: editor.status, error: editor.error,
@@ -35,8 +40,14 @@
 {:else}
   <div role="group" aria-label="Page blocks">
     {#each view.rows as row (row.block.id)}
-      <BlockRow {row} {editor} text={editor.text(row.block.id)} active={view.active === row.block.id}
+      <BlockRow {row} {editor} {pages} text={editor.text(row.block.id)} active={view.active === row.block.id}
         busy={view.busy} collapsed={editor.collapsed.has(row.block.id)} focus={view.focus} />
+      <div style:margin-inline-start={`${Math.min(row.depth, 20) * 1.3 + 2}rem`}>
+        {#each references.filter(r => r.source_block_id === row.block.id) as reference (reference.title_key)}
+          <button disabled={view.busy || editor.dirty} onclick={() => onReference(reference)}
+            title={reference.target_page_id ? 'Open referenced page' : 'Create referenced page'}>[[{reference.label}]]{reference.target_title && reference.target_title !== reference.label ? ` → ${reference.target_title}` : ''}{reference.target_page_id ? '' : ' (create)'}</button>
+        {/each}
+      </div>
     {/each}
   </div>
 {/if}

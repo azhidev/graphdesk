@@ -7,6 +7,7 @@
   import PageEditor from './lib/editor/PageEditor.svelte';
   import { localDate } from './lib/dates';
   import { SearchController, type SearchHit } from './lib/search';
+  import type { InlineReference, Links } from './lib/references';
 
   let path = $state('');
   let pages = $state<Page[]>([]);
@@ -21,6 +22,19 @@
   let searchRevision = $state(0);
   const search = new SearchController(api.search, () => { searchRevision += 1; });
   const results = $derived.by(() => { searchRevision; return { hits: search.hits, error: search.error, pending: search.pending }; });
+  let links = $state<Links>({ references: [], backlinks: [] });
+  let linksError = $state('');
+  const linksKey = $derived.by(() => { revision; return JSON.stringify([session, selected?.id, pages, editor.blocks]); });
+  $effect(() => {
+    const key = linksKey;
+    const token = session, page = selected?.id;
+    let cancelled = false;
+    links = { references: [], backlinks: [] }; linksError = '';
+    if (token && page) void api.links(token, page).then(value => {
+      if (!cancelled && key === linksKey) links = value;
+    }).catch(e => { if (!cancelled && key === linksKey) linksError = errorMessage(e); });
+    return () => { cancelled = true; };
+  });
   let revision = $state(0);
   const editor = new EditorController(editorApi, () => { revision += 1; });
   const locked = $derived.by(() => { revision; return busy || editor.working; });
@@ -48,6 +62,17 @@
     await run(async () => {
       await editor.load(page.id); selected = page; renameTitle = page.title;
       if (hit.kind === 'block') editor.reveal(hit.id);
+    });
+  }
+  async function followReference(reference: InlineReference) {
+    const page = pages.find(p => p.id === reference.target_page_id);
+    if (page) { await select(page); return; }
+    if (reference.target_page_id) { error = 'Referenced page no longer exists; reopen the graph.'; return; }
+    await run(async () => {
+      await editor.flush();
+      const page = await api.createPage(session!, reference.label);
+      pages = [...pages.filter(p => p.id !== page.id), page];
+      await editor.load(page.id); rememberPage(page);
     });
   }
   function rememberPage(page: Page) {
@@ -132,7 +157,15 @@
             <input id="rename-title" bind:value={renameTitle} disabled={locked} />
             <button disabled={locked || !renameTitle.trim()}>Rename page</button>
           </form>
-          <PageEditor {editor} {revision} disabled={busy} />
+          <PageEditor {editor} {revision} {pages} references={links.references} onReference={followReference} disabled={busy} />
+          <section aria-label="Incoming backlinks">
+            <h3>Backlinks</h3>
+            {#if linksError}<p role="alert">{linksError}</p>{/if}
+            {#if !links.backlinks.length}<p>No incoming links.</p>{/if}
+            <ul>{#each links.backlinks as block (block.id)}
+              <li><button disabled={locked} onclick={() => selectHit({ id: block.id, page_id: block.page_id, kind: 'block', text: block.content })}>{pages.find(p => p.id === block.page_id)?.title}: {block.content}</button></li>
+            {/each}</ul>
+          </section>
         {:else}<p>Select or create a page.</p>{/if}
       </section>
     </div>

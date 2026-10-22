@@ -2,6 +2,8 @@
 mod migrations;
 mod model;
 mod editor;
+mod references;
+pub use references::InlineReference;
 pub use editor::{Editor, EditAction, EditResult};
 pub use model::{Block, Page, SearchHit, TaskStatus};
 
@@ -56,15 +58,22 @@ impl Graph {
     pub fn create_page(&mut self, title: &str) -> Result<Page> {
         let (title, key) = title_parts(title)?;
         let id = Uuid::new_v4();
-        self.conn.execute("INSERT INTO pages(id, title, title_key) VALUES (?1, ?2, ?3)",
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("INSERT INTO pages(id, title, title_key) VALUES (?1, ?2, ?3)",
             params![id.to_string(), title, key])?;
+        references::resolve(&tx)?;
+        tx.commit()?;
         Ok(Page { id, title })
     }
 
     pub fn rename_page(&mut self, id: Uuid, title: &str) -> Result<()> {
         let (title, key) = title_parts(title)?;
-        changed(self.conn.execute("UPDATE pages SET title=?2, title_key=?3, updated_at=unixepoch() WHERE id=?1",
-            params![id.to_string(), title, key])?)
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        changed(tx.execute("UPDATE pages SET title=?2, title_key=?3, updated_at=unixepoch() WHERE id=?1",
+            params![id.to_string(), title, key])?)?;
+        references::resolve(&tx)?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn pages(&self) -> Result<Vec<Page>> {
@@ -96,6 +105,7 @@ impl Graph {
             tx.execute("INSERT INTO journals(page_id, date) VALUES (?1, ?2)", params![id.to_string(), date])?;
             Page { id, title: date.into() }
         };
+        references::resolve(&tx)?;
         tx.commit()?;
         Ok(page)
     }
@@ -108,6 +118,7 @@ impl Graph {
         let id = Uuid::new_v4();
         tx.execute("INSERT INTO blocks(id,page_id,parent_id,position,content) VALUES (?1,?2,?3,?4,?5)",
             params![id.to_string(), page.to_string(), parent.map(|p| p.to_string()), position, content])?;
+        references::sync(&tx, id, content, None)?;
         tx.commit()?;
         Ok(Block { id, page_id: page, parent_id: parent, position, content: content.into(), task_status: None })
     }
@@ -128,8 +139,12 @@ impl Graph {
     }
 
     pub fn update_block(&mut self, id: Uuid, content: &str) -> Result<()> {
-        changed(self.conn.execute("UPDATE blocks SET content=?2,updated_at=unixepoch() WHERE id=?1",
-            params![id.to_string(), content])?)
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        changed(tx.execute("UPDATE blocks SET content=?2,updated_at=unixepoch() WHERE id=?1",
+            params![id.to_string(), content])?)?;
+        references::sync(&tx, id, content, None)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Move within a page. Index is zero-based in destination siblings AFTER removal.

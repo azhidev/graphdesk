@@ -53,9 +53,9 @@ before deciding whether to remove it.
 - Explicit block-to-page reference edges, backlinks, and Unicode FTS5 search.
 - Automatic transactional migrations, history validation and future-version rejection.
 
-References are explicit edges; parsing `[[links]]` from text is not implemented.
-The UI is deliberately a plain-text outliner, not a rich-text editor. Task status,
-properties, journals and references remain core APIs rather than new UI workflows.
+References include explicit API edges and transactional `[[Page Name]]` inline links.
+The UI is deliberately a plain-text outliner, not a rich-text editor. Properties
+remain core APIs rather than a new UI workflow.
 
 ## Block editor
 
@@ -164,6 +164,16 @@ Search uses the existing Unicode FTS literal-phrase API (up to 100 page and 100 
 matches). Results reflect acknowledged SQLite text, not unsaved drafts. Query changes
 and graph switches suppress stale results/errors. Choosing a block flushes drafts,
 loads its owning page, expands ancestors and focuses the block by UUID.
+
+Type `[[` for up to eight page suggestions; select a suggestion to complete the
+literal source. Saved links appear as navigation buttons below their block.
+Unresolved links offer explicit page creation (never implicit creation while typing).
+Resolved links retain their target UUID across renames, showing the new title beside
+the original label; text is not rewritten. New occurrences resolve by current title,
+so reusing an old title does not retarget existing links. Removing the syntax removes
+its binding. Undo/redo restores both source and binding. Incoming backlinks navigate
+to source blocks. Grammar excludes nested brackets, multiline titles, aliases and
+escaping; duplicate normalized labels within a block produce one edge.
 
 Markdown import/export,
 plugins, routines, sync, CLI, AI, and calendar presentation remain future work.

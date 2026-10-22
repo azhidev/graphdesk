@@ -4,6 +4,7 @@ use crate::{Error, Result};
 pub(crate) const MIGRATIONS: &[(&str, &str)] = &[
     ("initial", include_str!("../migrations/001_initial.sql")),
     ("search", include_str!("../migrations/002_search.sql")),
+    ("inline_references", include_str!("../migrations/003_inline_references.sql")),
 ];
 
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
@@ -40,6 +41,7 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
     }
     for (index, (name, source)) in MIGRATIONS.iter().enumerate().skip(history.len()) {
         tx.execute_batch(source)?;
+        if *name == "inline_references" { crate::references::backfill(&tx)?; }
         tx.execute("INSERT INTO schema_migrations(version, name, source) VALUES (?1, ?2, ?3)",
             rusqlite::params![index as i64 + 1, name, source.replace("\r\n", "\n")])?;
     }

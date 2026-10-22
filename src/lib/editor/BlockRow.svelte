@@ -3,14 +3,27 @@
   import type { Row } from './outline';
   import { keyIntent } from './keyboard';
   import type { EditorController, Focus } from './controller';
-  let { row, editor, text, active, busy, collapsed, focus }: {
+  import type { Page } from './types';
+  import { completion, suggestions, insertReference } from '../references';
+  let { row, editor, text, active, busy, collapsed, focus, pages }: {
     row: Row; editor: EditorController; text: string; active: boolean;
     busy: boolean; collapsed: boolean; focus: Focus | null;
+    pages: Page[];
   } = $props();
   let input: HTMLTextAreaElement | undefined = $state();
   let appliedFocus = 0;
+  let caret = $state(0);
+  const match = $derived(active && !editor.composing ? completion(text, caret) : null);
+  const choices = $derived(match ? suggestions(pages, match.query) : []);
+  function complete(title: string) {
+    if (!input || editor.composing) return;
+    const result = insertReference(input.value, caret, title);
+    editor.setDraft(row.block.id, result.content);
+    editor.activate(row.block.id, { start: result.caret, end: result.caret });
+  }
   function resize() { if (input) { input.style.height = 'auto'; input.style.height = `${input.scrollHeight}px`; } }
   function remember() {
+    if (input) caret = input.selectionStart;
     if (input) editor.remember(row.block.id, { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection });
   }
   function report(error: unknown) { /* Controller errors remain visible with retained drafts. */ console.warn('Editor operation failed', error); }
@@ -66,6 +79,13 @@
     <button class="block-content" dir="auto" disabled={busy} onclick={() => editor.activate(row.block.id)}>{text || 'Empty block — click to edit'}</button>
   {/if}
 </div>
+{#if match && choices.length}
+  <div role="group" aria-label="Page suggestions">
+    {#each choices as page (page.id)}
+      <button disabled={busy} onmousedown={e => e.preventDefault()} onclick={() => complete(page.title)}>{page.title}</button>
+    {/each}
+  </div>
+{/if}
 
 <style>
   .block-row { display: flex; align-items: flex-start; gap: .35rem; padding-block: .2rem; }

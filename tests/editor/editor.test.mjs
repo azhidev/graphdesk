@@ -5,6 +5,18 @@ import { visibleRows } from '../../src/lib/editor/outline.ts';
 import { keyIntent } from '../../src/lib/editor/keyboard.ts';
 import { localDate } from '../../src/lib/dates.ts';
 import { SearchController } from '../../src/lib/search.ts';
+import { completion, suggestions, insertReference } from '../../src/lib/references.ts';
+
+test('reference completion preserves Unicode source and uses bounded literal title suggestions', () => {
+  const text = '😀 [[سل]] tail';
+  const caret = text.indexOf(']]');
+  assert.deepEqual(completion(text, caret), { start: 3, query: 'سل' });
+  assert.deepEqual(insertReference(text, caret, 'سلام'), { content: '😀 [[سلام]] tail', caret: 11 });
+  assert.equal(completion('[[bad\ntext', 10), null);
+  assert.equal(completion('[[Closed]]', 10), null);
+  assert.deepEqual(suggestions([{id:'1',title:'سلام'}, {id:'2',title:'Other'}], 'سل').map(p => p.id), ['1']);
+  assert.equal(suggestions(Array.from({length:20}, (_,i) => ({id:String(i),title:`Page ${i}`})), '').length, 8);
+});
 
 test('search rejects stale successes/errors and graph-switch responses', async () => {
   const requests = [];

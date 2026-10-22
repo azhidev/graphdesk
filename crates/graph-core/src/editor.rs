@@ -50,14 +50,40 @@ impl Editor {
     pub fn graph(&self) -> &Graph { &self.graph }
 
     /// Creating an unrelated empty page cannot invalidate block history.
-    pub fn create_page(&mut self, title: &str) -> Result<crate::Page> { self.graph.create_page(title) }
+    pub fn create_page(&mut self, title: &str) -> Result<crate::Page> {
+        let page = self.graph.create_page(title)?;
+        self.resolve_history(&page);
+        Ok(page)
+    }
 
     pub fn rename_page(&mut self, id: Uuid, title: &str) -> Result<crate::Page> {
         self.graph.rename_page(id, title)?;
-        self.graph.pages()?.into_iter().find(|p| p.id == id).ok_or(Error::NotFound)
+        let page = self.graph.pages()?.into_iter().find(|p| p.id == id).ok_or(Error::NotFound)?;
+        self.resolve_history(&page);
+        Ok(page)
     }
 
-    pub fn journal(&mut self, date: &str) -> Result<crate::Page> { self.graph.create_journal(date) }
+    pub fn journal(&mut self, date: &str) -> Result<crate::Page> {
+        let page = self.graph.create_journal(date)?;
+        self.resolve_history(&page);
+        Ok(page)
+    }
+
+    fn resolve_history(&mut self, page: &crate::Page) {
+        let Ok((_, key)) = crate::title_parts(&page.title) else { return; };
+        for history in self.history.pages.values_mut() {
+            for entry in history.undo.iter_mut().chain(history.redo.iter_mut()) {
+                for delta in &mut entry.delta {
+                    for record in delta.before.iter_mut().chain(delta.after.iter_mut()) {
+                        for (label_key, _, target) in &mut record.inline {
+                            if target.is_none() && *label_key == key { *target = Some(page.id.to_string()); }
+                        }
+                    }
+                }
+            }
+        }
+        self.history.enforce_limits();
+    }
 
     /// Any non-editor mutation may invalidate replay preconditions.
     pub fn graph_mut(&mut self) -> &mut Graph {
@@ -82,7 +108,18 @@ impl Editor {
             EditAction::Save { id, .. } => group.map(|g| (page_id, *id, g)),
             _ => None,
         };
+        let split_bindings = match &action {
+            EditAction::Split { id, .. } => before.get(id).map(|r| r.inline.clone()),
+            _ => None,
+        };
         let (focus_before, focus_after) = apply_action(&tx, page_id, &before, action)?;
+        let interim = snapshot_scope(&tx, page_id, scope)?;
+        for (id, record) in &interim {
+            if before.get(id).map(|r| &r.block.content) != Some(&record.block.content) {
+                let saved = before.get(id).map(|r| r.inline.as_slice()).or(split_bindings.as_deref());
+                crate::references::sync(&tx, *id, &record.block.content, saved)?;
+            }
+        }
         let after = snapshot_scope(&tx, page_id, scope)?;
         let delta = differences(&before, &after);
         let mut result = result_diff(&before, &after, focus_after);
@@ -135,6 +172,7 @@ struct Record {
     updated_at: i64,
     properties: Vec<(String, String)>,
     references: Vec<String>,
+    inline: Vec<(String, String, Option<String>)>,
 }
 
 type Snapshot = BTreeMap<Uuid, Record>;
@@ -157,7 +195,8 @@ fn snapshot_scope(conn: &Connection, page: Uuid, only: Option<Uuid>) -> Result<S
     for row in rows {
         let (raw, created_at, updated_at) = row?;
         let block = decode_block(raw)?;
-        records.insert(block.id, Record { block, created_at, updated_at, properties: vec![], references: vec![] });
+        let inline = crate::references::bindings(conn, block.id)?;
+        records.insert(block.id, Record { block, created_at, updated_at, properties: vec![], references: vec![], inline });
     }
     let mut stmt = conn.prepare(&format!("SELECT p.block_id,p.key,p.value_json FROM block_properties p
         JOIN blocks b ON b.id=p.block_id WHERE {filter} ORDER BY p.block_id,p.key"))?;
@@ -308,7 +347,14 @@ fn result_diff(before: &Snapshot, after: &Snapshot, focus_id: Option<Uuid>) -> E
 fn replay(conn: &Connection, current: &Snapshot, entry: &Entry, redo: bool) -> Result<()> {
     for delta in &entry.delta {
         let expected = if redo { &delta.before } else { &delta.after };
-        if current.get(&delta.id) != expected.as_ref() {
+        // Late resolution is derived metadata, not a conflicting external text edit.
+        let equivalent = match (current.get(&delta.id), expected.as_ref()) {
+            (Some(a), Some(b)) => a.block == b.block && a.created_at == b.created_at
+                && a.updated_at == b.updated_at && a.properties == b.properties && a.references == b.references,
+            (None, None) => true,
+            _ => false,
+        };
+        if !equivalent {
             return Err(Error::Conflict("history row or metadata changed".into()));
         }
     }
@@ -346,6 +392,7 @@ fn replay(conn: &Connection, current: &Snapshot, entry: &Entry, redo: bool) -> R
                     conn.execute("INSERT INTO page_references(source_block_id,target_page_id) VALUES (?1,?2)", params![b.id.to_string(), target])?;
                 }
             }
+            crate::references::sync(conn, b.id, &b.content, Some(&record.inline))?;
         }
     }
     Ok(())
@@ -433,6 +480,8 @@ impl Entry {
                 + r.properties.iter().map(|(k, v)| k.capacity() + v.capacity() + 64).sum::<usize>()
                 + r.references.capacity() * std::mem::size_of::<String>()
                 + r.references.iter().map(|s| s.capacity() + 32).sum::<usize>()
+                + r.inline.capacity() * std::mem::size_of::<(String, String, Option<String>)>()
+                + r.inline.iter().map(|(k,l,t)| k.capacity() + l.capacity() + t.as_ref().map_or(0, String::capacity) + 64).sum::<usize>()
             ).sum::<usize>()
         ).sum::<usize>()
     }

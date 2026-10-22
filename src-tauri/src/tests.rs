@@ -98,6 +98,13 @@ fn editor_session_transactions_and_structured_errors() {
     let hits = invoke(&window,"editor_search",json!({"session":session,"text":"سلام"})).unwrap();
     assert_eq!(hits[0]["id"], id);
     assert_eq!(hits[0]["page_id"], page);
+    let reference_block = apply(json!({"kind":"append"})).unwrap()["focus_id"].clone();
+    apply(json!({"kind":"save","id":reference_block,"expected":"","content":"[[Renamed]] [[Missing]]"})).unwrap();
+    let links = invoke(&window,"editor_links",json!({"session":session,"pageId":page})).unwrap();
+    assert_eq!(links["references"].as_array().unwrap().len(),2);
+    assert_eq!(links["backlinks"][0]["id"],reference_block);
+    invoke(&window,"editor_history",json!({"session":session,"pageId":page,"redo":false})).unwrap();
+    invoke(&window,"editor_history",json!({"session":session,"pageId":page,"redo":false})).unwrap();
     assert_eq!(apply(json!({"kind":"split","id":id,"start":5,"end":5})).unwrap_err()["code"], "invalid");
     let second = apply(json!({"kind":"split","id":id,"start":4,"end":4})).unwrap()["focus_id"].clone();
     apply(json!({"kind":"indent","id":second})).unwrap();
@@ -110,6 +117,7 @@ fn editor_session_transactions_and_structured_errors() {
     assert!(invoke(&window,"editor_open",json!({"path":path,"create":true})).is_err());
     assert!(invoke(&window,"editor_page",json!({"session":session,"pageId":page})).is_ok());
     invoke(&window,"editor_open",json!({"path":other,"create":true})).unwrap();
+    assert_eq!(invoke(&window,"editor_links",json!({"session":session,"pageId":page})).unwrap_err()["code"],"stale_session");
     assert_eq!(invoke(&window,"editor_search",json!({"session":session,"text":"سلام"})).unwrap_err()["code"],"stale_session");
     assert_eq!(invoke(&window,"editor_rename_page",json!({"session":session,"pageId":page,"title":"stale"})).unwrap_err()["code"],"stale_session");
     assert_eq!(invoke(&window,"editor_journal",json!({"session":session,"date":"2026-10-23"})).unwrap_err()["code"],"stale_session");

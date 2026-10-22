@@ -1,6 +1,53 @@
 use super::*;
 
 #[test]
+fn inline_reference_resolution_rename_split_and_history() -> Result<()> {
+    let (mut editor, page, id) = setup("")?;
+    let text = "[[سلام]] [[ سلام ]] [[Future]] [[ ]] [[bad\nlink]]";
+    save(&mut editor, page, id, "", text, None)?;
+    assert_eq!(editor.graph().inline_references(page)?.len(), 2);
+    let target = editor.create_page("سلام")?;
+    assert_eq!(editor.graph().incoming_links(target.id)?[0].id, id);
+    editor.rename_page(target.id, "Renamed")?;
+    let reused = editor.create_page("سلام")?;
+    assert_ne!(reused.id, target.id);
+    editor.history(page, false)?;
+    assert!(editor.graph().incoming_links(target.id)?.is_empty());
+    editor.history(page, true)?;
+    assert_eq!(editor.graph().incoming_links(target.id)?[0].id, id);
+    assert!(editor.graph().incoming_links(reused.id)?.is_empty());
+    let future = editor.create_page("Future")?;
+    let split = editor.apply(page, EditAction::Split { id, start:0, end:0 }, None)?.focus_id.unwrap();
+    assert_eq!(editor.graph().incoming_links(target.id)?[0].id, split);
+    assert_eq!(editor.graph().incoming_links(future.id)?[0].id, split);
+    editor.history(page, false)?;
+    assert_eq!(editor.graph().incoming_links(target.id)?[0].id, id);
+    editor.history(page, true)?;
+    assert_eq!(editor.graph().incoming_links(target.id)?[0].id, split);
+    Ok(())
+}
+
+#[test]
+fn inline_reference_failure_rolls_back_text_edges_and_history() -> Result<()> {
+    let (mut editor, page, id) = setup("before")?;
+    let target = editor.create_page("Target")?;
+    editor.graph.conn.execute_batch("CREATE TRIGGER fail_links BEFORE INSERT ON inline_references BEGIN SELECT RAISE(ABORT,'injected'); END;")?;
+    assert!(save(&mut editor, page, id, "before", "[[Target]]", None).is_err());
+    assert_eq!(editor.graph().page_blocks(page)?[0].content, "before");
+    assert!(editor.graph().incoming_links(target.id)?.is_empty());
+    assert_eq!(editor.history_state(page), (false, false));
+    editor.graph.conn.execute_batch("DROP TRIGGER fail_links;")?;
+    save(&mut editor, page, id, "before", "[[Target]]", None)?;
+    editor.graph.conn.execute_batch("CREATE TRIGGER fail_links BEFORE INSERT ON inline_references BEGIN SELECT RAISE(ABORT,'injected'); END;")?;
+    // Redo will reinsert the link; failed replay leaves the undo/redo stack intact.
+    editor.history(page, false)?;
+    assert!(editor.history(page, true).is_err());
+    assert_eq!(editor.graph().page_blocks(page)?[0].content, "before");
+    assert_eq!(editor.history_state(page), (false, true));
+    Ok(())
+}
+
+#[test]
 fn page_workflows_preserve_identity_and_block_history() -> Result<()> {
     let (mut editor, page, id) = setup("before")?;
     save(&mut editor, page, id, "before", "after", None)?;

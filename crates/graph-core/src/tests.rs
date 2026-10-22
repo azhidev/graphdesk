@@ -1,6 +1,30 @@
 use super::*;
 
 #[test]
+fn inline_bindings_reopen_and_legacy_mutations_are_transactional() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("links.sqlite3");
+    let mut g = Graph::create(&path)?;
+    let source = g.create_page("Source")?;
+    let target = g.create_page("Target")?;
+    let b = g.create_block(source.id, None, "[[Target]] [[Missing]]")?;
+    g.add_reference(b.id, target.id)?;
+    g.rename_page(target.id, "New title")?;
+    drop(g);
+    let mut g = Graph::open(&path)?;
+    assert_eq!(g.incoming_links(target.id)?.len(), 1);
+    assert_eq!(g.inline_references(source.id)?.iter().find(|r| r.label == "Target").unwrap().target_page_id, Some(target.id));
+    g.conn.execute_batch("CREATE TRIGGER fail_resolve BEFORE UPDATE ON inline_references BEGIN SELECT RAISE(ABORT,'injected'); END;")?;
+    assert!(g.create_page("Missing").is_err());
+    assert!(!g.pages()?.iter().any(|p| p.title == "Missing"));
+    g.conn.execute_batch("DROP TRIGGER fail_resolve;")?;
+    g.update_block(b.id, "plain")?;
+    assert!(g.inline_references(source.id)?.is_empty());
+    assert_eq!(g.incoming_links(target.id)?.len(), 1); // explicit edge is independent
+    Ok(())
+}
+
+#[test]
 fn graph_roundtrip_and_independence() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("graph.sqlite3");
@@ -139,11 +163,15 @@ fn migrations_upgrade_preserve_data_and_rerun() -> Result<()> {
     conn.execute("INSERT INTO schema_migrations(version,name,source) VALUES(1,?1,?2)", params![name, source])?;
     let id = Uuid::new_v4().to_string();
     conn.execute("INSERT INTO pages(id,title,title_key) VALUES(?1,'Existing','existing')", [&id])?;
+    let block = Uuid::new_v4().to_string();
+    conn.execute("INSERT INTO blocks(id,page_id,position,content) VALUES(?1,?2,0,'[[Existing]] [[Missing]]')", params![block, id])?;
     migrations::migrate(&mut conn)?;
     migrations::migrate(&mut conn)?;
-    assert_eq!(conn.query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get::<_, i64>(0))?, 2);
+    assert_eq!(conn.query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get::<_, i64>(0))?, migrations::MIGRATIONS.len() as i64);
     assert_eq!(conn.query_row("SELECT id FROM pages", [], |r| r.get::<_, String>(0))?, id);
     assert_eq!(conn.query_row("SELECT count(*) FROM pages_fts WHERE pages_fts MATCH 'Existing'", [], |r| r.get::<_, i64>(0))?, 1);
+    assert_eq!(conn.query_row("SELECT count(*) FROM inline_references", [], |r| r.get::<_, i64>(0))?, 2);
+    assert_eq!(conn.query_row("SELECT target_page_id FROM inline_references WHERE title_key='existing'", [], |r| r.get::<_, String>(0))?, id);
     Ok(())
 }
 

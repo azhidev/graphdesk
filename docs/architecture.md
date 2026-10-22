@@ -1,4 +1,4 @@
-# GraphDesk architecture (Milestones 1–2)
+# GraphDesk architecture (Milestones 1–3)
 
 ## Boundaries
 
@@ -51,6 +51,20 @@ Subtree/page deletion uses FK cascades: SQLite's trigger-depth limit bounds extr
 deep deletes (typically ~1000 levels); a failure rolls back the statement, not partial data.
 
 References record one edge per source block/target page, not text spans or occurrences.
+Milestone 3 adds `inline_references` in migration 3, preserving legacy explicit edges.
+Rust parses plain `[[title]]`, normalizes with the existing title-key convention and
+synchronizes derived rows within each content/split/history transaction. Migration 3
+backfills existing text in the migration transaction. Parsed labels are keyed per block;
+resolved targets bind to UUIDs and survive rename without rewriting user text. Unresolved
+labels resolve transactionally on page/journal creation or rename. Old labels are not
+global aliases: a fresh occurrence uses the current title namespace. Backlinks union
+both kinds of edges. Raw SQL content writes do not run the Rust parser and remain unsupported.
+
+History retains inline bindings with row deltas; derived late-resolution changes are
+excluded from conflict checks. Page operations resolve null bindings in retained history
+as well, so undo/redo cannot retarget a renamed page to a new page reusing its old title.
+Existing timestamp/content/explicit-metadata guards remain enforced. Capacity accounting
+includes inline data. Title changes themselves are not editor-undo operations.
 JSON properties have separate page/block tables to retain real foreign keys; there
 is no speculative property-definition/type engine. Task status is an optional block
 field, not a separate routine/task subsystem.

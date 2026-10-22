@@ -35,6 +35,18 @@ pub(crate) struct Session { token: Uuid, pages: Vec<Page> }
 #[derive(Serialize)]
 pub(crate) struct Outline { blocks: Vec<Block>, can_undo: bool, can_redo: bool }
 
+#[derive(Serialize)]
+pub(crate) struct Links { references: Vec<graph_core::InlineReference>, backlinks: Vec<Block> }
+
+#[tauri::command]
+pub(crate) async fn editor_links(session: Uuid, page_id: Uuid, state: State<'_, AppState>) -> Result<Links, EditorError> {
+    let state = state.inner().clone();
+    blocking(move || with_session(&state, session, |g| Ok(Links {
+        references: g.editor.graph().inline_references(page_id)?,
+        backlinks: g.editor.graph().incoming_links(page_id)?,
+    }))).await
+}
+
 async fn blocking<T: Send + 'static>(operation: impl FnOnce() -> Result<T, EditorError> + Send + 'static) -> Result<T, EditorError> {
     tauri::async_runtime::spawn_blocking(operation).await
         .map_err(|_| EditorError::new("internal", "editor worker failed"))?
