@@ -1,0 +1,19 @@
+[package]
+name = "graphdesk-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+graph-core = { path = "../crates/graph-core" }
+uuid.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+serde_json = "1"
+tempfile = "3"

@@ -1,0 +1,28 @@
+{
+  "name": "graphdesk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "tauri": "tauri",
+    "test:core": "cargo test -p graph-core",
+    "test:editor": "node --test tests/editor/*.test.mjs",
+    "test:schema": "python3 -m unittest discover -s tests -v"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "svelte": "^5.57.2"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tauri-apps/cli": "^2.12.4",
+    "svelte-check": "^4.7.7",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.5"
+  }
+}

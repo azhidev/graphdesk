@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "Only the local application window; no filesystem or shell plugin access.",
+  "windows": ["main"],
+  "permissions": ["core:default", "core:window:allow-destroy", "graph-access"]
+}

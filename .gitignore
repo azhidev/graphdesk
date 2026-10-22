@@ -1,0 +1,9 @@
+/target/
+/node_modules/
+/dist/
+__pycache__/
+/src-tauri/gen/
+*.sqlite*
+*.db
+*.db-shm
+*.db-wal

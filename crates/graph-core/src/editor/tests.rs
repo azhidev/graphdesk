@@ -1,0 +1,520 @@
+use super::*;
+use crate::TaskStatus;
+
+fn setup(content: &str) -> Result<(Editor, Uuid, Uuid)> {
+    let mut graph = Graph::in_memory()?;
+    let page = graph.create_page("Editor")?.id;
+    let id = graph.create_block(page, None, content)?.id;
+    Ok((Editor::new(graph), page, id))
+}
+
+fn save(editor: &mut Editor, page: Uuid, id: Uuid, expected: &str, content: &str, group: Option<Uuid>) -> Result<EditResult> {
+    editor.apply(page, EditAction::Save { id, expected: expected.into(), content: content.into() }, group)
+}
+
+fn ids(editor: &Editor, page: Uuid, parent: Option<Uuid>) -> Result<Vec<Uuid>> {
+    Ok(editor.graph().children(page, parent)?.iter().map(|b| b.id).collect())
+}
+
+#[test]
+fn serde_contract_and_stable_page_read() -> Result<()> {
+    let (mut e, page, id) = setup("سلام")?;
+    let action: EditAction = serde_json::from_value(serde_json::json!({"kind":"save", "id": id, "expected":"سلام", "content":"دنیا"})).unwrap();
+    let result = e.apply(page, action, None)?;
+    let encoded = serde_json::to_value(result).unwrap();
+    assert_eq!(encoded["changed"][0]["id"], id.to_string());
+    assert_eq!(encoded["removed"], serde_json::json!([]));
+    assert_eq!(encoded["can_undo"], true);
+    assert_eq!(encoded["can_redo"], false);
+    assert_eq!(encoded["focus_id"], id.to_string());
+    assert!(matches!(e.graph().page_blocks(Uuid::new_v4()), Err(Error::NotFound)));
+    let child = e.graph_mut().create_block(page, Some(id), "nested")?.id;
+    let a = e.graph().page_blocks(page)?;
+    assert_eq!(a, e.graph().page_blocks(page)?);
+    assert_eq!(a.iter().map(|b| b.id).collect::<Vec<_>>(), vec![id, child]);
+    Ok(())
+}
+
+#[test]
+fn text_delta_conflict_page_scope_and_noops() -> Result<()> {
+    let (mut e, page, id) = setup("before")?;
+    let other = e.graph_mut().create_page("Other")?.id;
+    e.graph_mut().create_block(page, None, "untouched")?;
+    let before = snapshot(&e.graph.conn, page)?;
+    assert!(matches!(save(&mut e, page, id, "stale", "new", None), Err(Error::Conflict(_))));
+    assert!(matches!(save(&mut e, other, id, "before", "new", None), Err(Error::NotFound)));
+    assert_eq!(e.history_state(page), (false, false));
+    assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    let result = save(&mut e, page, id, "before", "after", None)?;
+    assert_eq!(result.changed.len(), 1);
+    assert_eq!(result.changed[0].id, id);
+    assert!(result.removed.is_empty());
+    let after = snapshot(&e.graph.conn, page)?;
+    assert!(save(&mut e, page, id, "after", "after", None)?.changed.is_empty());
+    assert_eq!(e.history.pages[&page].undo.len(), 1);
+    for action in [EditAction::Indent { id }, EditAction::Outdent { id }, EditAction::Reorder { id, direction: -1 }] {
+        assert!(e.apply(page, action, None)?.changed.is_empty());
+    }
+    assert!(matches!(e.apply(page, EditAction::Reorder { id, direction: 0 }, None), Err(Error::Invalid(_))));
+    assert_eq!(snapshot(&e.graph.conn, page)?, after);
+    e.history(page, false)?;
+    assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    e.history(page, true)?;
+    assert_eq!(snapshot(&e.graph.conn, page)?, after);
+    assert_eq!(e.history_state(other), (false, false));
+    Ok(())
+}
+
+#[test]
+fn split_unicode_selection_metadata_children_and_identity() -> Result<()> {
+    let (mut e, page, id) = setup("سلام😀دنیا")?;
+    let child = e.graph_mut().create_block(page, Some(id), "child")?.id;
+    let next = e.graph_mut().create_block(page, None, "next")?.id;
+    e.graph_mut().set_task_status(id, Some(TaskStatus::Doing))?;
+    e.graph_mut().set_block_property(id, "nested", &serde_json::json!({"tags":["فارسی"]}))?;
+    e.graph_mut().add_reference(id, page)?;
+    let before = snapshot(&e.graph.conn, page)?;
+    for (start, end) in [(5, 5), (4, 5), (5, 6), (11, 11), (6, 4), (usize::MAX, usize::MAX)] {
+        assert!(matches!(e.apply(page, EditAction::Split { id, start, end }, None), Err(Error::Invalid(_))));
+        assert_eq!(snapshot(&e.graph.conn, page)?, before);
+        assert_eq!(e.history_state(page), (false, false));
+    }
+    let result = e.apply(page, EditAction::Split { id, start: 4, end: 6 }, None)?;
+    let new = result.focus_id.unwrap();
+    assert_ne!(new, id);
+    assert_eq!(ids(&e, page, None)?, vec![id, new, next]);
+    let after = snapshot(&e.graph.conn, page)?;
+    assert_eq!(after[&id].block.content, "سلام");
+    assert_eq!(after[&new].block.content, "دنیا");
+    assert_eq!(after[&id].block.task_status.as_deref(), Some("doing"));
+    assert_eq!(after[&child], before[&child]);
+    assert_eq!(after[&id].properties, before[&id].properties);
+    assert_eq!(after[&id].references, before[&id].references);
+    assert!(after[&new].block.task_status.is_none());
+    assert!(after[&new].properties.is_empty());
+    assert!(after[&new].references.is_empty());
+    let undone = e.history(page, false)?;
+    assert_eq!(undone.removed, vec![new]);
+    assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    let redone = e.history(page, true)?;
+    assert_eq!(redone.focus_id, Some(new));
+    assert_eq!(snapshot(&e.graph.conn, page)?, after);
+    assert_eq!(e.graph().backlinks(page)?, vec![id]);
+    Ok(())
+}
+
+#[test]
+fn split_endpoints_empty_and_full_selection() -> Result<()> {
+    for (text, start, end, prefix, suffix) in [
+        ("😀سلام", 0, 0, "", "😀سلام"),
+        ("سلام😀", 6, 6, "سلام😀", ""),
+        ("😀سلام", 0, 6, "", ""),
+        ("", 0, 0, "", ""),
+    ] {
+        let (mut e, page, id) = setup(text)?;
+        let result = e.apply(page, EditAction::Split { id, start, end }, None)?;
+        let blocks = e.graph().children(page, None)?;
+        assert_eq!(blocks[0].content, prefix);
+        assert_eq!(blocks[1].content, suffix);
+        assert_eq!(blocks[1].id, result.focus_id.unwrap());
+        e.history(page, false)?;
+        assert_eq!(e.graph().children(page, None)?.len(), 1);
+        assert_eq!(e.graph().children(page, None)?[0].content, text);
+    }
+    Ok(())
+}
+
+#[test]
+fn nested_split_keeps_existing_child_groups_and_history_identity() -> Result<()> {
+    let (mut e, page, parent) = setup("parent")?;
+    let id = e.graph_mut().create_block(page, Some(parent), "a😀b")?.id;
+    let next = e.graph_mut().create_block(page, Some(parent), "next")?.id;
+    let child = e.graph_mut().create_block(page, Some(id), "child")?.id;
+    let before = snapshot(&e.graph.conn, page)?;
+    let new = e.apply(page, EditAction::Split { id, start: 1, end: 1 }, None)?.focus_id.unwrap();
+    assert_eq!(ids(&e, page, Some(parent))?, vec![id, new, next]);
+    assert_eq!(ids(&e, page, Some(id))?, vec![child]);
+    assert!(ids(&e, page, Some(new))?.is_empty());
+    let after = snapshot(&e.graph.conn, page)?;
+    e.history(page, false)?;
+    assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    e.history(page, true)?;
+    assert_eq!(snapshot(&e.graph.conn, page)?, after);
+    Ok(())
+}
+
+#[test]
+fn append_to_empty_page_undo_redo_preserves_uuid_and_timestamps() -> Result<()> {
+    let mut graph = Graph::in_memory()?;
+    let page = graph.create_page("Empty")?.id;
+    let mut e = Editor::new(graph);
+    let result = e.apply(page, EditAction::Append, None)?;
+    let id = result.focus_id.unwrap();
+    assert_eq!(result.changed.len(), 1);
+    assert_eq!(result.changed[0].id, id);
+    assert_eq!(result.changed[0].content, "");
+    let after = snapshot(&e.graph.conn, page)?;
+    assert_eq!(after[&id].block.position, 0);
+    assert!(after[&id].block.parent_id.is_none());
+    assert!(after[&id].block.task_status.is_none());
+    let result = e.history(page, false)?;
+    assert_eq!(result.removed, vec![id]);
+    assert_eq!(result.focus_id, None);
+    assert!(e.graph().page_blocks(page)?.is_empty());
+    assert_eq!(e.history(page, true)?.focus_id, Some(id));
+    assert_eq!(snapshot(&e.graph.conn, page)?, after);
+    Ok(())
+}
+
+#[test]
+fn indent_outdent_reorder_subtree_and_history() -> Result<()> {
+    let (mut e, page, a) = setup("a")?;
+    let existing = e.graph_mut().create_block(page, Some(a), "existing")?.id;
+    let b = e.graph_mut().create_block(page, None, "b")?.id;
+    let c = e.graph_mut().create_block(page, None, "c")?.id;
+    let child = e.graph_mut().create_block(page, Some(b), "child")?.id;
+    let grandchild = e.graph_mut().create_block(page, Some(child), "grandchild")?.id;
+    e.graph_mut().set_task_status(b, Some(TaskStatus::Done))?;
+    e.graph_mut().set_block_property(child, "p", &serde_json::json!(42))?;
+    e.graph_mut().add_reference(grandchild, page)?;
+    let before = snapshot(&e.graph.conn, page)?;
+    let mut states = vec![before.clone()];
+    e.apply(page, EditAction::Indent { id: b }, None)?;
+    assert_eq!(ids(&e, page, Some(a))?, vec![existing, b]);
+    assert_eq!(ids(&e, page, Some(b))?, vec![child]);
+    states.push(snapshot(&e.graph.conn, page)?);
+    e.apply(page, EditAction::Outdent { id: child }, None)?;
+    assert_eq!(ids(&e, page, Some(a))?, vec![existing, b, child]);
+    assert_eq!(ids(&e, page, Some(child))?, vec![grandchild]);
+    states.push(snapshot(&e.graph.conn, page)?);
+    e.apply(page, EditAction::Reorder { id: b, direction: -1 }, None)?;
+    assert_eq!(ids(&e, page, Some(a))?, vec![b, existing, child]);
+    states.push(snapshot(&e.graph.conn, page)?);
+    e.apply(page, EditAction::Outdent { id: b }, None)?;
+    assert_eq!(ids(&e, page, None)?, vec![a, b, c]);
+    states.push(snapshot(&e.graph.conn, page)?);
+    for state in states.iter().rev().skip(1) {
+        e.history(page, false)?;
+        assert_eq!(&snapshot(&e.graph.conn, page)?, state);
+    }
+    for state in states.iter().skip(1) {
+        e.history(page, true)?;
+        assert_eq!(&snapshot(&e.graph.conn, page)?, state);
+    }
+    assert_eq!(e.graph().backlinks(page)?, vec![grandchild]);
+    Ok(())
+}
+
+#[test]
+fn remove_empty_is_safe_root_leaf_only_and_reversible() -> Result<()> {
+    for guard in ["last", "content", "whitespace", "child", "nested", "task", "property", "reference"] {
+        let (mut e, page, id) = setup("")?;
+        if guard != "last" { e.graph_mut().create_block(page, None, "other")?; }
+        match guard {
+            "content" => e.graph_mut().update_block(id, "text")?,
+            "whitespace" => e.graph_mut().update_block(id, " ")?,
+            "child" => { e.graph_mut().create_block(page, Some(id), "child")?; }
+            "nested" => { let parent = e.graph_mut().create_block(page, None, "parent")?.id; e.graph_mut().move_block(id, Some(parent), 0)?; }
+            "task" => e.graph_mut().set_task_status(id, Some(TaskStatus::Todo))?,
+            "property" => e.graph_mut().set_block_property(id, "p", &serde_json::json!(null))?,
+            "reference" => e.graph_mut().add_reference(id, page)?,
+            _ => {}
+        }
+        let before = snapshot(&e.graph.conn, page)?;
+        assert!(matches!(e.apply(page, EditAction::RemoveEmpty { id }, None), Err(Error::Invalid(_))), "{guard}");
+        assert_eq!(snapshot(&e.graph.conn, page)?, before);
+        assert_eq!(e.history_state(page), (false, false));
+    }
+    let (mut e, page, first) = setup("")?;
+    let second = e.graph_mut().create_block(page, None, "")?.id;
+    let third = e.graph_mut().create_block(page, None, "third")?.id;
+    let before = snapshot(&e.graph.conn, page)?;
+    let result = e.apply(page, EditAction::RemoveEmpty { id: second }, None)?;
+    assert_eq!(result.removed, vec![second]);
+    assert_eq!(result.focus_id, Some(first));
+    assert!(result.changed.is_empty());
+    assert_eq!(ids(&e, page, None)?, vec![first, third]);
+    let after = snapshot(&e.graph.conn, page)?;
+    e.history(page, false)?;
+    assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    e.history(page, true)?;
+    assert_eq!(snapshot(&e.graph.conn, page)?, after);
+    let result = e.apply(page, EditAction::RemoveEmpty { id: first }, None)?;
+    assert_eq!(result.focus_id, Some(third));
+    Ok(())
+}
+
+#[test]
+fn saves_group_only_consecutively_persist_and_invalidate_redo() -> Result<()> {
+    let (mut e, page, id) = setup("a")?;
+    let second = e.graph_mut().create_block(page, None, "x")?.id;
+    let group = Some(Uuid::new_v4());
+    save(&mut e, page, id, "a", "ab", group)?;
+    assert_eq!(e.graph().children(page, None)?[0].content, "ab");
+    save(&mut e, page, id, "ab", "abc", group)?;
+    assert_eq!(e.history.pages[&page].undo.len(), 1);
+    assert_eq!(e.graph().children(page, None)?[0].content, "abc");
+    let before_failure = snapshot(&e.graph.conn, page)?;
+    assert!(save(&mut e, page, id, "bad", "oops", group).is_err());
+    assert_eq!(snapshot(&e.graph.conn, page)?, before_failure);
+    assert_eq!(e.history.pages[&page].undo.len(), 1);
+    e.history(page, false)?;
+    assert_eq!(e.graph().children(page, None)?[0].content, "a");
+    assert_eq!(e.history_state(page), (false, true));
+    assert!(save(&mut e, page, id, "bad", "oops", None).is_err());
+    assert_eq!(e.history_state(page), (false, true));
+    e.history(page, true)?;
+    assert_eq!(e.graph().children(page, None)?[0].content, "abc");
+    save(&mut e, page, second, "x", "y", group)?;
+    save(&mut e, page, id, "abc", "abcd", group)?;
+    assert_eq!(e.history.pages[&page].undo.len(), 3);
+    e.history(page, false)?;
+    save(&mut e, page, id, "abc", "branch", group)?;
+    assert_eq!(e.history_state(page), (true, false));
+    e.history(page, false)?;
+    assert_eq!(e.graph().children(page, None)?[0].content, "abc");
+    Ok(())
+}
+
+#[test]
+fn history_is_page_scoped_but_mutable_graph_access_clears_every_page() -> Result<()> {
+    let (mut e, page, id) = setup("a")?;
+    let other = e.graph_mut().create_page("Other")?.id;
+    let other_id = e.graph_mut().create_block(other, None, "b")?.id;
+    let group = Some(Uuid::new_v4());
+    save(&mut e, page, id, "a", "aa", group)?;
+    e.create_page("New empty page preserves history")?;
+    assert_eq!(e.history_state(page), (true, false));
+    save(&mut e, other, other_id, "b", "bb", group)?;
+    save(&mut e, page, id, "aa", "aaa", group)?;
+    assert_eq!(e.history.pages[&page].undo.len(), 2);
+    e.history(page, false)?;
+    assert_eq!(e.graph().children(other, None)?[0].content, "bb");
+    e.history(other, false)?;
+    assert_eq!(e.graph().children(page, None)?[0].content, "aa");
+    assert!(matches!(e.history(Uuid::new_v4(), false), Err(Error::NotFound)));
+    assert_eq!(e.history_state(page), (true, true));
+    let _ = e.graph_mut();
+    assert_eq!(e.history_state(page), (false, false));
+    assert_eq!(e.history_state(other), (false, false));
+    Ok(())
+}
+
+#[test]
+fn history_metadata_preconditions_and_cascade_guard_fail_without_changes() -> Result<()> {
+    let (mut e, page, id) = setup("a")?;
+    e.graph_mut().set_block_property(id, "p", &serde_json::json!(1))?;
+    save(&mut e, page, id, "a", "b", None)?;
+    let saved = snapshot(&e.graph.conn, page)?;
+    for column in ["created_at", "updated_at"] {
+        e.graph.conn.execute(&format!("UPDATE blocks SET {column}={column}+1 WHERE id=?1"), [id.to_string()])?;
+        let mutated = snapshot(&e.graph.conn, page)?;
+        assert!(matches!(e.history(page, false), Err(Error::Conflict(_))));
+        assert_eq!(snapshot(&e.graph.conn, page)?, mutated);
+        assert_eq!(e.history_state(page), (true, false));
+        e.graph.conn.execute(&format!("UPDATE blocks SET {column}={column}-1 WHERE id=?1"), [id.to_string()])?;
+    }
+    e.graph.set_task_status(id, Some(TaskStatus::Todo))?;
+    assert!(matches!(e.history(page, false), Err(Error::Conflict(_))));
+    e.graph.conn.execute("UPDATE blocks SET task_status=NULL,updated_at=?2 WHERE id=?1", params![id.to_string(), saved[&id].updated_at])?;
+    // Private test-only bypass: simulate a caller missing invalidation on this connection.
+    e.graph.set_block_property(id, "p", &serde_json::json!(2))?;
+    let changed = snapshot(&e.graph.conn, page)?;
+    assert!(matches!(e.history(page, false), Err(Error::Conflict(_))));
+    assert_eq!(snapshot(&e.graph.conn, page)?, changed);
+    assert_eq!(e.history_state(page), (true, false));
+    e.graph.set_block_property(id, "p", &serde_json::json!(1))?;
+    e.history(page, false)?;
+    e.graph.add_reference(id, page)?;
+    assert!(matches!(e.history(page, true), Err(Error::Conflict(_))));
+    assert_eq!(e.history_state(page), (false, true));
+    e.graph.remove_reference(id, page)?;
+    e.history(page, true)?;
+    let added = e.apply(page, EditAction::Append, None)?.focus_id.unwrap();
+    let child = e.graph.create_block(page, Some(added), "must survive")?.id;
+    let before = snapshot(&e.graph.conn, page)?;
+    assert!(matches!(e.history(page, false), Err(Error::Conflict(_))));
+    assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    assert_eq!(ids(&e, page, Some(added))?, vec![child]);
+    assert_eq!(e.history.pages[&page].undo.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn apply_and_history_injected_failure_roll_back_data_and_stacks() -> Result<()> {
+    let (mut e, page, id) = setup("before")?;
+    save(&mut e, page, id, "before", "after", None)?;
+    e.graph.conn.execute_batch("CREATE TEMP TRIGGER fail_insert AFTER INSERT ON blocks BEGIN SELECT RAISE(ABORT,'injected'); END;")?;
+    let before = snapshot(&e.graph.conn, page)?;
+    assert!(e.apply(page, EditAction::Split { id, start: 2, end: 2 }, None).is_err());
+    assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    assert_eq!(e.history.pages[&page].undo.len(), 1);
+    assert_eq!(e.graph().search("after")?[0].id, id);
+    e.graph.conn.execute_batch("DROP TRIGGER fail_insert;")?;
+    let new = e.apply(page, EditAction::Split { id, start: 2, end: 2 }, None)?.focus_id.unwrap();
+    e.history(page, false)?;
+    let before = snapshot(&e.graph.conn, page)?;
+    e.graph.conn.execute_batch("CREATE TEMP TRIGGER fail_insert AFTER INSERT ON blocks BEGIN SELECT RAISE(ABORT,'injected'); END;")?;
+    assert!(e.history(page, true).is_err());
+    assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    assert_eq!(e.history_state(page), (true, true));
+    e.graph.conn.execute_batch("DROP TRIGGER fail_insert;")?;
+    e.history(page, true)?;
+    assert!(e.graph().page_blocks(page)?.iter().any(|b| b.id == new));
+    e.graph.conn.execute_batch("CREATE TEMP TRIGGER fail_order AFTER UPDATE OF position ON blocks WHEN NEW.position>=0 BEGIN SELECT RAISE(ABORT,'order failure'); END;")?;
+    let before = snapshot(&e.graph.conn, page)?;
+    assert!(e.apply(page, EditAction::Reorder { id, direction: 1 }, None).is_err());
+    assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    assert_eq!(e.history_state(page), (true, false));
+    assert!(e.history(page, false).is_err());
+    assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    assert_eq!(e.history_state(page), (true, false));
+    Ok(())
+}
+
+#[test]
+fn disk_reopen_and_external_writer_invalidate_without_overwrite() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("editor.sqlite3");
+    let mut graph = Graph::create(&path)?;
+    let page = graph.create_page("Disk")?.id;
+    let id = graph.create_block(page, None, "سلام😀")?.id;
+    graph.set_task_status(id, Some(TaskStatus::Doing))?;
+    graph.set_block_property(id, "p", &serde_json::json!([1, 2]))?;
+    graph.add_reference(id, page)?;
+    let mut e = Editor::new(graph);
+    let new = e.apply(page, EditAction::Split { id, start: 4, end: 4 }, None)?.focus_id.unwrap();
+    let expected = snapshot(&e.graph.conn, page)?;
+    drop(e);
+    let mut e = Editor::new(Graph::open(&path)?);
+    assert_eq!(snapshot(&e.graph.conn, page)?, expected);
+    assert_eq!(e.history_state(page), (false, false));
+    save(&mut e, page, new, "😀", "saved", None)?;
+    let mut external = Graph::open(&path)?;
+    external.set_block_property(new, "external", &serde_json::json!(true))?;
+    external.update_block(new, "external text")?;
+    assert_eq!(e.history_state(page), (false, false));
+    let result = e.history(page, false)?;
+    assert!(result.changed.is_empty());
+    assert_eq!(e.history_state(page), (false, false));
+    assert_eq!(snapshot(&e.graph.conn, page)?[&new].block.content, "external text");
+    assert!(matches!(save(&mut e, page, new, "saved", "bad", None), Err(Error::Conflict(_))));
+    save(&mut e, page, new, "external text", "accepted", None)?;
+    e.history(page, false)?;
+    assert_eq!(snapshot(&e.graph.conn, page)?[&new].block.content, "external text");
+    assert_eq!(snapshot(&e.graph.conn, page)?[&new].properties.len(), 1);
+    drop(external);
+    drop(e);
+    let graph = Graph::open(&path)?;
+    let integrity: String = graph.conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
+    assert_eq!(integrity, "ok");
+    assert_eq!(graph.conn.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r.get::<_, i64>(0))?, 0);
+    Ok(())
+}
+
+#[test]
+fn history_is_bounded_by_count_and_bytes_and_cannot_cross_oversized_edits() -> Result<()> {
+    let (mut e, page, id) = setup("0")?;
+    for n in 1..=110 {
+        save(&mut e, page, id, &(n - 1).to_string(), &n.to_string(), None)?;
+    }
+    assert_eq!(e.history.pages[&page].undo.len(), MAX_ENTRIES);
+    for _ in 0..MAX_ENTRIES { e.history(page, false)?; }
+    assert_eq!(e.graph().children(page, None)?[0].content, "10");
+    assert_eq!(e.history_state(page), (false, true));
+    save(&mut e, page, id, "10", &"x".repeat(MAX_BYTES), None)?;
+    assert_eq!(e.history_state(page), (false, false));
+    assert!(e.history.pages.is_empty());
+    // Several individually bounded edits must also respect the aggregate budget.
+    let medium = "m".repeat(MAX_BYTES / 8);
+    save(&mut e, page, id, &"x".repeat(MAX_BYTES), &medium, None)?;
+    assert_eq!(e.history_state(page), (false, false));
+    let mut content = medium;
+    for n in 0..8 {
+        let next = format!("{}{}", n, "m".repeat(MAX_BYTES / 8));
+        save(&mut e, page, id, &content, &next, None)?;
+        content = next;
+    }
+    let retained: Vec<_> = e.history.pages.values().flat_map(|h| h.undo.iter().chain(h.redo.iter())).collect();
+    assert!(retained.iter().map(|entry| entry.bytes()).sum::<usize>() <= MAX_BYTES);
+    assert!(retained.len() < 8);
+    Ok(())
+}
+
+#[test]
+fn count_bound_is_global_and_eviction_never_leaves_a_broken_redo_chain() -> Result<()> {
+    let (mut e, page, id) = setup("0")?;
+    let other = e.graph_mut().create_page("Other")?.id;
+    let other_id = e.graph_mut().create_block(other, None, "0")?.id;
+    for n in 1..=60 { save(&mut e, page, id, &(n - 1).to_string(), &n.to_string(), None)?; }
+    for n in 1..=60 { save(&mut e, other, other_id, &(n - 1).to_string(), &n.to_string(), None)?; }
+    assert_eq!(e.history.pages[&page].undo.len(), 40);
+    assert_eq!(e.history.pages[&other].undo.len(), 60);
+    for _ in 0..40 { e.history(page, false)?; }
+    assert_eq!(e.graph().children(page, None)?[0].content, "20");
+    assert_eq!(e.history_state(page), (false, true));
+    save(&mut e, other, other_id, "60", "61", None)?;
+    assert_eq!(e.history_state(page), (false, false));
+    assert_eq!(e.history.pages[&other].undo.len(), 61);
+    assert!(e.history(page, true)?.changed.is_empty());
+    assert_eq!(e.graph().children(page, None)?[0].content, "20");
+    Ok(())
+}
+
+#[test]
+fn deterministic_ordering_sequences_match_tree_model_and_history() -> Result<()> {
+    let (mut e, page, first) = setup("0")?;
+    let mut model = vec![(first, None)];
+    for n in 1..10 { model.push((e.graph_mut().create_block(page, None, &n.to_string())?.id, None)); }
+    let mut states = vec![snapshot(&e.graph.conn, page)?];
+    let mut seed = 42_u64;
+    for step in 0..80 {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let index = (seed % model.len() as u64) as usize;
+        let (id, parent) = model[index];
+        let sibling_indexes: Vec<_> = model.iter().enumerate().filter(|(_, b)| b.1 == parent).map(|(i, _)| i).collect();
+        let sibling_index = sibling_indexes.iter().position(|i| *i == index).unwrap();
+        let action = match step % 4 {
+            0 => {
+                if sibling_index > 0 { model[index].1 = Some(model[sibling_indexes[sibling_index - 1]].0); }
+                EditAction::Indent { id }
+            }
+            1 => {
+                if let Some(parent) = parent {
+                    let parent_index = model.iter().position(|b| b.0 == parent).unwrap();
+                    let grandparent = model[parent_index].1;
+                    let row = model.remove(index);
+                    let parent_index = model.iter().position(|b| b.0 == parent).unwrap();
+                    model.insert(parent_index + 1, (row.0, grandparent));
+                }
+                EditAction::Outdent { id }
+            }
+            _ => {
+                let direction = if step % 4 == 2 { -1 } else { 1 };
+                if let Some(other) = sibling_index.checked_add_signed(direction as isize).filter(|i| *i < sibling_indexes.len()) {
+                    model.swap(index, sibling_indexes[other]);
+                }
+                EditAction::Reorder { id, direction }
+            }
+        };
+        e.apply(page, action, None)?;
+        let actual = e.graph().page_blocks(page)?;
+        for parent in std::iter::once(None).chain(model.iter().map(|b| Some(b.0))) {
+            let expected: Vec<_> = model.iter().filter(|b| b.1 == parent).map(|b| b.0).collect();
+            assert_eq!(ids(&e, page, parent)?, expected, "step {step}");
+        }
+        assert_eq!(actual.len(), model.len());
+        assert!(actual.iter().all(|b| b.position >= 0));
+        let state = snapshot(&e.graph.conn, page)?;
+        if states.last() != Some(&state) { states.push(state); }
+    }
+    for expected in states.iter().rev().skip(1) {
+        e.history(page, false)?;
+        assert_eq!(&snapshot(&e.graph.conn, page)?, expected);
+    }
+    for expected in states.iter().skip(1) {
+        e.history(page, true)?;
+        assert_eq!(&snapshot(&e.graph.conn, page)?, expected);
+    }
+    Ok(())
+}
