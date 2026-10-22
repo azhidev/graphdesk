@@ -61,12 +61,16 @@ fn commands_roundtrip_and_preserve_state_on_errors() {
 fn graph_commands_are_denied_outside_main_window() {
     let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
     let window = tauri::WebviewWindowBuilder::new(&app, "untrusted", Default::default()).build().unwrap();
-    for command in ["open_graph", "create_page", "create_journal", "list_blocks", "create_block", "editor_open", "editor_page", "editor_apply", "editor_history", "editor_create_page", "editor_rename_page", "editor_journal"] {
+    // Read the explicit ACL so every newly allowed command joins both denial checks.
+    let acl = include_str!("../permissions/graph.toml");
+    let commands: Vec<&str> = acl.lines().find(|l| l.starts_with("commands.allow")).unwrap()
+        .split('"').enumerate().filter_map(|(i, s)| (i % 2 == 1).then_some(s)).collect();
+    for command in &commands {
         let error = invoke(&window, command, json!({})).unwrap_err();
         assert!(error.as_str().unwrap().contains("not allowed"), "{error}");
     }
     let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
-    for command in ["open_graph", "create_page", "create_journal", "list_blocks", "create_block", "editor_open", "editor_page", "editor_apply", "editor_history", "editor_create_page", "editor_rename_page", "editor_journal"] {
+    for command in &commands {
         let error = invoke_from(&main, command, json!({}), "https://example.invalid").unwrap_err();
         assert!(error.as_str().unwrap().contains("not allowed"), "{error}");
     }
@@ -91,6 +95,9 @@ fn editor_session_transactions_and_structured_errors() {
     let id = apply(json!({"kind":"append"})).unwrap()["focus_id"].clone();
     assert_eq!(apply(json!({"kind":"save","id":id,"expected":"wrong","content":"lost"})).unwrap_err()["code"], "conflict");
     apply(json!({"kind":"save","id":id,"expected":"","content":"سلام😀دنیا"})).unwrap();
+    let hits = invoke(&window,"editor_search",json!({"session":session,"text":"سلام"})).unwrap();
+    assert_eq!(hits[0]["id"], id);
+    assert_eq!(hits[0]["page_id"], page);
     assert_eq!(apply(json!({"kind":"split","id":id,"start":5,"end":5})).unwrap_err()["code"], "invalid");
     let second = apply(json!({"kind":"split","id":id,"start":4,"end":4})).unwrap()["focus_id"].clone();
     apply(json!({"kind":"indent","id":second})).unwrap();
@@ -103,6 +110,7 @@ fn editor_session_transactions_and_structured_errors() {
     assert!(invoke(&window,"editor_open",json!({"path":path,"create":true})).is_err());
     assert!(invoke(&window,"editor_page",json!({"session":session,"pageId":page})).is_ok());
     invoke(&window,"editor_open",json!({"path":other,"create":true})).unwrap();
+    assert_eq!(invoke(&window,"editor_search",json!({"session":session,"text":"سلام"})).unwrap_err()["code"],"stale_session");
     assert_eq!(invoke(&window,"editor_rename_page",json!({"session":session,"pageId":page,"title":"stale"})).unwrap_err()["code"],"stale_session");
     assert_eq!(invoke(&window,"editor_journal",json!({"session":session,"date":"2026-10-23"})).unwrap_err()["code"],"stale_session");
     assert_eq!(apply(json!({"kind":"save","id":id,"expected":"سلام","content":"wrong graph"})).unwrap_err()["code"],"stale_session");

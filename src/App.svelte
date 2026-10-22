@@ -6,6 +6,7 @@
   import { EditorController, errorMessage } from './lib/editor/controller';
   import PageEditor from './lib/editor/PageEditor.svelte';
   import { localDate } from './lib/dates';
+  import { SearchController, type SearchHit } from './lib/search';
 
   let path = $state('');
   let pages = $state<Page[]>([]);
@@ -16,6 +17,10 @@
   let title = $state('');
   let renameTitle = $state('');
   let journalDate = $state(localDate());
+  let query = $state('');
+  let searchRevision = $state(0);
+  const search = new SearchController(api.search, () => { searchRevision += 1; });
+  const results = $derived.by(() => { searchRevision; return { hits: search.hits, error: search.error, pending: search.pending }; });
   let revision = $state(0);
   const editor = new EditorController(editorApi, () => { revision += 1; });
   const locked = $derived.by(() => { revision; return busy || editor.working; });
@@ -30,11 +35,20 @@
     await run(async () => {
       await editor.flush();
       const result = await api.open(path, create);
+      search.reset(); query = '';
       editor.reset(result.token); session = result.token; pages = result.pages; selected = null;
     });
   }
   async function select(page: Page) {
     await run(async () => { await editor.load(page.id); selected = page; renameTitle = page.title; });
+  }
+  async function selectHit(hit: SearchHit) {
+    const page = pages.find(p => p.id === hit.page_id);
+    if (!page) { error = 'Matching page no longer exists; reopen the graph.'; return; }
+    await run(async () => {
+      await editor.load(page.id); selected = page; renameTitle = page.title;
+      if (hit.kind === 'block') editor.reveal(hit.id);
+    });
   }
   function rememberPage(page: Page) {
     pages = [...pages.filter(p => p.id !== page.id), page].sort((a, b) => a.title.localeCompare(b.title));
@@ -91,6 +105,14 @@
   {#if session}
     <div class="workspace">
       <aside>
+        <label for="search">Search pages and blocks</label>
+        <input id="search" bind:value={query} oninput={() => { if (session) void search.query(session, query); }} />
+        {#if results.pending}<p role="status">Searching…</p>{/if}
+        {#if results.error}<p role="alert">{results.error}</p>{/if}
+        {#if query.trim() && !results.pending && !results.error && !results.hits.length}<p>No matches.</p>{/if}
+        <ul aria-label="Search results">{#each results.hits as hit (`${hit.kind}:${hit.id}`)}
+          <li><button disabled={locked} onclick={() => selectHit(hit)}>{hit.kind}: {hit.text}</button></li>
+        {/each}</ul>
         <h2>Pages</h2>
         <button disabled={locked} onclick={() => journal(localDate())}>Today's journal</button>
         <label for="journal-date">Journal date</label>

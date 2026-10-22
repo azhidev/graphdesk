@@ -160,5 +160,10 @@ Milestone 3A adds page renaming and today's/date-selected journals. Journal iden
 remains the local Gregorian civil date even when its page title changes. Navigation,
 rename and journal creation flush drafts first; failures leave the current editor intact.
 
+Search uses the existing Unicode FTS literal-phrase API (up to 100 page and 100 block
+matches). Results reflect acknowledged SQLite text, not unsaved drafts. Query changes
+and graph switches suppress stale results/errors. Choosing a block flushes drafts,
+loads its owning page, expands ancestors and focuses the block by UUID.
+
 Markdown import/export,
 plugins, routines, sync, CLI, AI, and calendar presentation remain future work.

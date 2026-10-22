@@ -4,6 +4,28 @@ import { EditorController } from '../../src/lib/editor/controller.ts';
 import { visibleRows } from '../../src/lib/editor/outline.ts';
 import { keyIntent } from '../../src/lib/editor/keyboard.ts';
 import { localDate } from '../../src/lib/dates.ts';
+import { SearchController } from '../../src/lib/search.ts';
+
+test('search rejects stale successes/errors and graph-switch responses', async () => {
+  const requests = [];
+  const search = new SearchController((session, text) => new Promise((resolve, reject) => requests.push({ session, text, resolve, reject })));
+  const old = search.query('one', 'old');
+  const latest = search.query('one', 'سلام');
+  requests[1].resolve([{ id: 'b', page_id: 'p', kind: 'block', text: 'سلام' }]); await latest;
+  requests[0].reject(new Error('stale error')); await old;
+  assert.equal(search.hits[0].text, 'سلام'); assert.equal(search.error, '');
+  const switched = search.query('one', 'pending'); search.reset();
+  requests[2].resolve([{ id: 'stale' }]); await switched;
+  assert.deepEqual(search.hits, []); assert.equal(search.pending, false);
+  await search.query('two', '  '); assert.equal(requests.length, 3);
+});
+
+test('matching blocks reveal collapsed ancestors and keep UUID focus', async () => {
+  const { editor } = fixture([block('a'), block('b', 'سلام', 'a')]);
+  await editor.load('page'); editor.collapsed.add('a');
+  editor.reveal('b'); assert.equal(editor.activeId, 'b'); assert.equal(editor.collapsed.has('a'), false);
+  assert.throws(() => editor.reveal('missing'), /no longer exists/);
+});
 
 test('journal date uses local civil fields rather than UTC serialization', () => {
   assert.equal(localDate(new Date(2024, 1, 29, 23, 59)), '2024-02-29');

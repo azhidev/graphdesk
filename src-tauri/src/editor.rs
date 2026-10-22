@@ -6,6 +6,12 @@ use tauri::State;
 use uuid::Uuid;
 use crate::{ActiveGraph, AppState};
 
+#[tauri::command]
+pub(crate) async fn editor_search(session: Uuid, text: String, state: State<'_, AppState>) -> Result<Vec<graph_core::SearchHit>, EditorError> {
+    let state = state.inner().clone();
+    blocking(move || with_session(&state, session, |g| g.editor.graph().search(&text))).await
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct EditorError { code: &'static str, message: String }
 impl EditorError {

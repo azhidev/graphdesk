@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { EditorTransport, Page } from './editor/types';
+import type { SearchHit } from './search';
 export type { Page, Block } from './editor/types';
 
 export const api = {
@@ -7,6 +8,7 @@ export const api = {
   createPage: (session: string, title: string) => invoke<Page>('editor_create_page', { session, title }),
   renamePage: (session: string, pageId: string, title: string) => invoke<Page>('editor_rename_page', { session, pageId, title }),
   journal: (session: string, date: string) => invoke<Page>('editor_journal', { session, date }),
+  search: (session: string, text: string) => invoke<SearchHit[]>('editor_search', { session, text }),
 };
 
 export const editorApi: EditorTransport = {

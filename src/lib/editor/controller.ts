@@ -54,6 +54,17 @@ export class EditorController {
     this.changed();
   }
 
+  reveal(id: string): void {
+    if (!this.blocks.some(b => b.id === id)) throw new Error('Matching block no longer exists');
+    let parent = this.blocks.find(b => b.id === id)?.parent_id;
+    const seen = new Set<string>();
+    while (parent && !seen.has(parent)) {
+      seen.add(parent); this.collapsed.delete(parent);
+      parent = this.blocks.find(b => b.id === parent)?.parent_id;
+    }
+    this.cachedRows = null; this.activate(id, { start: 0, end: 0 });
+  }
+
   reset(session: string): void {
     if (this.dirty || this.saving || this.working) throw new Error('Flush before changing graph');
     this.clearTimers(); this.groups.clear(); this.selections.clear();
