@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -17,7 +17,7 @@ pub struct Block {
     pub task_status: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus { Todo, Doing, Done, Cancelled }
 

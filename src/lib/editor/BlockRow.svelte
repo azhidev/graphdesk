@@ -3,7 +3,7 @@
   import type { Row } from './outline';
   import { keyIntent } from './keyboard';
   import type { EditorController, Focus } from './controller';
-  import type { Page } from './types';
+  import type { Page, TaskState } from './types';
   import { completion, suggestions, insertReference } from '../references';
   let { row, editor, text, active, busy, collapsed, focus, pages }: {
     row: Row; editor: EditorController; text: string; active: boolean;
@@ -59,6 +59,13 @@
 </script>
 
 <div class="block-row" style:margin-inline-start={`${Math.min(row.depth, 20) * 1.3}rem`} data-block-id={row.block.id}>
+  <select aria-label="Task status" value={row.block.task_status ?? ''} disabled={busy}
+    onchange={event => void editor.action({ kind: 'task', id: row.block.id, expected: row.block.task_status,
+      status: (event.currentTarget.value || null) as TaskState | null }).catch(report)}>
+    <option value="">No task</option><option value="todo">TODO</option>
+    <option value="doing">DOING</option><option value="done">DONE</option>
+    {#if row.block.task_status === 'cancelled'}<option value="cancelled">CANCELLED</option>{/if}
+  </select>
   {#if row.hasChildren}
     <button class="disclosure" aria-label={collapsed ? 'Expand children' : 'Collapse children'} aria-expanded={!collapsed}
       disabled={busy} onclick={() => void editor.toggle(row.block.id).catch(report)}>{collapsed ? '▸' : '▾'}</button>

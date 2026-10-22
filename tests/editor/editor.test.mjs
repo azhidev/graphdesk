@@ -226,3 +226,20 @@ test('unchanged drafts need no IPC, queued failure is not silently retried', asy
   // Explicit discard is safe and cancels all draft timers.
   await editor.discardAndReload();
 });
+
+test('task status changes flush drafts and share history/acknowledgement queue', async () => {
+  const { editor, transport, calls } = fixture();
+  await editor.load('page');
+  editor.setDraft('a', 'saved before task');
+  const save = transport.apply;
+  transport.apply = async (session, page, action, group) => {
+    if (action.kind !== 'task') return save(session, page, action, group);
+    calls.push(['task', action]);
+    assert.equal(editor.text('a'), 'saved before task'); assert.equal(editor.dirty, false);
+    return result([{...block('a', 'saved before task'), task_status: action.status}], 'a');
+  };
+  await editor.action({ kind:'task', id:'a', expected:null, status:'doing' });
+  assert.equal(editor.blocks[0].task_status, 'doing');
+  assert.deepEqual(calls.map(c => c[0]), ['page', 'apply', 'task']);
+  await editor.action({kind:'undo'}); assert.equal(calls.at(-1)[0], 'history');
+});

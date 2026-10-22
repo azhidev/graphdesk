@@ -98,6 +98,10 @@ fn editor_session_transactions_and_structured_errors() {
     let hits = invoke(&window,"editor_search",json!({"session":session,"text":"سلام"})).unwrap();
     assert_eq!(hits[0]["id"], id);
     assert_eq!(hits[0]["page_id"], page);
+    apply(json!({"kind":"task","id":id,"expected":null,"status":"todo"})).unwrap();
+    assert_eq!(apply(json!({"kind":"task","id":id,"expected":null,"status":"done"})).unwrap_err()["code"],"conflict");
+    invoke(&window,"editor_history",json!({"session":session,"pageId":page,"redo":false})).unwrap();
+    assert!(apply(json!({"kind":"task","id":id,"expected":null,"status":"bogus"})).is_err());
     let reference_block = apply(json!({"kind":"append"})).unwrap()["focus_id"].clone();
     apply(json!({"kind":"save","id":reference_block,"expected":"","content":"[[Renamed]] [[Missing]]"})).unwrap();
     let links = invoke(&window,"editor_links",json!({"session":session,"pageId":page})).unwrap();

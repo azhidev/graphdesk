@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn task_history_conflicts_rollback_split_and_reopen() -> Result<()> {
+    use crate::TaskStatus;
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("tasks.sqlite3");
+    let mut graph = Graph::create(&path)?;
+    let page = graph.create_page("Tasks")?.id;
+    let id = graph.create_block(page, None, "[[Tasks]]")?.id;
+    let mut editor = Editor::new(graph);
+    let task = |expected, status| EditAction::Task { id, expected, status };
+    editor.apply(page, task(None, Some(TaskStatus::Todo)), None)?;
+    assert!(editor.apply(page, task(None, Some(TaskStatus::Done)), None).is_err());
+    editor.apply(page, task(Some(TaskStatus::Todo), Some(TaskStatus::Doing)), None)?;
+    editor.apply(page, task(Some(TaskStatus::Doing), Some(TaskStatus::Done)), None)?;
+    editor.history(page, false)?;
+    assert_eq!(editor.graph().page_blocks(page)?[0].task_status.as_deref(), Some("doing"));
+    editor.history(page, true)?;
+    editor.graph.conn.execute_batch("CREATE TRIGGER fail_task BEFORE UPDATE OF task_status ON blocks BEGIN SELECT RAISE(ABORT,'injected'); END;")?;
+    assert!(editor.apply(page, task(Some(TaskStatus::Done), None), None).is_err());
+    assert!(editor.history(page, false).is_err());
+    editor.graph.conn.execute_batch("DROP TRIGGER fail_task;")?;
+    assert_eq!(editor.history_state(page), (true, false));
+    let new = editor.apply(page, EditAction::Split { id, start:0, end:0 }, None)?.focus_id.unwrap();
+    let blocks = editor.graph().page_blocks(page)?;
+    assert_eq!(blocks.iter().find(|b| b.id == id).unwrap().task_status.as_deref(), Some("done"));
+    assert_eq!(blocks.iter().find(|b| b.id == new).unwrap().task_status, None);
+    editor.history(page, false)?;
+    drop(editor);
+    let graph = Graph::open(&path)?;
+    assert_eq!(graph.page_blocks(page)?[0].task_status.as_deref(), Some("done"));
+    assert_eq!(graph.incoming_links(page)?[0].id, id);
+    assert!(serde_json::from_str::<EditAction>(&format!(r#"{{"kind":"task","id":"{id}","expected":null,"status":"bogus"}}"#)).is_err());
+    Ok(())
+}
+
+#[test]
 fn inline_reference_resolution_rename_split_and_history() -> Result<()> {
     let (mut editor, page, id) = setup("")?;
     let text = "[[سلام]] [[ سلام ]] [[Future]] [[ ]] [[bad\nlink]]";

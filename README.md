@@ -175,5 +175,9 @@ its binding. Undo/redo restores both source and binding. Incoming backlinks navi
 to source blocks. Grammar excludes nested brackets, multiline titles, aliases and
 escaping; duplicate normalized labels within a block produce one edge.
 
+Each block offers No task / TODO / DOING / DONE. Task changes flush text first,
+are persisted transactionally and participate in the same page-scoped undo/redo.
+Existing core CANCELLED values remain readable; the UI does not create them.
+
 Markdown import/export,
 plugins, routines, sync, CLI, AI, and calendar presentation remain future work.

@@ -17,6 +17,7 @@ const MAX_BYTES: usize = 8 * 1024 * 1024;
 pub enum EditAction {
     Append,
     Save { id: Uuid, expected: String, content: String },
+    Task { id: Uuid, expected: Option<crate::TaskStatus>, status: Option<crate::TaskStatus> },
     Split { id: Uuid, start: usize, end: usize },
     Indent { id: Uuid },
     Outdent { id: Uuid },
@@ -102,7 +103,7 @@ impl Editor {
         self.history.check_version(&tx)?;
         // Debounced text saves read/retain only the touched row and its metadata.
         // Structural actions may need the complete page to compute ordering deltas.
-        let scope = match &action { EditAction::Save { id, .. } => Some(*id), _ => None };
+        let scope = match &action { EditAction::Save { id, .. } | EditAction::Task { id, .. } => Some(*id), _ => None };
         let before = snapshot_scope(&tx, page_id, scope)?;
         let save_group = match &action {
             EditAction::Save { id, .. } => group.map(|g| (page_id, *id, g)),
@@ -241,13 +242,22 @@ fn apply_action(conn: &Connection, page: Uuid, records: &Snapshot, action: EditA
     }
     let id = match &action {
         EditAction::Append => unreachable!(),
-        EditAction::Save { id, .. } | EditAction::Split { id, .. } | EditAction::Indent { id }
+        EditAction::Save { id, .. } | EditAction::Task { id, .. } | EditAction::Split { id, .. } | EditAction::Indent { id }
         | EditAction::Outdent { id } | EditAction::Reorder { id, .. } | EditAction::RemoveEmpty { id } => *id,
     };
     let original = block(records, id)?;
     let mut focus = id;
     match action {
         EditAction::Append => unreachable!(),
+        EditAction::Task { expected, status, .. } => {
+            if original.task_status.as_deref() != expected.map(crate::TaskStatus::as_str) {
+                return Err(Error::Conflict("task status changed".into()));
+            }
+            if original.task_status.as_deref() != status.map(crate::TaskStatus::as_str) {
+                conn.execute("UPDATE blocks SET task_status=?2,updated_at=unixepoch() WHERE id=?1",
+                    params![id.to_string(), status.map(crate::TaskStatus::as_str)])?;
+            }
+        }
         EditAction::Save { expected, content, .. } => {
             if original.content != expected { return Err(Error::Conflict("block content changed".into())); }
             if content != expected {
