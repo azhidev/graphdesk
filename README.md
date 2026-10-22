@@ -18,9 +18,11 @@ network access required.
 
 ## Development
 
-Install current stable Rust and the [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/)
+Install Rust 1.99.1 (pinned in `rust-toolchain.toml`) and the [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/)
 on your development computer. Linux also needs a C compiler for bundled SQLite.
-Node.js 22.12+ and npm are required. No global npm packages needed.
+Node.js 24 (`nvm use`, using `.nvmrc`) and npm are required. No global npm packages needed.
+Keep rustup's `~/.cargo/bin` on PATH. Both dependency lockfiles remain tracked;
+Node 24 runs the TypeScript controller tests directly without a test transpiler.
 
 ```sh
 npm ci --ignore-scripts
