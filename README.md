@@ -1,7 +1,8 @@
 # Graphdesk
 
 A new local-first knowledge application, inspired by Logseq, not a fork.
-Milestones 1–2 provide a Svelte 5/TypeScript plain-text nested block editor, a thin
+Milestones 1–3 provide a Svelte 5/TypeScript plain-text nested block editor, connected
+page/journal/search/reference/task workflows, a thin
 Tauri 2 adapter, and an independent Rust/SQLite core. No cloud services or runtime
 network access required.
 
@@ -89,7 +90,7 @@ saves / clear error**, or explicitly **Discard unsaved drafts and reload**. Forc
 termination can lose unacknowledged text. During IME composition, structural shortcuts
 and leaving with unfinished composition are blocked rather than truncating input.
 
-## Verification in this workspace
+## Milestones 1–2 verification record
 
 - `npm run check`: passed, zero errors/warnings.
 - `npm run build`: passed.
@@ -156,7 +157,9 @@ hardware GPU, assistive technology and installer behavior remain platform follow
 No rich text, merging nonempty blocks, drag/drop, cross-page moves or persistent
 undo/collapse state was added.
 
-Milestone 3A adds page renaming and today's/date-selected journals. Journal identity
+## Milestone 3 — Connected Knowledge Workflows
+
+Page renaming and today's/date-selected journals are available. Journal identity
 remains the local Gregorian civil date even when its page title changes. Navigation,
 rename and journal creation flush drafts first; failures leave the current editor intact.
 
@@ -178,6 +181,56 @@ escaping; duplicate normalized labels within a block produce one edge.
 Each block offers No task / TODO / DOING / DONE. Task changes flush text first,
 are persisted transactionally and participate in the same page-scoped undo/redo.
 Existing core CANCELLED values remain readable; the UI does not create them.
+
+### Validation and reproduction
+
+Automated validation: `npm run check`, `npm run build`, `npm run test:editor`,
+`cargo test --locked --workspace`, `cargo test --locked --workspace --features tauri/custom-protocol`,
+and `npm run test:schema`. No new runtime or npm test dependencies were added.
+
+Real Linux WebView smoke fixture (requires the existing Tauri prerequisites plus
+Xvfb, xauth, xdotool, D-Bus, and system Python PyGObject/GTK 3):
+
+```sh
+npm run tauri -- build --no-bundle -- --locked
+/usr/bin/python3 tests/webview/smoke.py --artifacts /tmp/opencode/graphdesk-m3-webview
+```
+
+It launches the current release executable, uses a private D-Bus session and
+authenticated Xvfb with TCP disabled, drives the actual WebView, asserts SQLite
+results, captures screenshots, and closes normally. Disposable databases, app
+directories, authentication files, and processes are cleaned up; screenshots/logs
+remain in the chosen artifact directory, outside Git. The fixture uses fixed
+1300×1000 geometry and the system's English/US date-picker layout. It is a smoke
+test, not a cross-platform UI automation or accessibility suite.
+
+Workspace toolchain note: the installed `stable` compiler reports exactly Rust
+1.99.1, but downloading the named 1.99.1 rustup channel was unavailable. Validation
+used `cargo +stable` and `RUSTUP_TOOLCHAIN=stable npm run tauri ...` after checking
+that version. The repository remains pinned to 1.99.1; no user configuration changed.
+
+Milestone 3 validation completed on 2026-10-22:
+
+- Frontend check: zero errors/warnings; frontend and Tauri release builds passed.
+- Frontend/controller helpers: 20 passed; SQLite schema fixtures: 15 passed.
+- Locked workspace tests: 30 core + 3 IPC passed, in both default and
+  production-protocol configurations. Includes migration backfill, binding-preserving
+  rename/split/replay, task conflicts, injected rollback and security/session checks.
+- Real release WebView fixture: passed. Screenshots inspected for actual rendering,
+  suggestions, rename/backlinks, Persian search, date selection, rejected task change,
+  retained drafts and restart. TODO/DOING/DONE, task undo/redo, blocked close, explicit
+  retry, navigation/close flush and UUID/content/link persistence passed SQL assertions.
+  Both app sessions closed normally; integrity and foreign-key checks passed.
+- Final screenshots/logs are in `/tmp/opencode/graphdesk-m3-final` in this workspace.
+  App/Xvfb/D-Bus processes and disposable graph/app/auth directories were cleaned up.
+  Nonfatal GPU/DRI3 and accessibility-bus warnings did not require a sandbox or device
+  permission override.
+
+**GO for the approved local, trusted, single-user Milestone 3 scope.**
+
+Real IME-service, Fedora/Wayland, hardware GPU, assistive technology and installer
+validation remain follow-ups. Search is acknowledged-state, bounded phrase search;
+undo/collapse remain memory-only. Renaming a page is not undoable through block history.
 
 Markdown import/export,
 plugins, routines, sync, CLI, AI, and calendar presentation remain future work.

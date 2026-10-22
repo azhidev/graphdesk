@@ -20,6 +20,8 @@ export function insertReference(text: string, caret: number, title: string): { c
   const match = completion(text, caret);
   if (!match) throw new Error('Reference completion is no longer active');
   const value = `[[${title}]]`;
-  const end = text.startsWith(']]', caret) ? caret + 2 : caret;
+  const suffix = text.slice(caret);
+  const close = suffix.indexOf(']]');
+  const end = close >= 0 && !/[\[\]\r\n]/u.test(suffix.slice(0, close)) ? caret + close + 2 : caret;
   return { content: text.slice(0, match.start) + value + text.slice(end), caret: match.start + value.length };
 }

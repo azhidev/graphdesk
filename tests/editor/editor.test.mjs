@@ -12,6 +12,7 @@ test('reference completion preserves Unicode source and uses bounded literal tit
   const caret = text.indexOf(']]');
   assert.deepEqual(completion(text, caret), { start: 3, query: 'سل' });
   assert.deepEqual(insertReference(text, caret, 'سلام'), { content: '😀 [[سلام]] tail', caret: 11 });
+  assert.deepEqual(insertReference('[[Old title]] tail', 5, 'New'), { content: '[[New]] tail', caret: 7 });
   assert.equal(completion('[[bad\ntext', 10), null);
   assert.equal(completion('[[Closed]]', 10), null);
   assert.deepEqual(suggestions([{id:'1',title:'سلام'}, {id:'2',title:'Other'}], 'سل').map(p => p.id), ['1']);
@@ -242,4 +243,8 @@ test('task status changes flush drafts and share history/acknowledgement queue',
   assert.equal(editor.blocks[0].task_status, 'doing');
   assert.deepEqual(calls.map(c => c[0]), ['page', 'apply', 'task']);
   await editor.action({kind:'undo'}); assert.equal(calls.at(-1)[0], 'history');
+  transport.apply = async () => { throw new Error('database is locked'); };
+  await assert.rejects(editor.action({kind:'task',id:'a',expected:'doing',status:'done'}), /locked/);
+  assert.equal(editor.blocks[0].task_status, 'doing');
+  assert.match(editor.error, /locked/);
 });

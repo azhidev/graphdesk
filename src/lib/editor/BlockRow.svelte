@@ -27,6 +27,17 @@
     if (input) editor.remember(row.block.id, { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection });
   }
   function report(error: unknown) { /* Controller errors remain visible with retained drafts. */ console.warn('Editor operation failed', error); }
+  async function setTask(event: Event) {
+    const select = event.currentTarget as HTMLSelectElement;
+    const status = (select.value || null) as TaskState | null;
+    try { await editor.action({ kind: 'task', id: row.block.id, expected: row.block.task_status, status }); }
+    catch (error) { report(error); }
+    finally {
+      // Native selects change before SQLite acknowledges; a failed write must not
+      // leave an unpersisted task value displayed as if it had been accepted.
+      select.value = editor.blocks.find(b => b.id === row.block.id)?.task_status ?? '';
+    }
+  }
   function keydown(event: KeyboardEvent) {
     if (!input) return;
     remember();
@@ -60,8 +71,7 @@
 
 <div class="block-row" style:margin-inline-start={`${Math.min(row.depth, 20) * 1.3}rem`} data-block-id={row.block.id}>
   <select aria-label="Task status" value={row.block.task_status ?? ''} disabled={busy}
-    onchange={event => void editor.action({ kind: 'task', id: row.block.id, expected: row.block.task_status,
-      status: (event.currentTarget.value || null) as TaskState | null }).catch(report)}>
+    onchange={setTask}>
     <option value="">No task</option><option value="todo">TODO</option>
     <option value="doing">DOING</option><option value="done">DONE</option>
     {#if row.block.task_status === 'cancelled'}<option value="cancelled">CANCELLED</option>{/if}

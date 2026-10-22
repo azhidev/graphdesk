@@ -224,3 +224,22 @@ The only runtime defect found was unidentified Shift+Tab keyboard events on Linu
 WebKit; the known physical Tab code is now recognized without reinterpreting unknown
 IME/text keys. Real IME service integration, hardware/Wayland and assistive technology
 are not validated by these checks. Existing storage limitations remain applicable.
+
+## Milestone 3 workflow boundary
+
+All new desktop commands use the same blocking worker, mutex, session token and
+explicit main-window ACL as the editor commands. Page rename and journal operations
+flush frontend drafts before dispatch, retain page UUIDs and preserve valid block
+history. Journal selection uses a local Gregorian civil day, never UTC conversion.
+Task mutations have expected-state guards and run through `EditAction` and its
+transaction/history path; failed writes never advance acknowledged frontend state.
+
+Search generations invalidate older successes and failures on query/graph changes.
+Block navigation flushes drafts, loads the owning page and reveals collapsed ancestors
+by UUID. Link/backlink reads similarly reject stale page/graph responses. Frontend
+suggestions are bounded presentation over the current page list, not a second resolver.
+No remote content, HTML rendering, network capability, plugin, or dependency was added.
+
+The executable WebView smoke fixture is `tests/webview/smoke.py`; its fixed geometry
+is deliberately separate from UI-independent tests. It runs production assets/IPC
+in an isolated authenticated Xvfb session, not a browser-only shell or mock runtime.
