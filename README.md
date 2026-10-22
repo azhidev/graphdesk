@@ -6,6 +6,14 @@ page/journal/search/reference/task workflows, a thin
 Tauri 2 adapter, and an independent Rust/SQLite core. No cloud services or runtime
 network access required.
 
+## Fedora daily-use evaluation
+
+See the [Fedora desktop evaluation guide](docs/fedora-evaluation.md) for native
+prerequisites, locked builds, reversible user-local installation/menu launch,
+data locations, backup/recovery and Wayland/keyboard/Persian/IME/accessibility
+checks. Fedora host validation is **pending**; Ubuntu/Xvfb results below do not
+certify it. Start with disposable graphs or backed-up copies.
+
 ## Layout
 
 - `src/`: graph/page shell and block editor; `src/lib/editor/` separates input/view
