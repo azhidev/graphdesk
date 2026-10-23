@@ -1,6 +1,7 @@
 /target/
 /node_modules/
 /dist/
+/test-artifacts/
 __pycache__/
 /src-tauri/gen/
 *.sqlite*

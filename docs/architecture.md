@@ -71,6 +71,19 @@ field, not a separate routine/task subsystem.
 
 ## Durability, dates, and portability
 
+Linux, Windows and macOS are targets; native compatibility evidence is tracked in
+[testing](testing.md), not implied by the use of Tauri. The desktop receives a
+user-entered path as a string and the core uses Rust `AsRef<Path>` and `OpenOptions`
+without Unix path concatenation or shell expansion. Bundled SQLite avoids reliance
+on system SQLite feature versions. OS WebView, input, file-locking and packaging
+behavior still requires native testing.
+
+There is currently no application-owned persistent settings store or default graph
+directory to migrate. Future settings/cache paths should use Tauri's platform path
+resolver in the adapter, keeping the core independent of desktop directories.
+See [data locations and recovery](data.md). No new storage abstraction, background
+process or runtime dependency is justified for this portability review.
+
 SQLite is authoritative; Markdown will be an interchange format, not a second database.
 Disk graphs use WAL and `synchronous=FULL`. Timestamps are UTC Unix seconds;
 journal days are ISO 8601 Gregorian `YYYY-MM-DD` civil dates, not UTC instants.
@@ -166,7 +179,7 @@ rollback, upgrade indexing, persistence, and Persian search. They do not prove t
 adapter compiles or that Tauri IPC works. Adapter tests use Tauri's mock runtime
 with the same state setup and command registration as production. They cover command
 argument decoding, responses, error handling, and graph switching, but not WebView
-transport, window rendering, or desktop lifecycle. Current results are in the README.
+transport, window rendering, or desktop lifecycle. Evidence is in [testing](testing.md).
 
 ## Native validation review
 
@@ -199,19 +212,18 @@ They are not guarantees for unsupported workloads.
 | Unencrypted files and trusted-database requirement | Non-blocking within the stated threat model; encryption and hostile-database hardening are not implemented. |
 | Limited Unicode title matching and FTS tokenization | Non-blocking with documented semantics; broader normalization requires an explicit future migration, not silent rewriting. |
 
-No known Milestone 1 blocker remains. Following administrator installation of Xvfb
-and xdotool, two authenticated temporary Xvfb/private D-Bus sessions ran the existing
+No known Milestone 1 blocker remains within the trusted single-user scope. Two
+authenticated temporary Xvfb/private D-Bus sessions ran the existing
 release executable with TCP display listening disabled and sandbox settings unchanged.
 Screenshots and xdotool verified graph/page/root-block workflows through the actual UI,
 including saved content after restart and a duplicate-create error preserving state.
 The runtime-created graph also passed SQLite integrity and foreign-key checks.
 The sessions closed normally; temporary processes and test artifacts were cleaned up.
 
-Milestone 1 is closed for this scope. Fedora desktop smoke testing remains a recommended,
-non-blocking platform check for compositor/GPU, Wayland, and accessibility behavior.
-It must use a separately authorized checkout or installed build; this VM session does
-not gain access to the Fedora host. Journal creation remains outside the UI; nested
-editing is now validated separately by the Milestone 2 desktop checks in the README.
+Milestone 1's historical scope is closed. Native desktop tests across target
+platforms remain necessary for compositor/GPU, input and accessibility behavior.
+Journals and nested editing are now available in the UI; see [workflows](workflows.md)
+and [testing](testing.md) for current scope and evidence.
 
 ## Milestone 2 validation disposition
 

@@ -12,7 +12,7 @@
     "tauri": "tauri",
     "test:core": "cargo test -p graph-core",
     "test:editor": "node --test tests/editor/*.test.mjs",
-    "test:schema": "python3 -m unittest discover -s tests -v"
+    "test:schema": "node tests/run-schema.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

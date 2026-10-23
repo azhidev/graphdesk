@@ -1,4 +1,4 @@
-"""Real release WebView smoke checks. Run with /usr/bin/python3 (PyGObject).
+"""Real Linux release WebView smoke checks. Requires Python with PyGObject.
 
 Uses an authenticated, TCP-disabled Xvfb and private D-Bus, never browser mocks
 or a sandbox override. All graph/app data is disposable. Fixed geometry is
@@ -12,6 +12,7 @@ from pathlib import Path
 import secrets
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -24,7 +25,7 @@ def main():
     root = Path(__file__).resolve().parents[2]
     args.artifacts.mkdir(parents=True, exist_ok=True)
     if not args.inside:
-        with tempfile.TemporaryDirectory(prefix='graphdesk-webview-', dir='/tmp/opencode') as temporary:
+        with tempfile.TemporaryDirectory(prefix='graphdesk-webview-') as temporary:
             work = Path(temporary)
             auth = work / 'Xauthority'
             auth.touch(mode=0o600)
@@ -45,7 +46,7 @@ def main():
                     env = {**os.environ, 'DISPLAY': f':{display}', 'XAUTHORITY': str(auth),
                            'XDG_CONFIG_HOME': str(work / 'config'), 'XDG_DATA_HOME': str(work / 'data'),
                            'XDG_CACHE_HOME': str(work / 'cache'), 'GRAPHDESK_SMOKE_WORK': str(work)}
-                    subprocess.run(['dbus-run-session', '--', '/usr/bin/python3', str(Path(__file__).resolve()),
+                    subprocess.run(['dbus-run-session', '--', sys.executable, str(Path(__file__).resolve()),
                                     '--inside', '--artifacts', str(args.artifacts.resolve())], cwd=root, env=env, check=True, timeout=300)
                 finally:
                     os.close(display_read)

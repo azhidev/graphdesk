@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn native_paths_with_spaces_and_unicode_preserve_graph_data() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let parent = dir.path().join("Graph notes سلام");
+    std::fs::create_dir(&parent)?;
+    let path = parent.join("Café notes.sqlite3");
+    let mut graph = Graph::create(&path)?;
+    let page = graph.create_page("Path test")?;
+    let block = graph.create_block(page.id, None, "سلام persisted")?;
+    assert!(Graph::create(&path).is_err());
+    drop(graph);
+    let graph = Graph::open(&path)?;
+    assert_eq!(graph.children(page.id, None)?, vec![block]);
+    assert_eq!(graph.search("persisted")?.len(), 1);
+    assert_eq!(graph.conn.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))?, "ok");
+    assert!(!graph.conn.prepare("PRAGMA foreign_key_check")?.exists([])?);
+    Ok(())
+}
+
+#[test]
 fn inline_bindings_reopen_and_legacy_mutations_are_transactional() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("links.sqlite3");

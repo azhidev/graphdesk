@@ -213,7 +213,7 @@ class SchemaTests(unittest.TestCase):
         self.assertIsNotNone(conn.execute("SELECT name FROM sqlite_master WHERE name='blocks_fts'").fetchone())
 
     def test_file_reopen_and_integrity(self):
-        with tempfile.TemporaryDirectory(dir="/tmp/opencode") as directory:
+        with tempfile.TemporaryDirectory(prefix="graphdesk-schema-") as directory:
             path = Path(directory) / "test.sqlite3"
             conn = connect(path)
             apply_sql(conn, "001_initial.sql")

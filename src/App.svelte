@@ -121,7 +121,7 @@
   <header><h1>Graphdesk</h1><p>Local knowledge, one independent database per graph.</p></header>
   <section aria-label="Graph selection">
     <label for="path">Database path (on this computer)</label>
-    <input id="path" bind:value={path} placeholder="/path/to/notes.sqlite3" disabled={locked} />
+    <input id="path" bind:value={path} placeholder="Full path to notes.sqlite3" disabled={locked} />
     <button disabled={locked || !path.trim()} onclick={() => open(false)}>Open graph</button>
     <button disabled={locked || !path.trim()} onclick={() => open(true)}>Create graph</button>
     <p class="hint">The parent directory must exist. Create never overwrites an existing file.</p>
