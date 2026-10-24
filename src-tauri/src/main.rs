@@ -56,7 +56,7 @@ fn app_builder<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![open_graph, create_page, create_journal, list_blocks, create_block,
             editor::editor_open, editor::editor_page, editor::editor_apply, editor::editor_history, editor::editor_create_page,
-            editor::editor_rename_page, editor::editor_journal, editor::editor_search, editor::editor_links])
+            editor::editor_rename_page, editor::editor_journal, editor::editor_search, editor::editor_links, editor::editor_prepare_delete])
 }
 
 fn main() {

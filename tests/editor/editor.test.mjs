@@ -248,3 +248,54 @@ test('task status changes flush drafts and share history/acknowledgement queue',
   assert.equal(editor.blocks[0].task_status, 'doing');
   assert.match(editor.error, /locked/);
 });
+
+test('deletion flushes newest text before preview, locks editing through confirmation and focuses acknowledgement', async () => {
+  const { editor, transport, calls } = fixture([block('a'), block('child', 'nested', 'a'), block('b', 'next', null, 1)]);
+  await editor.load('page'); editor.activate('a'); editor.setDraft('a', 'newest');
+  transport.prepareDelete = async (session, page, id) => {
+    calls.push(['preview', session, page, id]);
+    assert.equal(editor.dirty, false); assert.equal(editor.text(id), 'newest');
+    return { token: 'preview-token', count: 2, requires_confirmation: true };
+  };
+  const save = transport.apply;
+  transport.apply = async (...args) => {
+    if (args[2].kind !== 'delete') return save(...args);
+    calls.push(['delete', args[2]]);
+    return result([], 'b', ['a', 'child']);
+  };
+  let answer;
+  const deleting = editor.deleteSubtree('a', async preview => {
+    assert.equal(preview.count, 2);
+    return new Promise(resolve => { answer = resolve; });
+  });
+  await sleep(0);
+  editor.setDraft('a', 'must not edit while confirming');
+  await editor.action({ kind: 'indent', id: 'b' });
+  await assert.rejects(editor.load('other')); assert.throws(() => editor.reset('other'));
+  assert.equal(editor.text('a'), 'newest'); assert.equal(editor.working, true);
+  answer(true); await deleting;
+  assert.deepEqual(calls.map(c => c[0]), ['page', 'apply', 'preview', 'delete']);
+  assert.deepEqual(calls.at(-1)[1], { kind: 'delete', id: 'a', token: 'preview-token' });
+  assert.equal(editor.activeId, 'b'); assert.deepEqual(editor.blocks.map(b => b.id), ['b']);
+});
+
+test('deletion cancellation, empty leaf, failed flush and uncertain writes never discard or replay silently', async () => {
+  const { editor, transport } = fixture(); await editor.load('page'); editor.activate('a');
+  const focusSerial = editor.focus.serial;
+  editor.remember('a', { start: 1, end: 2, direction: 'backward' });
+  let confirmations = 0, writes = 0, previews = 0;
+  transport.prepareDelete = async () => { previews++; return {token:'token',count:1,requires_confirmation:true}; };
+  transport.apply = async () => { writes++; throw new Error('uncertain deletion'); };
+  await editor.deleteSubtree('a', async () => { confirmations++; return false; });
+  assert.equal(writes, 0); assert.equal(editor.blocks.length, 1); assert.equal(editor.working, false);
+  assert.ok(editor.focus.serial > focusSerial, 'cancel explicitly restores native text focus');
+  assert.equal(editor.focus.start, 1); assert.equal(editor.focus.end, 2); assert.equal(editor.focus.direction, 'backward');
+  transport.prepareDelete = async () => { previews++; return {token:'token',count:1,requires_confirmation:false}; };
+  await assert.rejects(editor.deleteSubtree('a', async () => { confirmations++; return true; }), /uncertain/);
+  assert.equal(confirmations, 1); assert.equal(writes, 1); assert.equal(editor.blocks.length, 1);
+  await editor.retry(); assert.equal(writes, 1);
+  editor.setDraft('a','retained');
+  await assert.rejects(editor.deleteSubtree('a', async () => true));
+  assert.equal(editor.text('a'), 'retained'); assert.equal(previews, 2);
+  await editor.discardAndReload();
+});

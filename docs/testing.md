@@ -45,6 +45,39 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### Milestone 2 deletion acceptance — 2026-10-23
+
+On the same Ubuntu toolchains, the approved native-textarea architecture was retained.
+Current automated results: 36 Rust core + 3 IPC/ACL tests passed in default and
+production-protocol modes, 22 Node controller/keyboard tests passed, 16 SQLite schema
+tests passed, and Svelte/TypeScript checks reported zero errors/warnings. The unbundled
+release executable and production frontend assets built successfully.
+
+New fixtures cover subtree preview counts, stale tokens/content/topology/metadata,
+autosave flush and confirmation locking/cancel, empty last/nested leaf removal,
+exact content/UUID/hierarchy/position/timestamp/task/property/reference restoration,
+undo/redo failure rollback, unexpected redo descendants, reopen integrity, and
+oversized deletion rejection. A 1,101-level Rust subtree passed delete/undo/redo;
+an independent 1,051-level SQL fixture passed leaf-first rollback/cleanup. These are
+correctness fixtures, not performance or unlimited-depth claims. Migration files
+were not changed. The WebView fixture now also exercises confirmation/cancel,
+subtree undo/redo, empty-leaf deletion and restart after deletion.
+
+The final production WebView run passed under authenticated, TCP-disabled Xvfb and
+private D-Bus with sandbox settings unchanged. Existing links/search/tasks/journal,
+retained-draft/error/close/navigation checks passed alongside three-level subtree
+confirmation/cancel, exact SQL row and inline-binding restoration on undo, redo,
+last-empty-leaf deletion without a dialog, and restart/integrity/foreign-key checks.
+Confirmation, restored-subtree and reopened-app screenshots were inspected. Local
+artifacts are in ignored `test-artifacts/webview-m2-acceptance/`.
+
+Earlier runs exposed lost native focus after cancellation and history redo removing
+the last block. Cancellation now explicitly restores selection/focus, and removal of
+the active block without a replacement focuses the toolbar; the final keyboard-driven
+run passed both paths. A fixture Tab count was also corrected for exhausted redo.
+A nonfatal accessibility-bus warning remains; this is not real screen-reader, IME,
+Wayland/hardware-GPU or native Windows/macOS validation.
+
 Historical milestone validation on 2026-10-22 recorded Ubuntu Linux builds and
 runtime checks: 30 core + 3 IPC tests in default/production-protocol modes, 20 Node
 tests, 15 schema tests, frontend checks/build and unbundled Tauri release build.

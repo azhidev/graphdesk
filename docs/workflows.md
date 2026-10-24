@@ -20,6 +20,22 @@ coalesces; oversized edits save but clear that page's history. Reopening clears
 history. External writes invalidate history; concurrent external editing is unsupported.
 Collapse is session-local. Platform/compositor shortcuts may conflict: use toolbar controls.
 
+The toolbar's **Delete…** action deletes the selected block and all descendants.
+Nonempty blocks, subtrees, and blocks carrying task/property/reference metadata
+require confirmation showing the total affected block count. Cancel (or Escape)
+does nothing. A simple empty leaf needs no confirmation, including the last block
+on a page; **Add first block** is then available. This explicit action is separate
+from the conservative Backspace behavior above. Delete/undo/redo preserve UUIDs,
+content, hierarchy, positions, timestamps, tasks, properties and reference bindings.
+Undo is available only in the current graph session and remains subject to normal
+history eviction. Deletions exceeding the retained undo budget are rejected without
+changing data; delete smaller subtrees instead. No trash/recycle bin is implemented.
+
+Deletion flushes drafts before preparing its count and locks editor navigation and
+editing while confirmation is open. The core revalidates the acknowledged page and
+its block metadata transactionally; a changed preview fails visibly and must be
+requested again. A failed/uncertain deletion is never automatically repeated by Retry.
+
 Typing autosaves after 300 ms idle, with a one-second maximum wait. Navigation
 and normal close flush drafts. Save failures retain drafts and prevent silent
 departure. Resolve the cause and use **Retry saves / clear error**. **Discard
@@ -42,3 +58,12 @@ aliases and escaping are unsupported. Duplicate normalized labels produce one ed
 Task changes (No task / TODO / DOING / DONE) flush text, save transactionally and
 participate in undo/redo. Existing core CANCELLED values remain readable; the UI
 does not create them. Properties remain core APIs, not a UI workflow.
+
+There is no fixed model nesting-depth cap. Visual indentation stops increasing after
+20 levels to preserve editing space, without flattening stored hierarchy. Traversal
+and editor subtree deletion are iterative; deletion uses leaf-first SQL statements
+inside one transaction. A 1,101-level delete/undo/redo fixture passes, not a guarantee
+for arbitrary size/depth or interactive performance. SQLite/resource limits still
+apply; failed writes roll back. Legacy core subtree/page cascade deletion can hit
+SQLite's trigger-depth limit (typically around 1,000 levels). Large outlines render
+without virtualization and structural actions read the page; use practical sizes.

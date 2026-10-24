@@ -273,10 +273,54 @@ def main():
         assert sql('SELECT id,title FROM pages ORDER BY id') == expected_pages
         assert sql('PRAGMA integrity_check') == [('ok',)]
         assert sql('PRAGMA foreign_key_check') == []
+        # Build a three-level subtree through native keyboard events. Search-hit
+        # navigation above leaves the source textarea focused by its UUID.
+        xdo('key', 'ctrl+End', 'Return'); pump()
+        paste('delete child [[Renamed]]')
+        xdo('key', 'Tab'); pump()
+        xdo('key', 'Return'); pump()
+        paste('delete grandchild')
+        xdo('key', 'Tab'); pump()
+        wait_sql('SELECT count(*) FROM blocks WHERE page_id=(SELECT page_id FROM blocks WHERE id=?)', [(3,)], (block_id,))
+        expected_subtree = sql('SELECT * FROM blocks ORDER BY id')
+        expected_edges = sql('SELECT * FROM inline_references ORDER BY source_block_id,title_key')
+        # Native text boundary navigation back to the root, then toolbar focus.
+        xdo('key', 'ctrl+Home', 'Up', 'ctrl+Home', 'Up', 'Escape'); pump()
+        # Undo enabled, redo disabled, then four move controls and Delete… .
+        xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+        shot('12-delete-confirmation-three-blocks')
+        xdo('key', 'Escape'); pump()
+        assert sql('SELECT * FROM blocks ORDER BY id') == expected_subtree, 'cancel must not delete'
+        xdo('key', 'Escape', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+        xdo('key', 'Tab', 'space'); pump()
+        wait_sql('SELECT count(*) FROM blocks', [(0,)])
+        # Empty page focuses the toolbar; Undo restores exact identity/metadata.
+        xdo('key', 'Tab', 'space'); pump()
+        assert sql('SELECT * FROM blocks ORDER BY id') == expected_subtree
+        assert sql('SELECT * FROM inline_references ORDER BY source_block_id,title_key') == expected_edges
+        shot('13-delete-undone')
+        xdo('key', 'ctrl+shift+z'); pump()
+        wait_sql('SELECT count(*) FROM blocks', [(0,)])
+        # Undo is enabled, redo exhausted; next enabled control is Add first block.
+        xdo('key', 'Tab', 'Tab', 'space'); pump()
+        wait_sql('SELECT count(*) FROM blocks', [(1,)])
+        xdo('key', 'Escape', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+        # The last empty leaf deletes immediately, without a confirmation dialog.
+        wait_sql('SELECT count(*) FROM blocks', [(0,)])
+        shot('14-empty-leaf-deleted')
+        close(window)
+        assert app.wait(timeout=10) == 0
+        window = start()
+        field(220, 214, str(graph)); click(130, 273)
+        assert sql('SELECT count(*) FROM blocks') == [(0,)]
+        assert sql('PRAGMA integrity_check') == [('ok',)]
+        assert sql('PRAGMA foreign_key_check') == []
+        shot('15-deletion-reopened')
         close(window)
         assert app.wait(timeout=10) == 0
         print('PASS: references/backlinks, suggestions, Unicode search, journals, task transitions,',
-              'retained drafts, blocked close, explicit retry, navigation/close flush, restart and integrity', flush=True)
+              'retained drafts, blocked close, explicit retry, navigation/close flush, confirmed subtree deletion,',
+              'cancel, deletion undo/redo, empty-leaf deletion, restart and integrity', flush=True)
     except BaseException:
         shot('failure')
         raise

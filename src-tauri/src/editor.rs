@@ -52,6 +52,12 @@ async fn blocking<T: Send + 'static>(operation: impl FnOnce() -> Result<T, Edito
         .map_err(|_| EditorError::new("internal", "editor worker failed"))?
 }
 
+#[tauri::command]
+pub(crate) async fn editor_prepare_delete(session: Uuid, page_id: Uuid, id: Uuid, state: State<'_, AppState>) -> Result<graph_core::DeletePreview, EditorError> {
+    let state = state.inner().clone();
+    blocking(move || with_session(&state, session, |g| g.editor.prepare_delete(page_id, id))).await
+}
+
 fn with_session<T>(state: &AppState, session: Uuid, operation: impl FnOnce(&mut ActiveGraph) -> Result<T, Error>) -> Result<T, EditorError> {
     let mut guard = state.0.lock().map_err(|_| EditorError::new("internal", "graph lock poisoned"))?;
     let graph = guard.as_mut().ok_or_else(|| EditorError::new("stale_session", "open a graph first"))?;

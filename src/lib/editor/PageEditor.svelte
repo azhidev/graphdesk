@@ -1,7 +1,8 @@
 <script lang="ts">
   import BlockRow from './BlockRow.svelte';
   import type { EditorController } from './controller';
-  import type { Page } from './types';
+  import type { Page, DeletePreview } from './types';
+  import { tick } from 'svelte';
   import type { InlineReference } from '../references';
   let { editor, revision, disabled = false, pages, references, onReference }: {
     editor: EditorController; revision: number; disabled?: boolean; pages: Page[];
@@ -12,7 +13,31 @@
     busy: editor.working || disabled, status: editor.status, error: editor.error,
     canUndo: editor.canUndo || editor.dirty, canRedo: editor.canRedo,
   }; });
+  let previousActive: string | null = null;
+  $effect(() => {
+    if (view.busy) return;
+    if (previousActive && !view.active) document.getElementById('editor-toolbar')?.focus();
+    previousActive = view.active;
+  });
   function run(operation: Promise<void>) { void operation.catch(() => {}); }
+  let confirmation: { count: number; resolve: (accepted: boolean) => void } | null = $state(null);
+  let dialog: HTMLDialogElement;
+  function confirmDeletion(preview: DeletePreview): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      confirmation = { count: preview.count, resolve };
+      void tick().then(() => dialog.showModal()).catch(error => { confirmation = null; reject(error); });
+    });
+  }
+  function answer(accepted: boolean) {
+    const pending = confirmation;
+    dialog.close(); confirmation = null; pending?.resolve(accepted);
+  }
+  async function remove() {
+    const id = view.active;
+    if (!id) return;
+    await editor.deleteSubtree(id, confirmDeletion);
+    if (!editor.activeId) document.getElementById('editor-toolbar')?.focus();
+  }
   function operate(kind: 'indent' | 'outdent' | 'reorder', direction = 0) {
     if (view.active) run(editor.action(kind === 'reorder' ? { kind, id: view.active, direction } : { kind, id: view.active }, editor.selection(view.active)));
   }
@@ -25,8 +50,15 @@
   <button disabled={view.busy || !view.active} onclick={() => operate('outdent')}>Outdent</button>
   <button disabled={view.busy || !view.active} onclick={() => operate('reorder', -1)}>Move up</button>
   <button disabled={view.busy || !view.active} onclick={() => operate('reorder', 1)}>Move down</button>
+  <button aria-label="Delete block and descendants" title="Delete block and descendants" disabled={view.busy || !view.active} onclick={() => run(remove())}>Delete…</button>
   <span role="status">{view.status}</span>
 </div>
+<dialog bind:this={dialog} aria-labelledby="delete-heading" oncancel={event => { event.preventDefault(); answer(false); }}>
+  <h3 id="delete-heading">Delete {confirmation?.count ?? 0} block(s)?</h3>
+  <p>The selected block and all descendants will be deleted. You can undo this during this graph session.</p>
+  <button onclick={() => answer(false)}>Cancel</button>
+  <button onclick={() => answer(true)}>Delete {confirmation?.count ?? 0} block(s)</button>
+</dialog>
 {#if view.error}
   <div role="alert">
     <p>{view.error}</p>

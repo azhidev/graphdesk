@@ -4,7 +4,7 @@ mod model;
 mod editor;
 mod references;
 pub use references::InlineReference;
-pub use editor::{Editor, EditAction, EditResult};
+pub use editor::{Editor, EditAction, EditResult, DeletePreview};
 pub use model::{Block, Page, SearchHit, TaskStatus};
 
 use std::{fs::OpenOptions, path::Path, time::Duration};

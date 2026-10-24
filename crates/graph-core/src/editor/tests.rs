@@ -1,5 +1,129 @@
 use super::*;
 
+fn delete(e: &mut Editor, page: Uuid, id: Uuid) -> Result<EditResult> {
+    let preview = e.prepare_delete(page, id)?;
+    e.apply(page, EditAction::Delete { id, token: preview.token }, None)
+}
+
+#[test]
+fn subtree_delete_restores_exact_metadata_order_and_reopens() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("delete.sqlite3");
+    let mut g = Graph::create(&path)?;
+    let p = g.create_page("Outline")?;
+    let target = g.create_page("Target")?;
+    let a = g.create_block(p.id, None, "before")?;
+    let b = g.create_block(p.id, None, "[[Target]]")?;
+    let child = g.create_block(p.id, Some(b.id), "child")?;
+    let grand = g.create_block(p.id, Some(child.id), "grandchild")?;
+    g.create_block(p.id, None, "after")?;
+    g.set_block_property(child.id, "data", &serde_json::json!({"x": [1, "سلام"]}))?;
+    g.set_task_status(grand.id, Some(crate::TaskStatus::Doing))?;
+    g.add_reference(grand.id, target.id)?;
+    let mut e = Editor::new(g);
+    let before = snapshot(&e.graph.conn, p.id)?;
+    let preview = e.prepare_delete(p.id, b.id)?;
+    assert_eq!(preview.count, 3); assert!(preview.requires_confirmation);
+    let result = e.apply(p.id, EditAction::Delete { id: b.id, token: preview.token }, None)?;
+    assert_eq!(result.removed.len(), 3); assert_eq!(result.focus_id, Some(a.id));
+    let after = snapshot(&e.graph.conn, p.id)?;
+    assert!(e.graph.incoming_links(target.id)?.is_empty());
+    e.history(p.id, false)?;
+    assert_eq!(snapshot(&e.graph.conn, p.id)?, before);
+    assert_eq!(e.graph.incoming_links(target.id)?.len(), 2);
+    e.history(p.id, true)?; assert_eq!(snapshot(&e.graph.conn, p.id)?, after);
+    drop(e);
+    let g = Graph::open(&path)?;
+    assert_eq!(snapshot(&g.conn, p.id)?, after);
+    assert!(!g.conn.prepare("PRAGMA foreign_key_check")?.exists([])?);
+    assert_eq!(g.conn.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))?, "ok");
+    Ok(())
+}
+
+#[test]
+fn deletion_previews_reject_stale_content_topology_metadata_and_tokens() -> Result<()> {
+    for change in ["content", "child", "property", "token", "page"] {
+        let (mut e, page, id) = setup("old")?;
+        let preview = e.prepare_delete(page, id)?;
+        match change {
+            "content" => { save(&mut e, page, id, "old", "new", None)?; }
+            "child" => { e.graph.create_block(page, Some(id), "new")?; }
+            "property" => e.graph.set_block_property(id, "x", &serde_json::json!(1))?,
+            _ => {}
+        }
+        let before = snapshot(&e.graph.conn, page)?;
+        let token = if change == "token" { Uuid::new_v4() } else { preview.token };
+        let request_page = if change == "page" { e.graph.create_page("Other")?.id } else { page };
+        assert!(e.apply(request_page, EditAction::Delete { id, token }, None).is_err());
+        assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    }
+    Ok(())
+}
+
+#[test]
+fn deletion_empty_last_nested_and_rollback() -> Result<()> {
+    let (mut e, page, root) = setup("")?;
+    assert!(!e.prepare_delete(page, root)?.requires_confirmation);
+    delete(&mut e, page, root)?; assert!(e.graph.page_blocks(page)?.is_empty());
+    e.history(page, false)?;
+    let child = e.graph.create_block(page, Some(root), "")?.id;
+    assert!(!e.prepare_delete(page, child)?.requires_confirmation);
+    delete(&mut e, page, child)?; e.history(page, false)?;
+    let before = snapshot(&e.graph.conn, page)?;
+    let state = e.history_state(page);
+    e.graph.conn.execute_batch("CREATE TRIGGER fail_delete BEFORE DELETE ON blocks WHEN OLD.parent_id IS NULL BEGIN SELECT RAISE(ABORT,'injected'); END;")?;
+    assert!(delete(&mut e, page, root).is_err());
+    assert_eq!(snapshot(&e.graph.conn, page)?, before); assert_eq!(e.history_state(page), state);
+    e.graph.conn.execute_batch("DROP TRIGGER fail_delete;")?;
+    delete(&mut e, page, root)?;
+    e.graph.conn.execute_batch("CREATE TRIGGER fail_restore BEFORE INSERT ON blocks WHEN NEW.parent_id IS NOT NULL BEGIN SELECT RAISE(ABORT,'injected'); END;")?;
+    assert!(e.history(page, false).is_err()); assert!(e.graph.page_blocks(page)?.is_empty());
+    assert!(e.history_state(page).0);
+    e.graph.conn.execute_batch("DROP TRIGGER fail_restore;")?;
+    e.history(page, false)?; assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    e.graph.conn.execute_batch("CREATE TRIGGER fail_redo BEFORE DELETE ON blocks WHEN OLD.parent_id IS NULL BEGIN SELECT RAISE(ABORT,'injected'); END;")?;
+    assert!(e.history(page, true).is_err()); assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    assert!(e.history_state(page).1);
+    Ok(())
+}
+
+#[test]
+fn nested_deletion_keeps_siblings_and_rejects_unexpected_redo_descendants() -> Result<()> {
+    let (mut e, page, root) = setup("root")?;
+    let first = e.graph.create_block(page, Some(root), "first")?.id;
+    let middle = e.graph.create_block(page, Some(root), "middle")?.id;
+    let last = e.graph.create_block(page, Some(root), "last")?.id;
+    e.graph.create_block(page, Some(middle), "child")?;
+    let before = snapshot(&e.graph.conn, page)?;
+    let result = delete(&mut e, page, middle)?;
+    assert_eq!(result.focus_id, Some(first));
+    assert_eq!(ids(&e, page, Some(root))?, vec![first, last]);
+    e.history(page, false)?; assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    e.graph.create_block(page, Some(middle), "unexpected")?;
+    let changed = snapshot(&e.graph.conn, page)?;
+    assert!(matches!(e.history(page, true), Err(Error::Conflict(_))));
+    assert_eq!(snapshot(&e.graph.conn, page)?, changed);
+    assert!(e.history_state(page).1);
+    Ok(())
+}
+
+#[test]
+fn deep_subtree_delete_undo_redo_and_oversized_deletion_fail_safely() -> Result<()> {
+    let (mut e, page, root) = setup("root")?;
+    let mut parent = root;
+    for _ in 0..1100 { parent = e.graph.create_block(page, Some(parent), "deep")?.id; }
+    let before = snapshot(&e.graph.conn, page)?;
+    assert_eq!(e.prepare_delete(page, root)?.count, 1101);
+    delete(&mut e, page, root)?;
+    e.history(page, false)?; assert_eq!(snapshot(&e.graph.conn, page)?, before);
+    e.history(page, true)?; assert!(e.graph.page_blocks(page)?.is_empty());
+    let id = e.graph.create_block(page, None, &"x".repeat(MAX_BYTES))?.id;
+    assert!(delete(&mut e, page, id).is_err());
+    assert_eq!(e.graph.page_blocks(page)?.len(), 1);
+    assert!(!e.graph.conn.prepare("PRAGMA foreign_key_check")?.exists([])?);
+    Ok(())
+}
+
 #[test]
 fn task_history_conflicts_rollback_split_and_reopen() -> Result<()> {
     use crate::TaskStatus;

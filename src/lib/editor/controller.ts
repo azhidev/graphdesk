@@ -1,4 +1,4 @@
-import type { Block, EditAction, EditResult, EditorTransport } from './types.ts';
+import type { Block, EditAction, EditResult, EditorTransport, DeletePreview } from './types.ts';
 import { visibleRows, type Row } from './outline.ts';
 
 interface Draft { content: string; generation: number; firstAt: number; group: string }
@@ -163,6 +163,21 @@ export class EditorController {
   }
 
   async retry(): Promise<void> { this.error = ''; this.changed(); await this.flush(); }
+
+  async deleteSubtree(id: string, confirm: (preview: DeletePreview) => Promise<boolean>): Promise<void> {
+    if (this.working) return;
+    this.working = true; this.changed();
+    try {
+      await this.flush();
+      const preview = await this.enqueue(() => this.transport.prepareDelete(...this.context(), id));
+      if (preview.requires_confirmation && !await confirm(preview)) { this.activate(id); return; }
+      const result = await this.enqueue(() => this.transport.apply(...this.context(), { kind: 'delete', id, token: preview.token }, null));
+      this.apply(result); this.groups.clear();
+      if (result.focus_id) this.reveal(result.focus_id);
+      else { this.activeId = null; this.focus = null; }
+    } catch (error) { this.error = errorMessage(error); throw error; }
+    finally { this.working = false; this.changed(); }
+  }
 
   async discardAndReload(): Promise<void> {
     await this.tail;

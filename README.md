@@ -15,6 +15,7 @@ are published. Use disposable graphs or backed-up copies for evaluation.
 
 - Nested blocks with stable UUIDs, split, indent/outdent and sibling reordering.
 - Debounced autosave, visible save/error state, and bounded session undo/redo.
+- Confirmed subtree deletion with affected-block counts and session undo/redo.
 - Pages, renaming, local-date journals, `[[page links]]` and backlinks.
 - Unicode-aware phrase search and TODO / DOING / DONE tasks.
 - Transactional migrations, SQLite constraints and atomic structural edits.
@@ -101,6 +102,11 @@ Undo/collapse state is memory-only; page renaming is not block-undoable. Search
 uses bounded acknowledged-state phrase matches. Rich text, Markdown import/export,
 sync, plugins, encryption, automatic backups and crash-draft recovery are not
 implemented.
+
+Nesting has no fixed model depth cap, not an unlimited-depth guarantee. Visual
+indentation is capped; SQLite/resource limits and large-outline costs still apply.
+Oversized deletions are rejected if they cannot retain undo. See
+[workflows and nesting limits](docs/workflows.md).
 
 ## Contributing and distribution
 

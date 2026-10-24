@@ -47,7 +47,7 @@ negative positions, changes the parent, and writes compact nonnegative positions
 All changes commit together or roll back. Reordering is O(number of affected siblings),
 an intentional simple baseline. No fractional ranks, CRDTs, or background compaction.
 Cross-page subtree transfer is explicitly unsupported, not silently partially applied.
-Subtree/page deletion uses FK cascades: SQLite's trigger-depth limit bounds extremely
+Legacy `Graph` subtree/page deletion uses FK cascades: SQLite's trigger-depth limit bounds extremely
 deep deletes (typically ~1000 levels); a failure rolls back the statement, not partial data.
 
 References record one edge per source block/target page, not text spans or occurrences.
@@ -144,9 +144,26 @@ Core `Editor` owns `Graph` and page-scoped undo/redo stacks. Each action runs in
 immediate transaction; compound split and ordering changes cannot partially commit.
 Existing `move_block` internals are shared without nested transactions. Split interprets
 UTF-16 selections, rejects surrogate-interior/out-of-range offsets, and leaves children,
-properties, task state and reference edges on the original UUID. Safe removal is narrower
-than public subtree deletion: only empty, metadata-free root leaves with another block
-remaining can be removed. No automatic nonempty-block merge exists.
+properties, task state and reference edges on the original UUID. Backspace removal
+remains conservative: only empty, metadata-free root leaves with another block remaining.
+The explicit Delete action additionally supports complete subtrees and the last block.
+No automatic nonempty-block merge exists.
+
+Deletion preparation reads an acknowledged page snapshot (including metadata) and
+returns a single-use opaque token, count and confirmation requirement. Only one
+pending preview is retained per graph. The controller flushes drafts and holds its
+normal operation lock through a labelled HTML modal dialog. Empty metadata-free leaves
+skip confirmation. Commit compares the prepared page snapshot under the immediate
+transaction, rejecting stale content, structure, ordering or metadata. Tokens are
+page/block/session scoped; no migration or new persistent document state is needed.
+The whole page comparison deliberately rejects even unrelated same-page changes.
+References owned by deleted blocks and properties cascade normally; other pages and
+their incoming links are not deleted. History retains exact deleted records, including
+explicit edges and inline UUID bindings. Undo restores parents before children; redo
+and deletion remove leaves before parents and reject unexpected descendants. This
+avoids recursive block cascade depth during editor deletion. Oversized deletions roll
+back before commit rather than exceeding the existing undo budget. History is still
+bounded and session-only, not durable trash or crash recovery.
 
 History retains only differing rows and metadata/timestamp guards, not persistent page
 snapshots. Text saves read only their touched row; structural actions/history replay may
@@ -236,6 +253,15 @@ The only runtime defect found was unidentified Shift+Tab keyboard events on Linu
 WebKit; the known physical Tab code is now recognized without reinterpreting unknown
 IME/text keys. Real IME service integration, hardware/Wayland and assistive technology
 are not validated by these checks. Existing storage limitations remain applicable.
+
+The 2026-10-23 acceptance extension adds explicit confirmed subtree deletion, with
+no confirmation for simple empty leaves. Core/controller/IPC/schema tests and the
+refreshed production WebView run passed, including cancellation focus, whole-subtree
+undo/redo, empty-page focus, restart and integrity checks. Editor leaf-first deletion
+avoids the legacy recursive block-cascade limit; undo-budget/resource limits still
+apply and oversized deletions fail atomically. Milestone 2 is ready to close within
+the documented trusted local single-user scope, not as a cross-platform release or
+an unlimited-depth/performance/accessibility guarantee. See [testing](testing.md).
 
 ## Milestone 3 workflow boundary
 

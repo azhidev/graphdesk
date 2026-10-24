@@ -14,6 +14,7 @@ export const api = {
 };
 
 export const editorApi: EditorTransport = {
+  prepareDelete: (session, pageId, id) => invoke('editor_prepare_delete', { session, pageId, id }),
   page: (session, pageId) => invoke('editor_page', { session, pageId }),
   apply: (session, pageId, action, group) => invoke('editor_apply', { session, pageId, action, group }),
   history: (session, pageId, redo) => invoke('editor_history', { session, pageId, redo }),

@@ -23,7 +23,13 @@ pub enum EditAction {
     Outdent { id: Uuid },
     Reorder { id: Uuid, direction: i32 },
     RemoveEmpty { id: Uuid },
+    Delete { id: Uuid, token: Uuid },
 }
+
+#[derive(Debug, Serialize)]
+pub struct DeletePreview { pub token: Uuid, pub count: usize, pub requires_confirmation: bool }
+
+struct DeletePlan { token: Uuid, page: Uuid, id: Uuid, before: Snapshot }
 
 #[derive(Debug, Serialize)]
 pub struct EditResult {
@@ -40,15 +46,31 @@ pub struct EditResult {
 pub struct Editor {
     graph: Graph,
     history: History,
+    deletion: Option<DeletePlan>,
 }
 
 impl Editor {
     pub fn new(graph: Graph) -> Self {
         let history = History { version: data_version(&graph.conn).ok(), ..History::default() };
-        Self { graph, history }
+        Self { graph, history, deletion: None }
     }
 
     pub fn graph(&self) -> &Graph { &self.graph }
+
+    pub fn prepare_delete(&mut self, page: Uuid, id: Uuid) -> Result<DeletePreview> {
+        self.deletion = None;
+        let tx = self.graph.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let before = snapshot(&tx, page)?;
+        let root = before.get(&id).ok_or(Error::NotFound)?;
+        let count = subtree_ids(&before, id)?.len();
+        let requires_confirmation = count > 1 || !root.block.content.is_empty()
+            || root.block.task_status.is_some() || !root.properties.is_empty()
+            || !root.references.is_empty() || !root.inline.is_empty();
+        tx.commit()?;
+        let token = Uuid::new_v4();
+        self.deletion = Some(DeletePlan { token, page, id, before });
+        Ok(DeletePreview { token, count, requires_confirmation })
+    }
 
     /// Creating an unrelated empty page cannot invalidate block history.
     pub fn create_page(&mut self, title: &str) -> Result<crate::Page> {
@@ -105,6 +127,12 @@ impl Editor {
         // Structural actions may need the complete page to compute ordering deltas.
         let scope = match &action { EditAction::Save { id, .. } | EditAction::Task { id, .. } => Some(*id), _ => None };
         let before = snapshot_scope(&tx, page_id, scope)?;
+        if let EditAction::Delete { id, token } = &action {
+            let plan = self.deletion.take().ok_or_else(|| Error::Conflict("prepare deletion again".into()))?;
+            if plan.token != *token || plan.page != page_id || plan.id != *id || plan.before != before {
+                return Err(Error::Conflict("outline changed since deletion preview; review it again".into()));
+            }
+        }
         let save_group = match &action {
             EditAction::Save { id, .. } => group.map(|g| (page_id, *id, g)),
             _ => None,
@@ -124,10 +152,16 @@ impl Editor {
         let after = snapshot_scope(&tx, page_id, scope)?;
         let delta = differences(&before, &after);
         let mut result = result_diff(&before, &after, focus_after);
+        let entry = Entry { delta, focus_before, focus_after, serial: 0 };
+        // A destructive action must never commit without a retainable undo entry.
+        if before.len() > after.len() && entry.bytes()
+            + self.history.container_bytes() + 8192 > MAX_BYTES {
+            return Err(Error::Invalid("deletion exceeds the session undo budget; delete a smaller subtree".into()));
+        }
         tx.commit()?;
         // History changes only after commit, including coalescing and redo invalidation.
-        if !delta.is_empty() {
-            self.history.push(page_id, Entry { delta, focus_before, focus_after, serial: 0 }, save_group);
+        if !entry.delta.is_empty() {
+            self.history.push(page_id, entry, save_group);
         } else if self.history.last_save != save_group {
             self.history.last_save = None;
         }
@@ -221,6 +255,41 @@ fn block(records: &Snapshot, id: Uuid) -> Result<&Block> {
     records.get(&id).map(|r| &r.block).ok_or(Error::NotFound)
 }
 
+// Iterative parent-first traversal; no Rust call-stack depth limit.
+fn subtree_ids(records: &Snapshot, root: Uuid) -> Result<Vec<Uuid>> {
+    block(records, root)?;
+    let mut children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    for record in records.values() {
+        if let Some(parent) = record.block.parent_id { children.entry(parent).or_default().push(record.block.id); }
+    }
+    let mut result = vec![];
+    let mut seen = std::collections::HashSet::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id) { return Err(Error::Invalid("cyclic outline".into())); }
+        result.push(id);
+        stack.extend(children.get(&id).into_iter().flatten().copied());
+    }
+    Ok(result)
+}
+
+fn delete_rows(conn: &Connection, records: &Snapshot, ids: &[Uuid]) -> Result<()> {
+    let selected: std::collections::HashSet<_> = ids.iter().copied().collect();
+    if records.values().any(|r| r.block.parent_id.is_some_and(|p| selected.contains(&p)) && !selected.contains(&r.block.id)) {
+        return Err(Error::Conflict("history deletion would remove unexpected children".into()));
+    }
+    // Leaf-first avoids recursive FK cascades even for very deep outlines.
+    let mut ordered = vec![];
+    for id in ids {
+        if records.get(id).is_some_and(|r| r.block.parent_id.is_none_or(|p| !selected.contains(&p))) {
+            ordered.extend(subtree_ids(records, *id)?);
+        }
+    }
+    if ordered.len() != ids.len() { return Err(Error::Invalid("invalid deletion topology".into())); }
+    for id in ordered.into_iter().rev() { conn.execute("DELETE FROM blocks WHERE id=?1", [id.to_string()])?; }
+    Ok(())
+}
+
 fn siblings(conn: &Connection, page: Uuid, parent: Option<Uuid>) -> Result<Vec<String>> {
     sibling_ids(conn, &page.to_string(), parent.map(|p| p.to_string()).as_deref())
 }
@@ -243,12 +312,21 @@ fn apply_action(conn: &Connection, page: Uuid, records: &Snapshot, action: EditA
     let id = match &action {
         EditAction::Append => unreachable!(),
         EditAction::Save { id, .. } | EditAction::Task { id, .. } | EditAction::Split { id, .. } | EditAction::Indent { id }
-        | EditAction::Outdent { id } | EditAction::Reorder { id, .. } | EditAction::RemoveEmpty { id } => *id,
+        | EditAction::Outdent { id } | EditAction::Reorder { id, .. } | EditAction::RemoveEmpty { id } | EditAction::Delete { id, .. } => *id,
     };
     let original = block(records, id)?;
     let mut focus = id;
     match action {
         EditAction::Append => unreachable!(),
+        EditAction::Delete { .. } => {
+            let ids = subtree_ids(records, id)?;
+            let roots = siblings(conn, page, original.parent_id)?;
+            let index = roots.iter().position(|s| s == &id.to_string()).expect("original sibling");
+            let next = index.checked_sub(1).and_then(|i| roots.get(i)).or_else(|| roots.get(index + 1));
+            let focus = next.map(|s| parse_id(s)).transpose()?.or(original.parent_id);
+            delete_rows(conn, records, &ids)?;
+            return Ok((Some(id), focus));
+        }
         EditAction::Task { expected, status, .. } => {
             if original.task_status.as_deref() != expected.map(crate::TaskStatus::as_str) {
                 return Err(Error::Conflict("task status changed".into()));
@@ -375,20 +453,19 @@ fn replay(conn: &Connection, current: &Snapshot, entry: &Entry, redo: bool) -> R
             conn.execute("UPDATE blocks SET position=?2 WHERE id=?1", params![delta.id.to_string(), i64::MIN + i as i64])?;
         }
     }
-    for delta in &entry.delta {
-        let target = if redo { &delta.after } else { &delta.before };
-        if target.is_none() {
-            // Never allow a history deletion to cascade through unexpected children.
-            let children: i64 = conn.query_row("SELECT count(*) FROM blocks WHERE parent_id=?1", [delta.id.to_string()], |r| r.get(0))?;
-            if children != 0 { return Err(Error::Conflict("history deletion would remove children".into())); }
-            conn.execute("DELETE FROM blocks WHERE id=?1", [delta.id.to_string()])?;
-        }
-    }
-    // New rows are always leaves whose parent already exists (append/split/remove).
-    for delta in &entry.delta {
+    let deleting: Vec<_> = entry.delta.iter().filter(|d| (if redo { &d.after } else { &d.before }).is_none() && current.contains_key(&d.id)).map(|d| d.id).collect();
+    delete_rows(conn, current, &deleting)?;
+    // Restore missing parents before their children, independent of UUID ordering.
+    let mut pending: Vec<_> = entry.delta.iter().collect();
+    let mut existing: std::collections::HashSet<_> = current.keys().filter(|id| !deleting.contains(id)).copied().collect();
+    while !pending.is_empty() {
+      let previous = pending.len();
+      let mut remaining = vec![];
+      for delta in pending {
         let target = if redo { &delta.after } else { &delta.before };
         if let Some(record) = target {
             let b = &record.block;
+            if b.parent_id.is_some_and(|p| !existing.contains(&p)) { remaining.push(delta); continue; }
             if current.contains_key(&delta.id) {
                 conn.execute("UPDATE blocks SET parent_id=?2,position=?3,content=?4,task_status=?5,created_at=?6,updated_at=?7 WHERE id=?1",
                     params![b.id.to_string(), b.parent_id.map(|p| p.to_string()), b.position, b.content, b.task_status, record.created_at, record.updated_at])?;
@@ -403,7 +480,11 @@ fn replay(conn: &Connection, current: &Snapshot, entry: &Entry, redo: bool) -> R
                 }
             }
             crate::references::sync(conn, b.id, &b.content, Some(&record.inline))?;
+            existing.insert(b.id);
         }
+      }
+      if remaining.len() == previous { return Err(Error::Conflict("history parents are missing or cyclic".into())); }
+      pending = remaining;
     }
     Ok(())
 }
@@ -420,6 +501,10 @@ struct History {
 }
 
 impl History {
+    fn container_bytes(&self) -> usize {
+        self.pages.capacity() * (std::mem::size_of::<(Uuid, PageHistory)>() + 32)
+            + self.pages.values().map(|h| (h.undo.capacity() + h.redo.capacity()) * std::mem::size_of::<Entry>()).sum::<usize>()
+    }
     fn clear(&mut self) { self.pages.clear(); self.last_save = None; }
 
     fn check_version(&mut self, conn: &Connection) -> Result<()> {
@@ -463,8 +548,7 @@ impl History {
             let entries: Vec<_> = self.pages.iter().flat_map(|(page, h)|
                 h.undo.iter().map(move |e| (*page, false, e.serial, e.bytes()))
                     .chain(h.redo.iter().map(move |e| (*page, true, e.serial, e.bytes())))).collect();
-            let containers = self.pages.capacity() * (std::mem::size_of::<(Uuid, PageHistory)>() + 32)
-                + self.pages.values().map(|h| (h.undo.capacity() + h.redo.capacity()) * std::mem::size_of::<Entry>()).sum::<usize>();
+            let containers = self.container_bytes();
             if entries.is_empty() || (entries.len() <= MAX_ENTRIES && containers + entries.iter().map(|e| e.3).sum::<usize>() <= MAX_BYTES) { break; }
             let (page, redo, _, _) = *entries.iter().min_by_key(|e| e.2).expect("over limit");
             let h = self.pages.get_mut(&page).expect("history page");

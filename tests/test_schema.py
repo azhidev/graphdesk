@@ -182,6 +182,31 @@ class SchemaTests(unittest.TestCase):
         self.db.execute("DELETE FROM pages WHERE id=?", (self.page,))
         self.assertEqual(self.db.execute("SELECT count(*) FROM page_properties").fetchone()[0], 0)
 
+    def test_deep_leaf_first_delete_rollback_and_metadata(self):
+        ids = [self.block(content="root")]
+        for _ in range(1050):
+            ids.append(self.block(parent=ids[-1], content="deep"))
+        self.db.execute("INSERT INTO block_properties VALUES(?,?,?)", (ids[-1], "x", '"kept"'))
+        self.db.execute("INSERT INTO page_references VALUES(?,?)", (ids[-1], self.page))
+        self.db.execute("INSERT INTO inline_references VALUES(?,?,?,?)", (ids[-1], "notes", "Notes", self.page))
+        self.db.execute("CREATE TRIGGER fail_delete BEFORE DELETE ON blocks WHEN OLD.parent_id IS NULL BEGIN SELECT RAISE(ABORT,'injected'); END")
+        self.db.execute("BEGIN IMMEDIATE")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "injected"):
+            for id_ in reversed(ids):
+                self.db.execute("DELETE FROM blocks WHERE id=?", (id_,))
+        self.db.execute("ROLLBACK")
+        self.assertEqual(self.db.execute("SELECT count(*) FROM blocks").fetchone()[0], len(ids))
+        self.assertEqual(self.db.execute("SELECT value_json FROM block_properties").fetchone()[0], '"kept"')
+        self.db.execute("DROP TRIGGER fail_delete")
+        self.db.execute("BEGIN IMMEDIATE")
+        for id_ in reversed(ids):
+            self.db.execute("DELETE FROM blocks WHERE id=?", (id_,))
+        self.db.execute("COMMIT")
+        for table in ("blocks", "block_properties", "page_references", "inline_references"):
+            self.assertEqual(self.db.execute(f"SELECT count(*) FROM {table}").fetchone()[0], 0)
+        self.assertEqual(self.db.execute("PRAGMA foreign_key_check").fetchall(), [])
+        self.assertEqual(self.db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
     def test_journal_canonical_dates(self):
         for date in ("2023-02-29", "2024-13-01", "2024-2-01", "not a date", "2024-04-31"):
             with self.assertRaises(sqlite3.IntegrityError, msg=date):
