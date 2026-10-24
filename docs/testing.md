@@ -114,6 +114,10 @@ or an accessibility suite. Do not disable sandboxing.
 
 ## Native platform checklist
 
+See [the reliability review and proposed validation scope](reliability.md) for
+newly reproduced controller risks and the next targeted checks. That proposal is
+not implemented recovery behavior or additional native-platform validation.
+
 Record pass/fail/not tested, commit, OS/architecture and toolchain/WebView versions.
 Use disposable graphs for failure injection.
 
