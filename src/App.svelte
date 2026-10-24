@@ -2,9 +2,11 @@
   import { onMount } from 'svelte';
   import { isTauri } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { api, editorApi, type Page } from './lib/api';
+  import { api, editorApi, recoveryApi, type Page } from './lib/api';
   import { EditorController, errorMessage } from './lib/editor/controller';
   import PageEditor from './lib/editor/PageEditor.svelte';
+  import RecoveryPanel from './lib/editor/RecoveryPanel.svelte';
+  import type { RecoveryDraft, Block } from './lib/editor/types';
   import { localDate } from './lib/dates';
   import { SearchController, type SearchHit } from './lib/search';
   import type { InlineReference, Links } from './lib/references';
@@ -36,7 +38,27 @@
     return () => { cancelled = true; };
   });
   let revision = $state(0);
-  const editor = new EditorController(editorApi, () => { revision += 1; });
+  const editor = new EditorController(editorApi, () => { revision += 1; }, undefined, recoveryApi);
+  let recoveryRecords = $state<RecoveryDraft[]>([]);
+  let recoveryError = $state('');
+  let inventory = $state(0);
+  async function refreshRecovery() {
+    if (!session) return;
+    try { recoveryRecords = await recoveryApi.list(session); recoveryError = ''; }
+    catch (e) { recoveryError = errorMessage(e); }
+  }
+  async function recover(draft: RecoveryDraft, block: Block, textRevision: number) {
+    if (locked) throw new Error('Wait for the current operation');
+    busy = true;
+    try {
+      await editor.flush();
+      // Equality is already reconciled, requiring no duplicate graph write.
+      await editorApi.apply(session!, draft.page_id, { kind: 'save_text', id: draft.block_id,
+        expected: block.content, revision: textRevision, content: draft.content }, null);
+      await recoveryApi.clear(session!, draft.block_id, draft.content);
+      if (selected?.id === draft.page_id) await editor.load(draft.page_id);
+    } finally { busy = false; }
+  }
   const locked = $derived.by(() => { revision; return busy || editor.working; });
 
   async function run(action: () => Promise<void>) {
@@ -51,6 +73,7 @@
       const result = await api.open(path, create);
       search.reset(); query = '';
       editor.reset(result.token); session = result.token; pages = result.pages; selected = null;
+      recoveryRecords = []; await refreshRecovery();
     });
   }
   async function select(page: Page) {
@@ -103,6 +126,7 @@
   }
   onMount(() => {
     if (!isTauri()) return;
+    void recoveryApi.inventory().then(count => inventory = count).catch(() => { recoveryError = 'Recovery inventory unavailable. Open the original graph and retry recovery inspection.'; });
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void getCurrentWindow().onCloseRequested(async event => {
@@ -127,6 +151,11 @@
     <p class="hint">The parent directory must exist. Create never overwrites an existing file.</p>
   </section>
   {#if error}<p role="alert">{error}</p>{/if}
+  {#if recoveryError}<p role="alert">{recoveryError}</p>{/if}
+  {#if !session && inventory}<p role="status">Recovery drafts found for {inventory} graph(s). Open the original graph to compare and recover text.</p>{/if}
+  {#if session}
+    {#key session}<RecoveryPanel {session} records={recoveryRecords} disabled={locked} onChanged={refreshRecovery} onRecover={recover} />{/key}
+  {/if}
   {#if session}
     <div class="workspace">
       <aside>
@@ -171,6 +200,7 @@
     </div>
   {/if}
   <footer>Plain-text block editor · Undo and collapse state are session-local. Acknowledged saves survive restart.</footer>
+  {#if session}<button id="review-recovery" disabled={locked} onclick={refreshRecovery}>Review local recovery drafts</button>{/if}
 </main>
 
 <style>

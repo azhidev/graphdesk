@@ -2,7 +2,7 @@
 //! row deltas, including timestamp/metadata guards, never a second persistent model.
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use rusqlite::{params, Connection, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -17,6 +17,7 @@ const MAX_BYTES: usize = 8 * 1024 * 1024;
 pub enum EditAction {
     Append,
     Save { id: Uuid, expected: String, content: String },
+    SaveText { id: Uuid, expected: String, revision: i64, content: String },
     Task { id: Uuid, expected: Option<crate::TaskStatus>, status: Option<crate::TaskStatus> },
     Split { id: Uuid, start: usize, end: usize },
     Indent { id: Uuid },
@@ -38,6 +39,7 @@ pub struct EditResult {
     pub focus_id: Option<Uuid>,
     pub can_undo: bool,
     pub can_redo: bool,
+    pub revisions: BTreeMap<Uuid, i64>,
 }
 
 /// History is in-memory, page-scoped and bounded across the entire editor by
@@ -123,6 +125,12 @@ impl Editor {
     pub fn apply(&mut self, page_id: Uuid, action: EditAction, group: Option<Uuid>) -> Result<EditResult> {
         let tx = self.graph.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         self.history.check_version(&tx)?;
+        let action = if let EditAction::SaveText { id, expected, revision, content } = action {
+            let current: Option<i64> = tx.query_row("SELECT r.revision FROM block_revisions r JOIN blocks b ON b.id=r.block_id WHERE b.id=?1 AND b.page_id=?2",
+                params![id.to_string(), page_id.to_string()], |r| r.get(0)).optional()?;
+            if current != Some(revision) { return Err(Error::Conflict("text revision changed; compare persisted text before recovering".into())); }
+            EditAction::Save { id, expected, content }
+        } else { action };
         // Debounced text saves read/retain only the touched row and its metadata.
         // Structural actions may need the complete page to compute ordering deltas.
         let scope = match &action { EditAction::Save { id, .. } | EditAction::Task { id, .. } => Some(*id), _ => None };
@@ -152,6 +160,11 @@ impl Editor {
         let after = snapshot_scope(&tx, page_id, scope)?;
         let delta = differences(&before, &after);
         let mut result = result_diff(&before, &after, focus_after);
+        for record in after.values() {
+            if scope.is_some() || before.get(&record.block.id) != Some(record) {
+                result.revisions.insert(record.block.id, tx.query_row("SELECT revision FROM block_revisions WHERE block_id=?1", [record.block.id.to_string()], |r| r.get(0))?);
+            }
+        }
         let entry = Entry { delta, focus_before, focus_after, serial: 0 };
         // A destructive action must never commit without a retainable undo entry.
         if before.len() > after.len() && entry.bytes()
@@ -179,12 +192,13 @@ impl Editor {
         let Some(entry) = entry else {
             tx.commit()?;
             let (can_undo, can_redo) = self.history.state(page_id);
-            return Ok(EditResult { changed: vec![], removed: vec![], focus_id: None, can_undo, can_redo });
+            return Ok(EditResult { changed: vec![], removed: vec![], focus_id: None, can_undo, can_redo, revisions: BTreeMap::new() });
         };
         replay(&tx, &before, entry, redo)?;
         let after = snapshot(&tx, page_id)?;
         let focus = if redo { entry.focus_after } else { entry.focus_before };
         let mut result = result_diff(&before, &after, focus);
+        result.revisions = crate::text_revisions(&tx, page_id)?;
         tx.commit()?;
         let history = self.history.pages.get_mut(&page_id).expect("entry has page history");
         if redo {
@@ -310,14 +324,14 @@ fn apply_action(conn: &Connection, page: Uuid, records: &Snapshot, action: EditA
         return Ok((previous, Some(insert(conn, page, None, "")?)));
     }
     let id = match &action {
-        EditAction::Append => unreachable!(),
+        EditAction::Append | EditAction::SaveText { .. } => unreachable!(),
         EditAction::Save { id, .. } | EditAction::Task { id, .. } | EditAction::Split { id, .. } | EditAction::Indent { id }
         | EditAction::Outdent { id } | EditAction::Reorder { id, .. } | EditAction::RemoveEmpty { id } | EditAction::Delete { id, .. } => *id,
     };
     let original = block(records, id)?;
     let mut focus = id;
     match action {
-        EditAction::Append => unreachable!(),
+        EditAction::Append | EditAction::SaveText { .. } => unreachable!(),
         EditAction::Delete { .. } => {
             let ids = subtree_ids(records, id)?;
             let roots = siblings(conn, page, original.parent_id)?;
@@ -429,7 +443,7 @@ fn result_diff(before: &Snapshot, after: &Snapshot, focus_id: Option<Uuid>) -> E
         .map(|(_, r)| r.block.clone()).collect();
     changed.sort_by_key(|b| (b.parent_id, b.position, b.id));
     let removed = before.keys().filter(|id| !after.contains_key(id)).copied().collect();
-    EditResult { changed, removed, focus_id, can_undo: false, can_redo: false }
+    EditResult { changed, removed, focus_id, can_undo: false, can_redo: false, revisions: BTreeMap::new() }
 }
 
 fn replay(conn: &Connection, current: &Snapshot, entry: &Entry, redo: bool) -> Result<()> {

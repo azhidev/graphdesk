@@ -140,3 +140,36 @@ fn editor_session_transactions_and_structured_errors() {
     assert_eq!(invoke(&window,"editor_history",json!({"session":session,"pageId":page,"redo":false})).unwrap_err()["code"],"stale_session");
     assert!(invoke(&window,"editor_apply",json!({"session":"invalid","pageId":page,"action":{"kind":"append"}})).is_err());
 }
+
+#[test]
+fn private_recovery_ipc_reopen_conflicts_cleanup_and_stale_sessions() {
+    use tauri::Manager;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("recovery-graph.sqlite3");
+    let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+    app.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(directory.path().join("private"));
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+    let session = invoke(&window,"editor_open",json!({"path":path,"create":true})).unwrap();
+    let token = &session["token"];
+    let page = invoke(&window,"editor_create_page",json!({"session":token,"title":"Recovery"})).unwrap()["id"].clone();
+    let block = invoke(&window,"editor_apply",json!({"session":token,"pageId":page,"action":{"kind":"append"}})).unwrap()["focus_id"].clone();
+    let put = |content: &str| invoke(&window,"recovery_put",json!({"session":token,"pageId":page,"blockId":block,"base":"","revision":0,"content":content}));
+    let original = put("بازیابی 😀").unwrap();
+    assert_eq!(invoke(&window,"recovery_inventory",json!({})).unwrap(),1);
+    let fresh = put("newer").unwrap();
+    assert!(invoke(&window,"recovery_remove",json!({"session":token,"id":original["id"],"content":original["content"],"updatedAt":original["updated_at"]})).is_err());
+    let apply = |expected: &str, revision: i64, content: &str| invoke(&window,"editor_apply",json!({"session":token,"pageId":page,
+        "action":{"kind":"save_text","id":block,"expected":expected,"revision":revision,"content":content}}));
+    assert_eq!(apply("",0,"persisted").unwrap()["revisions"][block.as_str().unwrap()],1);
+    assert_eq!(apply("",0,"stale recovery").unwrap_err()["code"],"conflict");
+    assert_eq!(invoke(&window,"recovery_list",json!({"session":token})).unwrap()[0]["content"],"newer");
+    let reopened = invoke(&window,"editor_open",json!({"path":path,"create":false})).unwrap();
+    assert_eq!(session["graph_id"], reopened["graph_id"]);
+    assert!(invoke(&window,"recovery_list",json!({"session":token})).is_err());
+    let token = &reopened["token"];
+    assert_eq!(invoke(&window,"recovery_list",json!({"session":token})).unwrap()[0]["id"],fresh["id"]);
+    invoke(&window,"editor_apply",json!({"session":token,"pageId":page,"action":{"kind":"save_text","id":block,"expected":"persisted","revision":1,"content":"newer"}})).unwrap();
+    invoke(&window,"recovery_clear",json!({"session":token,"blockId":block,"content":"newer"})).unwrap();
+    assert_eq!(invoke(&window,"recovery_list",json!({"session":token})).unwrap(),json!([]));
+    assert_eq!(invoke(&window,"recovery_inventory",json!({})).unwrap(),0);
+}

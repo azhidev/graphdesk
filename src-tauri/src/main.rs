@@ -6,6 +6,7 @@ use tauri::State;
 use uuid::Uuid;
 
 mod editor;
+mod recovery;
 
 struct ActiveGraph { token: Uuid, editor: Editor }
 impl ActiveGraph {
@@ -54,9 +55,11 @@ fn create_block(page_id: Uuid, parent_id: Option<Uuid>, content: String, state: 
 fn app_builder<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder
         .manage(AppState::default())
+        .manage(recovery::RecoveryState::default())
         .invoke_handler(tauri::generate_handler![open_graph, create_page, create_journal, list_blocks, create_block,
             editor::editor_open, editor::editor_page, editor::editor_apply, editor::editor_history, editor::editor_create_page,
-            editor::editor_rename_page, editor::editor_journal, editor::editor_search, editor::editor_links, editor::editor_prepare_delete])
+            editor::editor_rename_page, editor::editor_journal, editor::editor_search, editor::editor_links, editor::editor_prepare_delete,
+            recovery::recovery_put, recovery::recovery_list, recovery::recovery_remove, recovery::recovery_clear, recovery::recovery_inventory])
 }
 
 fn main() {

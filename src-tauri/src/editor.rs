@@ -31,9 +31,9 @@ impl From<Error> for EditorError {
 }
 
 #[derive(Serialize)]
-pub(crate) struct Session { token: Uuid, pages: Vec<Page> }
+pub(crate) struct Session { token: Uuid, pages: Vec<Page>, graph_id: Uuid }
 #[derive(Serialize)]
-pub(crate) struct Outline { blocks: Vec<Block>, can_undo: bool, can_redo: bool }
+pub(crate) struct Outline { blocks: Vec<Block>, can_undo: bool, can_redo: bool, revisions: std::collections::BTreeMap<Uuid, i64> }
 
 #[derive(Serialize)]
 pub(crate) struct Links { references: Vec<graph_core::InlineReference>, backlinks: Vec<Block> }
@@ -66,14 +66,17 @@ fn with_session<T>(state: &AppState, session: Uuid, operation: impl FnOnce(&mut 
 }
 
 #[tauri::command]
-pub(crate) async fn editor_open(path: String, create: bool, state: State<'_, AppState>) -> Result<Session, EditorError> {
+pub(crate) async fn editor_open(path: String, create: bool, state: State<'_, AppState>, recovery: State<'_, crate::recovery::RecoveryState>) -> Result<Session, EditorError> {
     let state = state.inner().clone();
+    let recovery = recovery.inner().clone();
     blocking(move || {
         let mut guard = state.0.lock().map_err(|_| EditorError::new("internal", "graph lock poisoned"))?;
         let graph = if create { Graph::create(path) } else { Graph::open(path) }?;
         let pages = graph.pages()?;
+        let graph_id = graph.id()?;
         let active = ActiveGraph::new(graph);
-        let session = Session { token: active.token, pages };
+        let session = Session { token: active.token, pages, graph_id };
+        recovery.0.lock().map_err(|_| EditorError::new("internal", "recovery lock unavailable"))?.session = Some((active.token, graph_id));
         *guard = Some(active);
         Ok(session)
     }).await
@@ -83,9 +86,9 @@ pub(crate) async fn editor_open(path: String, create: bool, state: State<'_, App
 pub(crate) async fn editor_page(session: Uuid, page_id: Uuid, state: State<'_, AppState>) -> Result<Outline, EditorError> {
     let state = state.inner().clone();
     blocking(move || with_session(&state, session, |g| {
-        let blocks = g.editor.graph().page_blocks(page_id)?;
+        let (blocks, revisions) = g.editor.graph().text_outline(page_id)?;
         let (can_undo, can_redo) = g.editor.history_state(page_id);
-        Ok(Outline { blocks, can_undo, can_redo })
+        Ok(Outline { blocks, can_undo, can_redo, revisions })
     })).await
 }
 

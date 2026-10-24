@@ -54,7 +54,7 @@ function fixture(blocks = [block('a', 'old')], timing = { debounce: 10_000, maxW
     async page(session, pageId) { calls.push(['page', session, pageId]); return { blocks: structuredClone(stored), can_undo: false, can_redo: false }; },
     async apply(session, pageId, action, group) {
       calls.push(['apply', session, pageId, structuredClone(action), group]);
-      assert.equal(action.kind, 'save', 'test transport only implements text saves');
+      assert.equal(action.kind, 'save_text', 'test transport only implements guarded text saves');
       const target = stored.find(b => b.id === action.id);
       assert.equal(target.content, action.expected);
       target.content = action.content;
@@ -150,7 +150,7 @@ test('structural operations flush before dispatch and focus the acknowledged new
   const { editor, transport, calls } = fixture(); await editor.load('page');
   const original = transport.apply;
   transport.apply = async (...args) => {
-    if (args[2].kind==='save') return original(...args);
+    if (args[2].kind==='save_text') return original(...args);
     calls.push(['split',args[2]]); return result([block('a','new'),block('new-id','text',null,1)],'new-id');
   };
   editor.setDraft('a','newtext');
@@ -298,4 +298,133 @@ test('deletion cancellation, empty leaf, failed flush and uncertain writes never
   await assert.rejects(editor.deleteSubtree('a', async () => true));
   assert.equal(editor.text('a'), 'retained'); assert.equal(previews, 2);
   await editor.discardAndReload();
+});
+
+test('composition-finalization race rejects navigation synchronously before locking out final Persian input', async () => {
+  const {editor, calls} = fixture(); await editor.load('page'); editor.activate('a');
+  editor.composition(true); editor.setDraft('a', 'س');
+  const leaving = editor.load('other');
+  assert.equal(editor.working, false);
+  editor.setDraft('a', 'سلام\u200cدنیا 😀'); editor.composition(false);
+  await assert.rejects(leaving, /composition/);
+  await editor.flush();
+  assert.equal(editor.pageId, 'page'); assert.equal(editor.text('a'), 'سلام\u200cدنیا 😀');
+  assert.deepEqual(calls.filter(c=>c[0]==='apply').map(c=>c[3].content), ['سلام\u200cدنیا 😀']);
+});
+
+test('composition beginning during an awaited navigation blocks departure and preserves final input', async () => {
+  const {editor, calls} = fixture(); await editor.load('page');
+  const leaving = editor.load('other');
+  editor.composition(true); editor.setDraft('a', 'پیش');
+  await assert.rejects(leaving, /composition/);
+  editor.setDraft('a', 'پایان'); editor.composition(false); await editor.flush();
+  assert.equal(editor.pageId, 'page');
+  assert.deepEqual(calls.filter(c=>c[0]==='apply').map(c=>c[3].content), ['پایان']);
+});
+
+test('composition blocks structural/discard operations and active-input replacement without persisting preedit', async () => {
+  const {editor,calls} = fixture([block('a'),block('b','next',null,1)]); await editor.load('page'); editor.activate('a');
+  editor.composition(true); editor.setDraft('a','پیش'); editor.activate('b');
+  assert.equal(editor.activeId, 'a');
+  for (const operation of [() => editor.action({kind:'split',id:'a',start:0,end:0}), () => editor.toggle('a'),
+    () => editor.deleteSubtree('a', async()=>true), () => editor.discardAndReload(), () => editor.flush()]) {
+    await assert.rejects(operation(), /composition/); assert.equal(editor.working,false);
+  }
+  await editor.capture(); assert.equal(calls.filter(c=>c[0]==='apply').length,0);
+  editor.setDraft('a','نهایی'); editor.composition(false); await editor.flush();
+});
+
+function reliableFixture() {
+  let stored = block('a', 'old'), revision = 0, lose = false;
+  const writes = [];
+  const transport = {
+    async page() { return {blocks:[structuredClone(stored)],revisions:{a:revision},can_undo:false,can_redo:false}; },
+    async apply(_s,_p,action) {
+      assert.equal(action.kind,'save_text');
+      if (action.revision !== revision || action.expected !== stored.content) throw new Error('conflict');
+      if (action.content !== stored.content) { stored.content=action.content; revision++; writes.push(action.content); }
+      if (lose) {lose=false;throw new Error('response lost after commit');}
+      return {...result([structuredClone(stored)],'a'),revisions:{a:revision}};
+    },
+  };
+  const snapshots = new Map();
+  const recovery = {
+    async put(_s,_p,id,base,rev,content) { snapshots.set(`${id}:${rev}`,{base,content}); return {}; },
+    async clear(_s,id,content) { for (const [key,value] of snapshots) if(key.startsWith(`${id}:`) && value.content===content) snapshots.delete(key); },
+  };
+  const editor = new EditorController(transport,()=>{}, {debounce:10000,maxWait:20000,groupGap:1000}, recovery);
+  editor.reset('session');
+  return {editor,transport,recovery,writes,snapshots,lose:()=>lose=true,external:content=>{stored.content=content;revision++;}};
+}
+
+test('lost save acknowledgement reconciles revision and keeps newer draft without a duplicate write', async () => {
+  const f=reliableFixture(); await f.editor.load('page'); f.lose(); f.editor.setDraft('a','committed');
+  await assert.rejects(f.editor.flush(), /response lost/);
+  f.editor.setDraft('a','newer'); await f.editor.retry();
+  assert.deepEqual(f.writes,['committed','newer']); assert.equal(f.editor.text('a'),'newer');
+  assert.equal(f.editor.revisions.a,2); assert.equal(f.editor.dirty,false); assert.equal(f.snapshots.size,0);
+});
+
+test('ambiguous response plus concurrent/ABA changes requires explicit comparison and guarded replacement', async () => {
+  const f=reliableFixture(); await f.editor.load('page'); f.lose(); f.editor.setDraft('a','sent');
+  await assert.rejects(f.editor.flush()); f.editor.setDraft('a','mine');
+  f.external('other'); f.external('sent');
+  await assert.rejects(f.editor.retry(), /Compare/);
+  assert.equal(f.editor.conflicts[0].block.content,'sent'); assert.equal(f.editor.text('a'),'mine');
+  assert.deepEqual(f.writes,['sent']);
+  await f.editor.resolveConflict('a');
+  assert.deepEqual(f.writes,['sent','mine']); assert.equal(f.editor.dirty,false);
+});
+
+test('recovery captures finalized Unicode only, preserves newer snapshots on late cleanup and reports failure', async () => {
+  const f=reliableFixture(); await f.editor.load('page'); f.editor.composition(true); f.editor.setDraft('a','پیش');
+  await f.editor.capture(); assert.equal(f.snapshots.size,0);
+  f.editor.setDraft('a','نهایی\n😀'); f.editor.composition(false); await f.editor.capture();
+  assert.equal([...f.snapshots.values()][0].content,'نهایی\n😀'); assert.match(f.editor.protection,/stored locally/);
+  const original=f.recovery.put; f.recovery.put=async()=>{throw new Error('injected full disk');};
+  f.editor.setDraft('a','newer'); await assert.rejects(f.editor.capture(),/not protected/);
+  assert.match(f.editor.protectionError,/not protected/); assert.equal(f.editor.text('a'),'newer');
+  f.recovery.put=original; await f.editor.capture(); assert.equal(f.editor.protectionError,'');
+  await f.editor.flush(); assert.equal(f.snapshots.size,0);
+});
+
+test('normal recovery capture has a bounded wait during continuous unsaved typing', async () => {
+  const f=reliableFixture(); await f.editor.load('page');
+  for(let i=0;i<9;i++){f.editor.setDraft('a',`text ${i}`);await sleep(100);}
+  assert.ok(f.snapshots.size>0,'capture must not slide forever');
+  await f.editor.flush(); assert.equal(f.editor.dirty,false);
+});
+
+test('a response that never arrives times out and reconciles the committed revision without replaying it', async () => {
+  const f=reliableFixture();
+  const editor=new EditorController(f.transport,()=>{}, {debounce:10000,maxWait:20000,groupGap:1000,ackTimeout:15}, f.recovery);
+  editor.reset('session'); await editor.load('page');
+  const original=f.transport.apply;
+  f.transport.apply=async(...args)=>{await original(...args);return new Promise(()=>{});};
+  editor.setDraft('a','committed'); await assert.rejects(editor.flush(),/timed out/);
+  editor.setDraft('a','newer'); f.transport.apply=original;
+  await editor.retry(); assert.deepEqual(f.writes,['committed','newer']); assert.equal(editor.dirty,false);
+});
+
+test('composition arriving during recovery IO aborts navigation without looping or saving preedit', async () => {
+  const f=reliableFixture(); await f.editor.load('page'); f.editor.setDraft('a','final before preedit');
+  const original=f.recovery.put; let release;
+  f.recovery.put=async(...args)=>{await new Promise(resolve=>release=resolve); return original(...args);};
+  const leaving=f.editor.load('other'); await sleep(0);
+  f.editor.composition(true); f.editor.setDraft('a','پیش'); release();
+  await assert.rejects(leaving,/composition/); assert.equal(f.writes.length,0);
+  f.recovery.put=original; f.editor.setDraft('a','متن نهایی'); f.editor.composition(false);
+  await f.editor.retry(); assert.deepEqual(f.writes,['متن نهایی']);
+});
+
+test('a complete composition cycle during page-read IO cannot hide the finalized draft on another page', async () => {
+  const f=reliableFixture(); await f.editor.load('page'); let release;
+  const original=f.transport.page;
+  f.transport.page=async(...args)=>{await new Promise(resolve=>release=resolve);return original(...args);};
+  const leaving=f.editor.load('other'); await sleep(0);
+  f.editor.composition(true); f.editor.setDraft('a','پیش');
+  f.editor.setDraft('a','نهایی'); f.editor.composition(false); release();
+  await assert.rejects(leaving,/composition/);
+  assert.equal(f.editor.pageId,'page'); assert.equal(f.editor.text('a'),'نهایی');
+  f.transport.page=original; await f.editor.flush(); assert.deepEqual(f.writes,['نهایی']);
 });

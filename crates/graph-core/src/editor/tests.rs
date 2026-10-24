@@ -1,5 +1,22 @@
 use super::*;
 
+#[test]
+fn reliable_text_revisions_reject_stale_aba_and_noops_avoid_writes() -> Result<()> {
+    let (mut e, page, id) = setup("base")?;
+    let graph_id = e.graph.id()?;
+    assert_eq!(e.graph.text_revisions(page)?[&id], 0);
+    let r = e.apply(page, EditAction::SaveText { id, expected: "base".into(), revision: 0, content: "next".into() }, None)?;
+    assert_eq!(r.revisions[&id], 1);
+    assert!(e.apply(page, EditAction::SaveText { id, expected: "next".into(), revision: 0, content: "lost".into() }, None).is_err());
+    e.history(page, false)?;
+    assert_eq!(e.graph.text_revisions(page)?[&id], 2);
+    assert!(e.apply(page, EditAction::SaveText { id, expected: "base".into(), revision: 0, content: "stale".into() }, None).is_err());
+    let r = e.apply(page, EditAction::SaveText { id, expected: "base".into(), revision: 2, content: "base".into() }, None)?;
+    assert_eq!(r.revisions[&id], 2);
+    assert_eq!(e.graph.id()?, graph_id);
+    Ok(())
+}
+
 fn delete(e: &mut Editor, page: Uuid, id: Uuid) -> Result<EditResult> {
     let preview = e.prepare_delete(page, id)?;
     e.apply(page, EditAction::Delete { id, token: preview.token }, None)

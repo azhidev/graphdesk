@@ -43,6 +43,14 @@ unsaved drafts and reload** deliberately loses drafts. During IME composition,
 structural shortcuts and leaving unfinished composition are blocked. End-to-end
 IME behavior still needs native testing.
 
+Finalized unsaved text also targets an app-private recovery snapshot within about
+one second. The save status distinguishes snapshot-pending/protected state and
+reports recovery failures. Preedit is neither saved nor recovery-captured. Startup
+detects pending graph recovery stores; reopen the original graph and use **Compare /
+Recover**. Recovery is explicit, text-only and revision-guarded; discard requires
+confirmation. **Review local recovery drafts** refreshes the list. Unresolved
+versions expire after 14 days; see [data and recovery limits](data.md#text-draft-recovery).
+
 Journals use local Gregorian civil dates even if renamed. Search returns up to
 100 page and 100 block phrase matches from acknowledged text, not drafts. Block
 results reveal ancestors and focus the UUID. Unicode tokenization does not promise

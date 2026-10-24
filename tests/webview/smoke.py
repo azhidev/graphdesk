@@ -21,6 +21,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--reliability', action='store_true', help='Exercise forced-termination recovery with a locked graph')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     args.artifacts.mkdir(parents=True, exist_ok=True)
@@ -47,7 +48,8 @@ def main():
                            'XDG_CONFIG_HOME': str(work / 'config'), 'XDG_DATA_HOME': str(work / 'data'),
                            'XDG_CACHE_HOME': str(work / 'cache'), 'GRAPHDESK_SMOKE_WORK': str(work)}
                     subprocess.run(['dbus-run-session', '--', sys.executable, str(Path(__file__).resolve()),
-                                    '--inside', '--artifacts', str(args.artifacts.resolve())], cwd=root, env=env, check=True, timeout=300)
+                                    '--inside', '--artifacts', str(args.artifacts.resolve()),
+                                    *(['--reliability'] if args.reliability else [])], cwd=root, env=env, check=True, timeout=300)
                 finally:
                     os.close(display_read)
                     xvfb.terminate()
@@ -140,11 +142,80 @@ def main():
         pump(.5)
 
     try:
+        if args.reliability:
+            window = start()
+            field(220, 214, str(graph)); click(260, 273)
+            wait_sql('SELECT count(*) FROM schema_migrations', [(4,)])
+            field(150, 816, 'Recovery'); xdo('key', 'Return'); pump()
+            click(390, 700)
+            base = 'original فارسی'
+            paste(base); wait_sql('SELECT content FROM blocks', [(base,)])
+            block_id, page_id = sql('SELECT id,page_id FROM blocks')[0]
+            graph_id = sql('SELECT id FROM graph_identity')[0][0]
+            draft = base + ' recovered 😀'
+            lock = sqlite3.connect(graph, isolation_level=None)
+            lock.execute('BEGIN IMMEDIATE')
+            try:
+                started = time.monotonic()
+                paste(' recovered 😀')
+                deadline = time.monotonic() + 3
+                captured = False
+                while time.monotonic() < deadline:
+                    stores = list((work / 'data').rglob(f'{graph_id}.sqlite3'))
+                    if stores:
+                        with sqlite3.connect(stores[0]) as recovery:
+                            if recovery.execute('SELECT content FROM recovery_drafts').fetchall() == [(draft,)]:
+                                captured = True
+                                break
+                    pump(.05)
+                assert captured, 'independent durable snapshot must succeed while graph writer is locked'
+                print(f'Recovery snapshot observed after {time.monotonic() - started:.2f}s with graph locked', flush=True)
+                assert sql('SELECT content FROM blocks') == [(base,)]
+                shot('r01-protected-draft')
+                # Kill ONLY this disposable fixture app, without graceful flush.
+                app.kill(); assert app.wait(timeout=10) == -9
+                pump()
+            finally:
+                lock.execute('ROLLBACK'); lock.close()
+            # The persisted side may advance independently after the crash.
+            with sqlite3.connect(graph) as connection:
+                connection.execute('UPDATE blocks SET content=? WHERE id=?', ('external newer', block_id))
+            window = start()
+            shot('r02-startup-detection')
+            field(220, 214, str(graph)); click(130, 273)
+            shot('r03-recovery-list')
+            # Open graph keeps focus on Open; next are Create, then Compare.
+            xdo('key', 'Tab', 'Tab', 'Return'); pump()
+            shot('r04-both-versions')
+            assert sql('SELECT content FROM blocks') == [('external newer',)]
+            # Discard requires a dialog; Escape must retain the recovery copy.
+            xdo('key', 'Tab', 'Return'); pump()
+            shot('r05-discard-confirmation')
+            xdo('key', 'Escape'); pump()
+            with sqlite3.connect(stores[0]) as recovery:
+                assert recovery.execute('SELECT content FROM recovery_drafts').fetchall() == [(draft,)]
+            # From Discard: persisted textarea, recovery textarea, then Recover.
+            xdo('key', 'Tab', 'Tab', 'Tab', 'Return'); pump()
+            wait_sql('SELECT content FROM blocks', [(draft,)])
+            with sqlite3.connect(stores[0]) as recovery:
+                assert recovery.execute('SELECT count(*) FROM recovery_drafts').fetchone()[0] == 0
+                assert recovery.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+            assert sql('SELECT id,page_id FROM blocks') == [(block_id, page_id)]
+            assert sql('PRAGMA integrity_check') == [('ok',)]
+            assert sql('PRAGMA foreign_key_check') == []
+            shot('r06-recovered-cleaned')
+            close(window); assert app.wait(timeout=10) == 0
+            window = start(); field(220, 214, str(graph)); click(130, 273)
+            assert sql('SELECT content FROM blocks') == [(draft,)]
+            shot('r07-reopened')
+            close(window); assert app.wait(timeout=10) == 0
+            print('PASS: independent recovery during locked graph, SIGKILL/restart, startup discovery, compare conflict, explicit discard cancellation, recover, cleanup, stable identity and integrity', flush=True)
+            return
         window = start()
         shot('01-shell')
         field(220, 214, str(graph))
         click(260, 273)
-        wait_sql('SELECT count(*) FROM schema_migrations', [(3,)])
+        wait_sql('SELECT count(*) FROM schema_migrations', [(4,)])
         pump()
         shot('02-graph')
         field(150, 816, 'Source')

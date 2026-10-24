@@ -45,6 +45,58 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### Milestone 3 reliability validation — 2026-10-24
+
+On the existing Ubuntu VM/toolchains: 48 Rust core/recovery tests and 4 IPC/ACL
+tests passed in both default and production-protocol configurations; 32 Node
+controller/keyboard tests and 17 real SQLite schema tests passed. Svelte/TypeScript
+checks reported zero errors/warnings. Production frontend and unbundled Tauri
+release builds passed. Historical migrations were not edited; migration 4 adds
+stable graph identity and monotonic text revisions.
+
+New coverage includes composition-finalization and navigation event ordering,
+composition during recovery/page-read IO, no persisted preedit, delayed/lost/never-
+arriving save acknowledgements, newer drafts/ABA conflicts, explicit replacement,
+capture timing/failure, private store reopen, exact conditional cleanup/stale discard,
+14-day retention boundaries, rollback, busy/read-only/missing-parent errors, Unix
+file/sidecar permissions, symlink/unknown-schema/corruption rejection and bounded
+`SQLITE_FULL` injection. The full condition uses a disposable database-local page
+cap with a 128-KiB payload, not VM disk exhaustion. Query-only/permissions/injected
+errors are not hardware I/O or power-loss tests.
+
+The executable production fixture has a dedicated recovery mode:
+
+```sh
+python3 tests/webview/smoke.py --reliability --artifacts test-artifacts/webview-recovery
+```
+
+It holds a real graph writer lock, checks the independent private snapshot, kills
+only the disposable app with SIGKILL, restarts, advances persisted content separately,
+and exercises startup discovery, side-by-side comparison, confirmed discard/cancel,
+explicit recover, exact cleanup, stable UUIDs, restart and both databases' integrity.
+SIGKILL is process-crash evidence, not power-loss coverage. Native IME candidate
+services and assistive technology are not validated by clipboard Persian input,
+synthetic controller composition tests or the nonfatal AT-SPI warning.
+
+Both final production runs passed: `test-artifacts/webview-m3-recovery-final/`
+and `test-artifacts/webview-m3-regression-final/` (ignored local artifacts).
+The recovery run observed a committed snapshot 0.36 seconds after its paste while
+the graph writer remained locked; this is a single smoke observation, not a latency
+benchmark or durability deadline. Startup discovery, discard confirmation, comparison,
+retained-error state and recovery focus screenshots were inspected. The regression
+run also passed links/search/tasks/journals, error-retained drafts, blocked close,
+explicit retry, navigation/close flushing, subtree delete/undo/redo and restart.
+An earlier run's fixed Retry coordinate missed after a long status wrapped the
+toolbar; compact recovery status now avoids that layout jump and the full run passed.
+Read-only-file rejection and expiration-fixture expectations were corrected during
+development before the final passing Rust checks.
+
+Milestone 3 is ready to close for the tested local single-user Ubuntu scope.
+Real IME candidate services, assistive technology, zoom/reflow, physical GPU/Wayland,
+Windows/macOS and power-loss/storage-hardware failures remain unvalidated. The
+composition/lost-acknowledgement reproductions use deterministic controller transports;
+they are not a claim of native IME or an actual dropped WebView response test.
+
 ### Milestone 2 deletion acceptance — 2026-10-23
 
 On the same Ubuntu toolchains, the approved native-textarea architecture was retained.

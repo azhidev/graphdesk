@@ -15,6 +15,7 @@ are published. Use disposable graphs or backed-up copies for evaluation.
 
 - Nested blocks with stable UUIDs, split, indent/outdent and sibling reordering.
 - Debounced autosave, visible save/error state, and bounded session undo/redo.
+- Private local text-draft snapshots with explicit compare/recover/discard.
 - Confirmed subtree deletion with affected-block counts and session undo/redo.
 - Pages, renaming, local-date journals, `[[page links]]` and backlinks.
 - Unicode-aware phrase search and TODO / DOING / DONE tasks.
@@ -100,8 +101,16 @@ writes.** See [data, backup and recovery](docs/data.md).
 
 Undo/collapse state is memory-only; page renaming is not block-undoable. Search
 uses bounded acknowledged-state phrase matches. Rich text, Markdown import/export,
-sync, plugins, encryption, automatic backups and crash-draft recovery are not
+sync, plugins, encryption, automatic backups and structural crash recovery are not
 implemented.
+
+Finalized text drafts target a recovery snapshot after about 700 ms, independently
+of graph writes. Recovery lives in app-private local storage, not the graph/export;
+unresolved versions expire after 14 days. Startup detects snapshots; open the graph
+to compare and explicitly recover them. **Saved** and **recovery snapshot stored**
+are different acknowledgements. Preedit, pre-capture input, failed recovery writes,
+power failure and forced termination can still lose text. See
+[recovery guarantees and privacy](docs/data.md#text-draft-recovery).
 
 Nesting has no fixed model depth cap, not an unlimited-depth guarantee. Visual
 indentation is capped; SQLite/resource limits and large-outline costs still apply.

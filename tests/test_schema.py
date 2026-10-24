@@ -38,6 +38,8 @@ class SchemaTests(unittest.TestCase):
         apply_sql(self.db, "001_initial.sql")
         apply_sql(self.db, "002_search.sql")
         apply_sql(self.db, "003_inline_references.sql")
+        apply_sql(self.db, "004_reliability.sql")
+        self.db.execute("INSERT INTO graph_identity VALUES(1,?)", (str(uuid4()),))
         self.db.execute("COMMIT")
         self.page = self.add_page("Notes")
 
@@ -58,6 +60,19 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT label,target_page_id FROM inline_references").fetchall(), [("Target", None)])
         self.db.execute("DELETE FROM blocks WHERE id=?", (source,))
         self.assertEqual(self.db.execute("SELECT count(*) FROM inline_references").fetchone()[0], 0)
+
+    def test_text_revision_monotonic_across_update_delete_and_restore(self):
+        id_ = self.block(content="base")
+        revision = lambda: self.db.execute("SELECT revision FROM block_revisions WHERE block_id=?", (id_,)).fetchone()[0]
+        self.assertEqual(revision(), 0)
+        self.db.execute("UPDATE blocks SET content='base' WHERE id=?", (id_,))
+        self.assertEqual(revision(), 0)
+        self.db.execute("UPDATE blocks SET content='new' WHERE id=?", (id_,))
+        self.assertEqual(revision(), 1)
+        self.db.execute("DELETE FROM blocks WHERE id=?", (id_,))
+        self.assertEqual(revision(), 2)
+        self.db.execute("INSERT INTO blocks(id,page_id,position,content) VALUES(?,?,0,'base')", (id_, self.page))
+        self.assertEqual(revision(), 3)
 
     def block(self, page=None, parent=None, position=0, content="hello"):
         id_ = str(uuid4())

@@ -12,6 +12,9 @@
     rows: editor.rows(), active: editor.activeId, focus: editor.focus,
     busy: editor.working || disabled, status: editor.status, error: editor.error,
     canUndo: editor.canUndo || editor.dirty, canRedo: editor.canRedo,
+    protection: editor.protection, protectionError: editor.protectionError, conflicts: editor.conflicts,
+    dirty: editor.dirty,
+    composing: editor.composing,
   }; });
   let previousActive: string | null = null;
   $effect(() => {
@@ -51,8 +54,21 @@
   <button disabled={view.busy || !view.active} onclick={() => operate('reorder', -1)}>Move up</button>
   <button disabled={view.busy || !view.active} onclick={() => operate('reorder', 1)}>Move down</button>
   <button aria-label="Delete block and descendants" title="Delete block and descendants" disabled={view.busy || !view.active} onclick={() => run(remove())}>Delete…</button>
-  <span role="status">{view.status}</span>
+  <span role="status" title={view.protection}>{view.error ? 'Error — save failed' : view.status}{view.dirty && !view.composing ? view.protectionError ? ' · recovery failed' : view.protection.includes('stored locally') ? ' · recovery stored' : ' · recovery pending' : ''}</span>
 </div>
+{#if view.protectionError}
+  <div role="alert">{view.protectionError}
+    <button disabled={view.busy} onclick={() => run(editor.capture())}>Retry recovery snapshot</button>
+  </div>
+{/if}
+{#each view.conflicts as conflict (conflict.block.id)}
+  <section aria-label="Text save conflict">
+    <p>Persisted text changed. Replacing it requires your explicit choice.</p>
+    <label>Persisted version<textarea readonly value={conflict.block.content} dir="auto"></textarea></label>
+    <label>Your unsaved version<textarea readonly value={editor.text(conflict.block.id)} dir="auto"></textarea></label>
+    <button disabled={view.busy} onclick={() => run(editor.resolveConflict(conflict.block.id))}>Replace compared persisted text with my draft</button>
+  </section>
+{/each}
 <dialog bind:this={dialog} aria-labelledby="delete-heading" oncancel={event => { event.preventDefault(); answer(false); }}>
   <h3 id="delete-heading">Delete {confirmation?.count ?? 0} block(s)?</h3>
   <p>The selected block and all descendants will be deleted. You can undo this during this graph session.</p>

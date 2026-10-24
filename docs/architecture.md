@@ -265,7 +265,45 @@ an unlimited-depth/performance/accessibility guarantee. See [testing](testing.md
 
 ## Milestone 3 workflow boundary
 
-All new desktop commands use the same blocking worker, mutex, session token and
+The original page/link/search/task milestone name below is historical. The approved
+reliability extension adds independent private text recovery as described next.
+
+### Reliability extension
+
+Migration 4 adds a stable graph identity and text-revision tombstones. Triggers
+increment revisions on content changes and deletion/restoration, preventing stale
+text writes across same-content ABA and undo/redo. `save_text` checks expected text
+and revision in the editor transaction; no-op saves perform no content update.
+Outline content/revisions are read in one SQLite read transaction. History remains
+session-only; recovery does not replay structural actions.
+
+The frontend rejects navigation/structural locks synchronously during composition,
+checks again after awaiting IO, and keeps the active composing textarea mounted.
+Final composition input is accepted before composition state is cleared; preedit is
+excluded from save/recovery. Failed text saves retain their sent content/revision.
+Retry reads actual persisted state: only an unchanged base or matching one-step
+committed result can reconcile automatically. Newer drafts are retained. Other
+revisions require explicit comparison/replacement under fresh expected-state guards.
+
+`graph-core::recovery` is a standalone SQLite store, opened only by the desktop
+adapter at `app_local_data_dir()/recovery/<graph UUID>.sqlite3`. This approved
+app-private store is independent of the graph and uses no new dependency. A separate
+worker/mutex/connection avoids graph writer-lock interference. Snapshot requests are
+serialized separately from graph commands and coalesced per finalized text draft,
+targeting 700 ms. Acknowledged capture and canonical save are distinct states;
+errors remain visible. Cleanup is exact-content conditional, so a late acknowledgement
+cannot erase a newer different snapshot. Explicit discard also checks the compared
+content/time. Other unresolved base versions survive until explicit resolution or
+14-day expiry. Startup inventories only private recovery files, not graph paths.
+
+Recovery UI displays both versions before explicit text replacement. It validates
+the displayed block text/revision again before applying and clears private content
+only after graph acknowledgement. Cross-database cleanup is intentionally not atomic:
+a crash can leave an already-applied copy, which is safely compared/reconciled again.
+No graph search, graph backup/export, telemetry, or log includes recovery text.
+Privacy, copied-graph identity, expiry and loss-window limits are in [data](data.md).
+
+The page/link/search/task commands use the graph blocking worker, mutex, session token and
 explicit main-window ACL as the editor commands. Page rename and journal operations
 flush frontend drafts before dispatch, retain page UUIDs and preserve valid block
 history. Journal selection uses a local Gregorian civil day, never UTC conversion.

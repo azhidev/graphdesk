@@ -3,6 +3,7 @@ mod migrations;
 mod model;
 mod editor;
 mod references;
+pub mod recovery;
 pub use references::InlineReference;
 pub use editor::{Editor, EditAction, EditResult, DeletePreview};
 pub use model::{Block, Page, SearchHit, TaskStatus};
@@ -33,6 +34,22 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Graph { conn: Connection }
 
 impl Graph {
+    pub fn id(&self) -> Result<Uuid> {
+        let id: String = self.conn.query_row("SELECT id FROM graph_identity WHERE singleton=1", [], |r| r.get(0))?;
+        parse_id(&id)
+    }
+
+    pub fn text_revisions(&self, page: Uuid) -> Result<std::collections::BTreeMap<Uuid, i64>> {
+        text_revisions(&self.conn, page)
+    }
+
+    pub fn text_outline(&self, page: Uuid) -> Result<(Vec<Block>, std::collections::BTreeMap<Uuid, i64>)> {
+        let tx = self.conn.unchecked_transaction()?;
+        let blocks = page_blocks(&tx, page)?;
+        let revisions = text_revisions(&tx, page)?;
+        tx.commit()?;
+        Ok((blocks, revisions))
+    }
     /// Atomically reserve a new database path; never overwrite an existing graph.
     pub fn create(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
@@ -214,6 +231,12 @@ impl Graph {
         }
         Ok(hits)
     }
+}
+
+fn text_revisions(conn: &Connection, page: Uuid) -> Result<std::collections::BTreeMap<Uuid, i64>> {
+    let mut stmt = conn.prepare("SELECT b.id,r.revision FROM blocks b JOIN block_revisions r ON b.id=r.block_id WHERE b.page_id=?1")?;
+    let rows = stmt.query_map([page.to_string()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+    rows.map(|r| { let (id, version) = r?; Ok((parse_id(&id)?, version)) }).collect()
 }
 
 // Shared transaction-compatible move primitive. Callers own the transaction.

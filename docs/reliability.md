@@ -1,4 +1,32 @@
-# Reliability validation proposal
+# Reliability hardening — Milestone 3
+
+## Approved implementation (2026-10-24)
+
+The user approved reliability hardening and selected **app-private storage separate
+from the graph database**, superseding the graph-local-table recommendation in the
+historical proposal below. Implemented boundaries and guarantees are in
+[architecture](architecture.md#reliability-extension) and
+[data/recovery](data.md#text-draft-recovery); actual validation is in [testing](testing.md).
+
+- Composition is guarded synchronously and across awaited IO, including a complete
+  start/end cycle during navigation. The finalized input remains on the original
+  page, and preedit is never submitted as final text or recovery content.
+- Text saves use expected content plus monotonic revisions. Lost/rejected or timed-out
+  acknowledgements retain newer drafts. Retry compares actual persisted state and
+  reconciles only an unchanged base or the matching committed revision; other changes
+  require explicit side-by-side comparison and revision-guarded replacement.
+- Separate per-graph SQLite recovery stores live under Tauri's app-local data
+  directory, with independent IO so graph locks do not prevent capture. Finalized
+  drafts target 700-ms capture; statuses distinguish capture from canonical save.
+- Startup discovery, compare/recover, confirmed discard, conditional cleanup and
+  14-day expiry are implemented. No structural replay, network sync, export inclusion,
+  telemetry or logging of recovery text is introduced. This is not zero-loss storage.
+
+The tests distinguish controller/transport failure injection, mock IPC, actual SQL
+fixtures and production WebView/SIGKILL evidence. Real IME services, screen readers,
+Wayland/hardware, Windows/macOS and power-loss behavior remain separate requirements.
+
+## Historical review/proposal (superseded where noted)
 
 Review date: 2026-10-24. Baseline: `4988a53` (Milestone 2 closure).
 This is a proposed reliability scope, **not implemented crash recovery or new
@@ -78,7 +106,7 @@ For each new scenario record commit, toolchain/WebView, environment, fixture,
 expected/observed result and sanitized artifacts. Keep tests bounded; never use
 personal graphs or upload private content. Retain all existing invariant tests.
 
-## Decisions requiring approval
+## Original approval questions (resolved by subsequent user approval)
 
 - Approve this small reliability scope before implementation.
 - Agree on durable recovery storage and privacy/lifetime: recommend graph-local
