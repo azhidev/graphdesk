@@ -45,6 +45,68 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### Milestone 4 daily workspace validation — 2026-10-25
+
+On the existing Ubuntu 24.04 guest, Node 24.21.0, Python 3.12.3 and pinned Rust
+1.99.1 (installed `stable` verified to match the pin):
+
+- 51 Rust core/recovery + 6 mock IPC/ACL tests passed in both default and
+  production-protocol configurations, including read-only journal lookup,
+  renamed journal metadata, task filters/pagination/index use, history retention,
+  stale sessions and non-main-window/remote-origin denial.
+- 38 Node tests passed, including debounce cancellation, task stale-response and
+  failed-pagination handling, civil-date boundaries, and preview departure versus
+  save failure/composition. The existing Milestone 3 reliability regressions remain.
+- 17 actual SQLite schema fixtures passed. No migration or dependency was added.
+- Svelte/TypeScript checks: zero errors/warnings. Production frontend and unbundled
+  Tauri release builds passed with lockfiles and toolchain pins unchanged.
+
+Both refreshed production WebView suites passed against the built executable:
+
+```sh
+python3 tests/webview/smoke.py --daily --artifacts test-artifacts/webview-m4-daily-final
+python3 tests/webview/smoke.py --reliability --artifacts test-artifacts/webview-m4-recovery-final
+```
+
+The daily fixture covers journal-first opening, focused Unicode capture, date
+preview without writes, first-note form close/cancel guards and creation only on
+submission, status/page task filters, source focus, TODO/DOING/DONE and undo,
+keyboard search/result selection, acknowledged-state refresh, a real writer-lock
+error with retained drafts and blocked task navigation/normal close, explicit retry,
+immediate close flushing, process restart, confirmed three-level subtree deletion,
+cancel/undo/redo and exact restoration, empty-leaf deletion, explicit link creation,
+rename-stable references/backlink navigation, tasks across journals/ordinary pages,
+680-pixel-window source editing and independent graph switching. Integrity and
+foreign-key checks pass; the second graph remains independent.
+
+The recovery fixture again captures independently under a graph writer lock, kills
+only the disposable app, restarts, compares an independently changed persisted
+version, cancels confirmed discard, explicitly recovers, verifies exact cleanup and
+stable identity, then reopens and checks both databases' integrity. SIGKILL remains
+process-crash evidence, not power-loss evidence. Reviewed screenshots include the
+first-note form, active tasks, renamed backlinks, narrow source editor, graph switch,
+recovery comparison/confirmation and recovered state. Artifacts are ignored local
+files, not committed user data.
+
+Early fixture runs required updated click coordinates, dismissal of native select
+popups and waiting for acknowledged structure before issuing another shortcut.
+A Persian-search fixture also incorrectly expected a token match after joining
+Latin/Persian text without a separator; it now respects unchanged FTS5 behavior.
+These failures were not hidden by weakening application save/composition guards.
+
+AT-SPI introspection libraries exist, but the private session lacks the accessibility
+bus service; an attempted accessibility-driven fixture failed before interacting
+with the app. Final suites use native keyboard/clicks instead. No service/system
+installation, permission bypass or sandbox change was made. Real IME candidates,
+screen readers, zoom/scaling, hardware/Wayland, Windows/macOS and power-loss behavior
+remain unvalidated. Jalali display/picking remains deferred and required before
+claiming readiness for regular Persian-language use. The pre-submit first-note form
+is explicitly not autosaved/recovery-captured; this limitation is documented in the UI
+and workflows, not covered by the editor's private-snapshot guarantee.
+
+Milestone 4 is ready to close for the approved trusted local single-user Ubuntu
+scope, not as a cross-platform release or a Persian-language readiness claim.
+
 ### Milestone 3 reliability validation — 2026-10-24
 
 On the existing Ubuntu VM/toolchains: 48 Rust core/recovery tests and 4 IPC/ACL
@@ -166,9 +228,8 @@ or an accessibility suite. Do not disable sandboxing.
 
 ## Native platform checklist
 
-See [the reliability review and proposed validation scope](reliability.md) for
-newly reproduced controller risks and the next targeted checks. That proposal is
-not implemented recovery behavior or additional native-platform validation.
+See [the reliability record](reliability.md) for implemented guarantees and the
+historical proposal. Unavailable native-platform checks remain separate validation.
 
 Record pass/fail/not tested, commit, OS/architecture and toolchain/WebView versions.
 Use disposable graphs for failure injection.
@@ -180,7 +241,8 @@ Use disposable graphs for failure injection.
 - Check Persian/bidi, mixed scripts, emoji, multiline caret/selection and persistence.
 - Use real IME preedit/candidates/commit/cancel, shortcuts and close while composing.
 - Immediate switch/close must flush. A controlled SQLite writer lock must retain
-  drafts and block close; retry must save after unlock. Forced quit has no draft guarantee.
+  drafts and block close; retry must save after unlock. Forced quit can lose text
+  not yet captured; explicitly compare any acknowledged private recovery snapshots.
 - Check scaling, small windows, large fonts, monitors, suspend/resume, graphics,
   keyboard-only use, screen readers and contrast. The palette is fixed light,
   not native dark mode; no accessibility conformance is claimed.

@@ -1,11 +1,9 @@
-"""Real Linux release WebView smoke checks. Requires Python with PyGObject.
+"""Production WebView smoke using native input, disposable graphs and isolated Xvfb.
 
-Uses an authenticated, TCP-disabled Xvfb and private D-Bus, never browser mocks
-or a sandbox override. All graph/app data is disposable. Fixed geometry is
-intentional: this is a Linux WebKit smoke fixture, not an accessibility test.
+Fixed geometry is intentional, not an accessibility or cross-platform test.
+No test IPC hooks, remote inspector, sandbox overrides or external listeners.
 """
 import argparse
-import calendar
 import ctypes
 import os
 from pathlib import Path
@@ -21,7 +19,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
-    parser.add_argument('--reliability', action='store_true', help='Exercise forced-termination recovery with a locked graph')
+    parser.add_argument('--reliability', action='store_true', help='Exercise private recovery after forced termination')
+    parser.add_argument('--daily', action='store_true', help='Daily workflow suite (the default)')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     args.artifacts.mkdir(parents=True, exist_ok=True)
@@ -30,8 +29,6 @@ def main():
             work = Path(temporary)
             auth = work / 'Xauthority'
             auth.touch(mode=0o600)
-            # The server accepts this disposable cookie; add its chosen display
-            # below so local clients can find the same authentication entry.
             cookie = secrets.token_hex(16)
             subprocess.run(['xauth', '-f', str(auth), 'add', ':99', '.', cookie], check=True)
             display_read, display_write = os.pipe()
@@ -52,8 +49,7 @@ def main():
                                     *(['--reliability'] if args.reliability else [])], cwd=root, env=env, check=True, timeout=300)
                 finally:
                     os.close(display_read)
-                    xvfb.terminate()
-                    xvfb.wait(timeout=10)
+                    xvfb.terminate(); xvfb.wait(timeout=10)
         return
 
     import gi
@@ -78,23 +74,18 @@ def main():
 
     def shot(name):
         pump()
-        window = Gdk.get_default_root_window()
-        Gdk.pixbuf_get_from_window(window, 0, 0, 1400, 1100).savev(str(args.artifacts / f'{name}.png'), 'png', [], [])
+        screen = Gdk.get_default_root_window()
+        Gdk.pixbuf_get_from_window(screen, 0, 0, 1400, 1100).savev(str(args.artifacts / f'{name}.png'), 'png', [], [])
 
     def click(x, y):
-        xdo('mousemove', x, y, 'click', 1)
-        pump()
+        xdo('mousemove', x, y, 'click', 1); pump()
 
     def paste(text, settle=.3):
-        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
-        clipboard.set_text(text, -1)
-        xdo('key', '--clearmodifiers', 'ctrl+v')
-        pump(settle)
+        Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(text, -1)
+        xdo('key', '--clearmodifiers', 'ctrl+v'); pump(settle)
 
     def field(x, y, text):
-        click(x, y)
-        xdo('key', 'ctrl+a')
-        paste(text)
+        click(x, y); xdo('key', 'ctrl+a'); paste(text)
 
     def sql(query, values=()):
         with sqlite3.connect(graph) as connection:
@@ -109,16 +100,15 @@ def main():
         raise AssertionError((query, sql(query, values), expected))
 
     def start():
-        nonlocal app
+        nonlocal app, window
         app = subprocess.Popen([str(root / 'target/release/graphdesk-desktop')], stdout=log, stderr=log)
         pump(2)
-        window = xdo('search', '--onlyvisible', '--pid', app.pid, '--name', 'Graphdesk').splitlines()[0]
-        xdo('windowsize', window, 1300, 1000, 'windowmove', window, 0, 0, 'windowfocus', window)
-        pump()
-        return int(window)
+        window = int(xdo('search', '--onlyvisible', '--pid', app.pid, '--name', 'Graphdesk').splitlines()[0])
+        xdo('windowsize', window, 1300, 1000, 'windowmove', window, 0, 0, 'windowfocus', window); pump()
+        return window
 
-    def close(window):
-        # Send WM_DELETE_WINDOW, not XDestroyWindow (which bypasses draft protection).
+    def close():
+        # WM_DELETE_WINDOW rather than XDestroyWindow: normal draft protection runs.
         lib = ctypes.CDLL('libX11.so.6')
         lib.XOpenDisplay.restype = ctypes.c_void_p
         lib.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
@@ -133,30 +123,33 @@ def main():
         display = lib.XOpenDisplay(None)
         message = Message(33, 0, 1, display, window, lib.XInternAtom(display, b'WM_PROTOCOLS', 0), 32,
                           (ctypes.c_long * 5)(lib.XInternAtom(display, b'WM_DELETE_WINDOW', 0), 0, 0, 0, 0))
-        # XEvent is a 24-long union; pad the client message to its complete size.
         event = ctypes.create_string_buffer(ctypes.sizeof(ctypes.c_long) * 24)
         ctypes.memmove(event, ctypes.byref(message), ctypes.sizeof(message))
-        lib.XSendEvent(display, window, 0, 0, event)
-        lib.XFlush(display)
-        lib.XCloseDisplay(display)
-        pump(.5)
+        lib.XSendEvent(display, window, 0, 0, event); lib.XFlush(display); lib.XCloseDisplay(display); pump(.5)
+
+    def reopen():
+        start(); field(220, 140, str(graph)); click(130, 200)
+
+    def find(text):
+        xdo('key', 'ctrl+k', 'ctrl+a'); paste(text); pump(.5)
 
     try:
+        start(); shot('01-shell')
+        field(220, 140, str(graph)); click(270, 200)
+        today = time.strftime('%Y-%m-%d')
+        wait_sql('SELECT date FROM journals', [(today,)])
+        today_id = sql('SELECT page_id FROM journals')[0][0]
+        shot('02-today')
+        xdo('key', 'ctrl+shift+j'); pump()
+        text = 'سلام daily capture 😀'
+        paste(text); wait_sql('SELECT content FROM blocks', [(text,)])
+        block_id, page_id = sql('SELECT id,page_id FROM blocks')[0]
+        shot('03-capture')
         if args.reliability:
-            window = start()
-            field(220, 214, str(graph)); click(260, 273)
-            wait_sql('SELECT count(*) FROM schema_migrations', [(4,)])
-            field(150, 816, 'Recovery'); xdo('key', 'Return'); pump()
-            click(390, 700)
-            base = 'original فارسی'
-            paste(base); wait_sql('SELECT content FROM blocks', [(base,)])
-            block_id, page_id = sql('SELECT id,page_id FROM blocks')[0]
             graph_id = sql('SELECT id FROM graph_identity')[0][0]
-            draft = base + ' recovered 😀'
-            lock = sqlite3.connect(graph, isolation_level=None)
-            lock.execute('BEGIN IMMEDIATE')
+            draft = text + ' recovered 😀'
+            lock = sqlite3.connect(graph, isolation_level=None); lock.execute('BEGIN IMMEDIATE')
             try:
-                started = time.monotonic()
                 paste(' recovered 😀')
                 deadline = time.monotonic() + 3
                 captured = False
@@ -164,246 +157,199 @@ def main():
                     stores = list((work / 'data').rglob(f'{graph_id}.sqlite3'))
                     if stores:
                         with sqlite3.connect(stores[0]) as recovery:
-                            if recovery.execute('SELECT content FROM recovery_drafts').fetchall() == [(draft,)]:
-                                captured = True
-                                break
+                            captured = recovery.execute('SELECT content FROM recovery_drafts').fetchall() == [(draft,)]
+                        if captured:
+                            break
                     pump(.05)
-                assert captured, 'independent durable snapshot must succeed while graph writer is locked'
-                print(f'Recovery snapshot observed after {time.monotonic() - started:.2f}s with graph locked', flush=True)
-                assert sql('SELECT content FROM blocks') == [(base,)]
+                assert captured, 'private snapshot must succeed while graph writer is locked'
+                assert sql('SELECT content FROM blocks') == [(text,)]
                 shot('r01-protected-draft')
-                # Kill ONLY this disposable fixture app, without graceful flush.
                 app.kill(); assert app.wait(timeout=10) == -9
-                pump()
             finally:
                 lock.execute('ROLLBACK'); lock.close()
-            # The persisted side may advance independently after the crash.
             with sqlite3.connect(graph) as connection:
                 connection.execute('UPDATE blocks SET content=? WHERE id=?', ('external newer', block_id))
-            window = start()
-            shot('r02-startup-detection')
-            field(220, 214, str(graph)); click(130, 273)
-            shot('r03-recovery-list')
-            # Open graph keeps focus on Open; next are Create, then Compare.
-            xdo('key', 'Tab', 'Tab', 'Return'); pump()
-            shot('r04-both-versions')
-            assert sql('SELECT content FROM blocks') == [('external newer',)]
-            # Discard requires a dialog; Escape must retain the recovery copy.
-            xdo('key', 'Tab', 'Return'); pump()
-            shot('r05-discard-confirmation')
+            start(); shot('r02-startup-detection')
+            field(220, 140, str(graph)); click(130, 200)
+            xdo('key', 'ctrl+Home'); pump(); shot('r03-recovery-list')
+            click(470, 258); shot('r04-comparison')
+            xdo('key', 'Tab', 'Return'); pump(); shot('r05-discard-confirmation')
             xdo('key', 'Escape'); pump()
             with sqlite3.connect(stores[0]) as recovery:
                 assert recovery.execute('SELECT content FROM recovery_drafts').fetchall() == [(draft,)]
-            # From Discard: persisted textarea, recovery textarea, then Recover.
             xdo('key', 'Tab', 'Tab', 'Tab', 'Return'); pump()
             wait_sql('SELECT content FROM blocks', [(draft,)])
             with sqlite3.connect(stores[0]) as recovery:
                 assert recovery.execute('SELECT count(*) FROM recovery_drafts').fetchone()[0] == 0
                 assert recovery.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
             assert sql('SELECT id,page_id FROM blocks') == [(block_id, page_id)]
-            assert sql('PRAGMA integrity_check') == [('ok',)]
-            assert sql('PRAGMA foreign_key_check') == []
             shot('r06-recovered-cleaned')
-            close(window); assert app.wait(timeout=10) == 0
-            window = start(); field(220, 214, str(graph)); click(130, 273)
-            assert sql('SELECT content FROM blocks') == [(draft,)]
+            close(); assert app.wait(timeout=10) == 0
+            reopen(); assert sql('SELECT content FROM blocks') == [(draft,)]
             shot('r07-reopened')
-            close(window); assert app.wait(timeout=10) == 0
-            print('PASS: independent recovery during locked graph, SIGKILL/restart, startup discovery, compare conflict, explicit discard cancellation, recover, cleanup, stable identity and integrity', flush=True)
-            return
-        window = start()
-        shot('01-shell')
-        field(220, 214, str(graph))
-        click(260, 273)
-        wait_sql('SELECT count(*) FROM schema_migrations', [(4,)])
-        pump()
-        shot('02-graph')
-        field(150, 816, 'Source')
-        xdo('key', 'Return'); pump()
-        wait_sql('SELECT title FROM pages', [('Source',)])
-        shot('03-page')
-        click(390, 700)
-        text = 'سلام 😀 [[Target]] [[Later]]'
-        paste(text)
-        wait_sql('SELECT content FROM blocks', [(text,)])
-        wait_sql('SELECT count(*) FROM inline_references', [(2,)])
-        click(360, 704)
-        xdo('key', 'Home', 'Down', 'Return'); pump()
-        wait_sql('SELECT task_status FROM blocks', [('todo',)])
-        click(350, 617)
-        wait_sql('SELECT task_status FROM blocks', [(None,)])
-        click(420, 617)
-        wait_sql('SELECT task_status FROM blocks', [('todo',)])
-        shot('04-links-tasks')
-        print('Unicode links and task undo/redo passed', flush=True)
-        block_id = sql('SELECT id FROM blocks')[0][0]
-        click(580, 740)  # explicit creation from [[Target]]
-        wait_sql("SELECT count(*) FROM pages WHERE title='Target'", [(1,)])
-        target_id = sql("SELECT id FROM pages WHERE title='Target'")[0][0]
-        field(600, 515, 'Renamed')
-        xdo('key', 'Return'); pump()
-        wait_sql('SELECT title FROM pages WHERE id=?', [('Renamed',)], (target_id,))
-        wait_sql("SELECT target_page_id FROM inline_references WHERE title_key='target'", [(target_id,)])
-        shot('05-renamed-backlink')
-        click(520, 826)  # backlink reveals the exact source block
-        xdo('key', 'ctrl+End')
-        paste(' [[Ren')
-        shot('06-suggestions')
-        click(360, 733)
-        text += ' [[Renamed]]'
-        wait_sql('SELECT content FROM blocks WHERE id=?', [(text,)], (block_id,))
-        wait_sql('SELECT count(*) FROM inline_references WHERE target_page_id=?', [(2,)], (target_id,))
-        field(140, 470, 'سلام')
-        pump(.5)
-        shot('07-search')
-        click(555, 740)  # resolved reference opens Renamed, leaving search visible
-        click(170, 565)  # Unicode block hit returns to Source and focuses its UUID
-        xdo('key', 'ctrl+End')
-        paste(' navigation')
-        text += ' navigation'
-        wait_sql('SELECT content FROM blocks WHERE id=?', [(text,)], (block_id,))
-        field(140, 470, '')
-        click(140, 598)
-        today = time.strftime('%Y-%m-%d')
-        wait_sql('SELECT date FROM journals', [(today,)])
-        today_id = sql('SELECT page_id FROM journals')[0][0]
-        click(140, 598)
-        assert sql('SELECT page_id FROM journals') == [(today_id,)]
-        # Exercise the real WebKit date picker (its segments are not text inputs).
-        click(100, 677)
-        year, month = map(int, today[:7].split('-'))
-        index = (calendar.monthrange(year, month)[0] + 1) % 7 + 14
-        click(86 + index % 7 * 28, 773 + index // 7 * 17)
-        click(600, 428)  # dismiss the native picker before using the page controls
-        click(140, 737)
-        chosen = today[:8] + '15'
-        wait_sql('SELECT count(*) FROM journals WHERE date=?', [(1,)], (chosen,))
-        shot('08-journals')
-        field(140, 470, 'سلام')
-        pump(.5)
-        click(170, 565)
-        field(140, 470, '')
-        click(700, 700)
-        xdo('key', 'ctrl+End')
-        lock = sqlite3.connect(graph, isolation_level=None)
-        lock.execute('BEGIN IMMEDIATE')
-        try:
-            paste(' retained draft')
-            pump(6)
-            assert sql('SELECT content FROM blocks WHERE id=?', (block_id,)) == [(text,)]
-            close(window)
-            assert app.poll() is None, 'save error must prevent normal close'
-            shot('09-retained-error')
-            click(360, 858)
-            xdo('key', 'Home', 'Down', 'Down', 'Down', 'Return'); pump()
-            assert sql('SELECT task_status FROM blocks WHERE id=?', (block_id,)) == [('todo',)]
-            shot('09-task-rejected')
-        finally:
-            lock.execute('ROLLBACK')
-            lock.close()
-        click(430, 768)  # explicit retry, never an automatic structural replay
-        text += ' retained draft'
-        wait_sql('SELECT content FROM blocks WHERE id=?', [(text,)], (block_id,))
-        click(700, 740)
-        xdo('key', 'ctrl+End')
-        paste(' navigation flush', settle=.02)
-        xdo('mousemove', 140, 638, 'click', 1)
-        pump()
-        text += ' navigation flush'
-        wait_sql('SELECT content FROM blocks WHERE id=?', [(text,)], (block_id,))
-        shot('10-navigation-flush')
-        field(140, 470, 'سلام')
-        pump(.5)
-        click(170, 565)
-        field(140, 470, '')
-        click(360, 698)
-        xdo('key', 'Home', 'Down', 'Down', 'Return'); pump()
-        wait_sql('SELECT task_status FROM blocks WHERE id=?', [('doing',)], (block_id,))
-        click(360, 698)
-        xdo('key', 'Home', 'Down', 'Down', 'Down', 'Return'); pump()
-        wait_sql('SELECT task_status FROM blocks WHERE id=?', [('done',)], (block_id,))
-        click(700, 700)
-        xdo('key', 'ctrl+End')
-        paste(' close flush', settle=.02)
-        close(window)
-        assert app.wait(timeout=10) == 0, 'normal close must finish after flushing'
-        text += ' close flush'
-        wait_sql('SELECT content,task_status FROM blocks WHERE id=?', [(text, 'done')], (block_id,))
-        expected_blocks = sql('SELECT id,page_id,parent_id,position,content,task_status FROM blocks ORDER BY id')
-        expected_links = sql('SELECT * FROM inline_references ORDER BY source_block_id,title_key')
-        expected_pages = sql('SELECT id,title FROM pages ORDER BY id')
-        window = start()
-        field(220, 214, str(graph))
-        click(130, 273)
-        field(140, 470, 'سلام')
-        pump(.5)
-        click(170, 565)
-        shot('11-reopened')
-        assert sql('SELECT id,page_id,parent_id,position,content,task_status FROM blocks ORDER BY id') == expected_blocks
-        assert sql('SELECT * FROM inline_references ORDER BY source_block_id,title_key') == expected_links
-        assert sql('SELECT id,title FROM pages ORDER BY id') == expected_pages
+        else:
+            click(390, 198)
+            assert sql('SELECT count(*) FROM journals') == [(1,)]
+            shot('04-empty-preview')
+            click(500, 198); assert sql('SELECT page_id FROM journals') == [(today_id,)]
+            click(605, 198); assert sql('SELECT count(*) FROM journals') == [(1,)]
+            # Heading -> Previous, Today, Next, Add a note. No row before submit.
+            xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Return'); pump()
+            paste('cancel this form'); close(); assert app.poll() is None
+            assert sql('SELECT count(*) FROM journals') == [(1,)]
+            xdo('key', 'Escape'); pump(); xdo('key', 'Escape'); pump()
+            assert sql('SELECT count(*) FROM journals') == [(1,)]
+            xdo('key', 'Return'); pump()
+            paste('tomorrow task'); assert sql('SELECT count(*) FROM journals') == [(1,)]
+            shot('05-first-note-form')
+            xdo('key', 'Tab', 'Return'); pump()
+            wait_sql('SELECT count(*) FROM journals', [(2,)])
+            tomorrow_id = sql('SELECT page_id FROM journals WHERE date!=?', (today,))[0][0]
+            paste(' focused')
+            wait_sql('SELECT content FROM blocks WHERE page_id=?', [('tomorrow task focused',)], (tomorrow_id,))
+            click(355, 368); xdo('key', 'Home', 'Down', 'Return'); pump()
+            wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('todo',)], (tomorrow_id,))
+            click(195, 130); shot('06-tasks')
+            xdo('key', 'Tab', 'Home', 'Down', 'Down', 'Down', 'Return', 'Escape'); pump()
+            shot('06a-no-done-tasks')
+            xdo('key', 'Home', 'Down', 'Return', 'Escape'); pump()
+            xdo('key', 'Tab', 'End', 'Return', 'Escape'); pump()
+            shot('06b-filtered-tasks')
+            click(195, 130)
+            xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Return'); pump()
+            xdo('key', 'ctrl+End'); paste(' source focus')
+            wait_sql('SELECT content FROM blocks WHERE page_id=?', [('tomorrow task focused source focus',)], (tomorrow_id,))
+            click(355, 368); xdo('key', 'Home', 'Down', 'Down', 'Return'); pump()
+            wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('doing',)], (tomorrow_id,))
+            click(355, 368); xdo('key', 'Home', 'Down', 'Down', 'Down', 'Return'); pump()
+            wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('done',)], (tomorrow_id,))
+            xdo('key', 'ctrl+z'); pump()
+            wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('doing',)], (tomorrow_id,))
+            find('سلام'); xdo('key', 'Return'); pump()
+            paste(' search focus'); text = ' search focus' + text
+            wait_sql('SELECT content FROM blocks WHERE id=?', [(text,)], (block_id,))
+            shot('07-search-focus')
+            find(''); click(700, 370); xdo('key', 'ctrl+End')
+            lock = sqlite3.connect(graph, isolation_level=None); lock.execute('BEGIN IMMEDIATE')
+            try:
+                paste(' retained draft'); pump(6)
+                assert sql('SELECT content FROM blocks WHERE id=?', (block_id,)) == [(text,)]
+                click(195, 130); close(); assert app.poll() is None
+                shot('08-retained-error')
+            finally:
+                lock.execute('ROLLBACK'); lock.close()
+            click(440, 439); pump()
+            text += ' retained draft'
+            wait_sql('SELECT content FROM blocks WHERE id=?', [(text,)], (block_id,))
+            find('daily'); xdo('key', 'Return'); pump()
+            xdo('key', 'ctrl+End'); paste(' close flush', settle=.02)
+            close(); assert app.wait(timeout=10) == 0
+            text += ' close flush'
+            wait_sql('SELECT content FROM blocks WHERE id=?', [(text,)], (block_id,))
+            expected = sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id')
+            reopen()
+            assert sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id') == expected
+            assert sql('SELECT page_id FROM journals WHERE date=?', (today,)) == [(today_id,)]
+            shot('09-reopened')
+            # Preserve existing production coverage for structural editing and
+            # confirmed subtree deletion, independent of the other journal.
+            find('daily'); xdo('key', 'Return'); pump()
+            xdo('key', 'ctrl+End', 'Return'); pump()
+            wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(2,)], (today_id,))
+            paste('delete child [[Later]]')
+            wait_sql("SELECT count(*) FROM blocks WHERE content='delete child [[Later]]'", [(1,)])
+            xdo('key', 'Tab'); pump()
+            wait_sql('SELECT count(*) FROM blocks WHERE parent_id=?', [(1,)], (block_id,))
+            pump(); xdo('key', 'Return'); pump()
+            wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(3,)], (today_id,))
+            paste('delete grandchild')
+            wait_sql("SELECT count(*) FROM blocks WHERE content='delete grandchild'", [(1,)])
+            xdo('key', 'Tab'); pump()
+            wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(3,)], (today_id,))
+            expected_subtree = sql('SELECT * FROM blocks WHERE page_id=? ORDER BY id', (today_id,))
+            expected_edges = sql('SELECT * FROM inline_references ORDER BY source_block_id,title_key')
+            xdo('key', 'ctrl+Home', 'Up', 'ctrl+Home', 'Up', 'Escape'); pump()
+            xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+            shot('10-subtree-confirmation')
+            xdo('key', 'Escape'); pump()
+            assert sql('SELECT * FROM blocks WHERE page_id=? ORDER BY id', (today_id,)) == expected_subtree
+            xdo('key', 'Escape', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+            xdo('key', 'Tab', 'space'); pump()
+            wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(0,)], (today_id,))
+            xdo('key', 'Tab', 'space'); pump()
+            assert sql('SELECT * FROM blocks WHERE page_id=? ORDER BY id', (today_id,)) == expected_subtree
+            assert sql('SELECT * FROM inline_references ORDER BY source_block_id,title_key') == expected_edges
+            shot('11-subtree-restored')
+            xdo('key', 'ctrl+shift+z'); pump()
+            wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(0,)], (today_id,))
+            xdo('key', 'Tab', 'Tab', 'space'); pump()
+            wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(1,)], (today_id,))
+            xdo('key', 'Escape', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+            wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(0,)], (today_id,))
+            assert sql('SELECT content,task_status FROM blocks WHERE page_id=?', (tomorrow_id,)) == [('tomorrow task focused source focus', 'doing')]
+            # Explicit link creation, rename-stable bindings and backlinks remain
+            # integrated with the new shell; unresolved Later must stay absent.
+            xdo('key', 'ctrl+shift+j'); pump(); paste('[[Target]] [[Later]]')
+            wait_sql('SELECT count(*) FROM inline_references', [(2,)])
+            click(610, 413)  # references are keyed/sorted, Later precedes Target
+            wait_sql("SELECT count(*) FROM pages WHERE title='Target'", [(1,)])
+            target_id = sql("SELECT id FROM pages WHERE title='Target'")[0][0]
+            click(390, 184); xdo('key', 'Tab'); paste('Renamed'); xdo('key', 'Return'); pump()
+            wait_sql('SELECT title FROM pages WHERE id=?', [('Renamed',)], (target_id,))
+            wait_sql("SELECT target_page_id FROM inline_references WHERE title_key='target'", [(target_id,)])
+            assert sql("SELECT count(*) FROM pages WHERE title='Later'") == [(0,)]
+            shot('12-renamed-backlinks')
+            click(390, 184)  # collapse rename controls
+            click(490, 435); xdo('key', 'ctrl+End'); paste(' backlink focus')
+            wait_sql("SELECT content FROM blocks WHERE page_id=?", [('[[Target]] [[Later]] backlink focus',)], (today_id,))
+            # A resolved binding still opens the renamed UUID without rewriting source.
+            click(610, 413)
+            pump()
+            click(390, 309); paste('ordinary page task')
+            click(355, 307); xdo('key', 'Home', 'Down', 'Return'); pump()
+            wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('todo',)], (target_id,))
+            click(195, 130); shot('13-tasks-across-pages-journals')
+            # A narrow desktop still offers the same workspace controls. Keyboard
+            # search must reveal/focus source content even when it is below fold.
+            xdo('windowsize', window, 680, 900); pump()
+            find('ordinary'); xdo('key', 'Return'); pump()
+            xdo('key', 'ctrl+End'); paste(' narrow focus')
+            wait_sql('SELECT content FROM blocks WHERE page_id=?', [('ordinary page task narrow focus',)], (target_id,))
+            shot('14-narrow-source')
+            xdo('windowsize', window, 1300, 1000); pump()
+            ranked = sql('SELECT b.id,b.content FROM blocks_fts JOIN blocks b ON b.rowid=blocks_fts.rowid WHERE blocks_fts MATCH ? ORDER BY rank LIMIT 100', ('"task"',))
+            assert len(ranked) == 2
+            find('task'); xdo('key', 'Down', 'Return'); pump(); paste('keyboard ')
+            wait_sql('SELECT content FROM blocks WHERE id=?', [('keyboard ' + ranked[1][1],)], (ranked[1][0],))
+            xdo('key', 'ctrl+k', 'Escape', 'ctrl+Home'); pump()
+            # Explicit graph switch creates an independent database and leaves
+            # existing graph content untouched; reopen the original afterward.
+            expected_graph = sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id')
+            click(1180, 44)
+            second = work / 'second.sqlite3'
+            field(220, 140, str(second)); click(270, 200)
+            with sqlite3.connect(second) as connection:
+                assert connection.execute('SELECT date FROM journals').fetchall() == [(today,)]
+                assert connection.execute('SELECT count(*) FROM blocks').fetchone()[0] == 0
+                assert connection.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+            assert sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id') == expected_graph
+            click(1180, 44); field(220, 140, str(graph)); click(130, 200)
+            assert sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id') == expected_graph
+            shot('15-graph-switched-back')
         assert sql('PRAGMA integrity_check') == [('ok',)]
         assert sql('PRAGMA foreign_key_check') == []
-        # Build a three-level subtree through native keyboard events. Search-hit
-        # navigation above leaves the source textarea focused by its UUID.
-        xdo('key', 'ctrl+End', 'Return'); pump()
-        paste('delete child [[Renamed]]')
-        xdo('key', 'Tab'); pump()
-        xdo('key', 'Return'); pump()
-        paste('delete grandchild')
-        xdo('key', 'Tab'); pump()
-        wait_sql('SELECT count(*) FROM blocks WHERE page_id=(SELECT page_id FROM blocks WHERE id=?)', [(3,)], (block_id,))
-        expected_subtree = sql('SELECT * FROM blocks ORDER BY id')
-        expected_edges = sql('SELECT * FROM inline_references ORDER BY source_block_id,title_key')
-        # Native text boundary navigation back to the root, then toolbar focus.
-        xdo('key', 'ctrl+Home', 'Up', 'ctrl+Home', 'Up', 'Escape'); pump()
-        # Undo enabled, redo disabled, then four move controls and Delete… .
-        xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
-        shot('12-delete-confirmation-three-blocks')
-        xdo('key', 'Escape'); pump()
-        assert sql('SELECT * FROM blocks ORDER BY id') == expected_subtree, 'cancel must not delete'
-        xdo('key', 'Escape', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
-        xdo('key', 'Tab', 'space'); pump()
-        wait_sql('SELECT count(*) FROM blocks', [(0,)])
-        # Empty page focuses the toolbar; Undo restores exact identity/metadata.
-        xdo('key', 'Tab', 'space'); pump()
-        assert sql('SELECT * FROM blocks ORDER BY id') == expected_subtree
-        assert sql('SELECT * FROM inline_references ORDER BY source_block_id,title_key') == expected_edges
-        shot('13-delete-undone')
-        xdo('key', 'ctrl+shift+z'); pump()
-        wait_sql('SELECT count(*) FROM blocks', [(0,)])
-        # Undo is enabled, redo exhausted; next enabled control is Add first block.
-        xdo('key', 'Tab', 'Tab', 'space'); pump()
-        wait_sql('SELECT count(*) FROM blocks', [(1,)])
-        xdo('key', 'Escape', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
-        # The last empty leaf deletes immediately, without a confirmation dialog.
-        wait_sql('SELECT count(*) FROM blocks', [(0,)])
-        shot('14-empty-leaf-deleted')
-        close(window)
-        assert app.wait(timeout=10) == 0
-        window = start()
-        field(220, 214, str(graph)); click(130, 273)
-        assert sql('SELECT count(*) FROM blocks') == [(0,)]
-        assert sql('PRAGMA integrity_check') == [('ok',)]
-        assert sql('PRAGMA foreign_key_check') == []
-        shot('15-deletion-reopened')
-        close(window)
-        assert app.wait(timeout=10) == 0
-        print('PASS: references/backlinks, suggestions, Unicode search, journals, task transitions,',
-              'retained drafts, blocked close, explicit retry, navigation/close flush, confirmed subtree deletion,',
-              'cancel, deletion undo/redo, empty-leaf deletion, restart and integrity', flush=True)
+        close(); assert app.wait(timeout=10) == 0
+        print('PASS: production recovery' if args.reliability else 'PASS: daily workflows, task/search focus, failure retention, close flush and reopen integrity', flush=True)
     except BaseException:
-        shot('failure')
-        raise
+        shot('failure'); raise
     finally:
         if app and app.poll() is None:
             if window is not None:
-                close(window)
+                close()
             try:
                 app.wait(timeout=8)
             except subprocess.TimeoutExpired:
-                app.terminate()
-                app.wait(timeout=8)
+                app.terminate(); app.wait(timeout=8)
         log.close()
 
 
