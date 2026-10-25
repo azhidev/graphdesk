@@ -3,9 +3,11 @@ mod migrations;
 mod model;
 mod editor;
 mod references;
+mod search;
+pub use search::normalize_persian;
 pub mod recovery;
 pub use references::InlineReference;
-pub use editor::{Editor, EditAction, EditResult, DeletePreview};
+pub use editor::{Editor, EditAction, EditResult, DeletePreview, SubmittedNote, NoteState};
 pub use model::{Block, Page, SearchHit, TaskFilter, TaskHit, TaskStatus};
 
 use std::{fs::OpenOptions, path::Path, time::Duration};
@@ -251,7 +253,7 @@ const TASKS_SQL: &str = "SELECT b.id,b.page_id,p.title,b.content,b.task_status F
     JOIN pages p ON p.id=b.page_id WHERE b.task_status IN (?1,?2) AND (?3 IS NULL OR b.page_id=?3)
     ORDER BY p.title_key,p.id,b.id LIMIT ?4 OFFSET ?5";
 
-fn validate_journal_date(date: &str) -> Result<()> {
+pub fn validate_journal_date(date: &str) -> Result<()> {
     if date.len() != 10 { return Err(Error::Invalid("expected canonical ISO date YYYY-MM-DD".into())); }
     let parsed = NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map_err(|_| Error::Invalid("expected valid ISO Gregorian date YYYY-MM-DD".into()))?;

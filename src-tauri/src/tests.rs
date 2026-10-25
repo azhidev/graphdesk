@@ -20,6 +20,89 @@ fn invoke_from(window: &tauri::WebviewWindow<MockRuntime>, command: &str, args: 
 }
 
 #[test]
+fn m5_notes_search_preferences_and_stale_sessions_ipc() {
+    use tauri::Manager;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("m5.db");
+    let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+    app.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(directory.path().join("recovery"));
+    app.state::<crate::preferences::PreferencesState>().0.lock().unwrap().replace(directory.path().join("config"));
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+    let defaults = json!({"language":"en","calendar":"gregorian","search_mode":"original"});
+    assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap(), json!({"preferences":defaults,"warning":false}));
+    let prefs = json!({"language":"fa","calendar":"jalali","search_mode":"persian"});
+    invoke(&window,"preferences_save",json!({"preferences":prefs})).unwrap();
+    assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap(), json!({"preferences":prefs,"warning":false}));
+    assert!(invoke(&window,"preferences_save",json!({"preferences":{"language":"unknown","calendar":"gregorian","search_mode":"original"}})).is_err());
+    assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap()["preferences"], prefs);
+    std::fs::write(directory.path().join("config/preferences.json"),b"malformed").unwrap();
+    assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap(),json!({"preferences":defaults,"warning":true}));
+    invoke(&window,"preferences_save",json!({"preferences":prefs})).unwrap();
+    let session = invoke(&window,"editor_open",json!({"path":path,"create":true})).unwrap();
+    let token = &session["token"];
+    let id = Uuid::new_v4();
+    let block = Uuid::new_v4();
+    let raw = "كتاب می\u{200c}روم ۱۲٣ 😀";
+    let capture_args = json!({"session":token,"id":id,"blockId":block,"date":"2024-02-29","content":raw});
+    let first = invoke(&window,"recovery_note_put",capture_args.clone()).unwrap();
+    assert_eq!(first["graph_id"], session["graph_id"]);
+    assert_eq!(first["journal_date"], "2024-02-29");
+    assert_eq!(first["block_id"], block.to_string());
+    assert_eq!(invoke(&window,"recovery_inventory",json!({})).unwrap(), 1);
+    let newer = invoke(&window,"recovery_note_put",capture_args.clone()).unwrap();
+    assert!(newer["version"].as_i64().unwrap() > first["version"].as_i64().unwrap());
+    assert_eq!(invoke(&window,"recovery_note_remove",json!({"session":token,"id":id,"version":first["version"]})).unwrap_err()["code"], "conflict");
+    assert_eq!(invoke(&window,"editor_note_state",json!({"session":token,"blockId":block})).unwrap(),json!({"block":null,"revision":null,"deleted":false}));
+    let submit_args = json!({"session":token,"date":"2024-02-29","blockId":block,"content":raw});
+    let submitted = invoke(&window,"editor_submit_note",submit_args.clone()).unwrap();
+    assert_eq!(submitted["block"]["id"], block.to_string());
+    assert_eq!(submitted["revision"], 0);
+    assert_eq!(invoke(&window,"editor_submit_note",submit_args.clone()).unwrap(),submitted);
+    let page = &submitted["page"]["id"];
+    let hits = invoke(&window,"editor_search",json!({"session":token,"text":"کتاب می روم 123","persian":true})).unwrap();
+    assert_eq!(hits[0]["text"],raw);
+    assert_eq!(invoke(&window,"editor_search",json!({"session":token,"text":"کتاب"})).unwrap(),json!([]));
+    assert_eq!(invoke(&window,"editor_search",json!({"session":token,"text":"کتاب","persian":false})).unwrap(),json!([]));
+    let outline = invoke(&window,"editor_page",json!({"session":token,"pageId":page})).unwrap();
+    assert_eq!(outline["blocks"].as_array().unwrap().len(),1);
+    assert_eq!(outline["can_undo"],true);
+    invoke(&window,"editor_history",json!({"session":token,"pageId":page,"redo":false})).unwrap();
+    assert_eq!(invoke(&window,"editor_note_state",json!({"session":token,"blockId":block})).unwrap(),json!({"block":null,"revision":1,"deleted":true}));
+    assert_eq!(invoke(&window,"editor_submit_note",submit_args.clone()).unwrap_err()["code"], "conflict");
+    // Recovery is independent of graph state and persists after canonical undo.
+    assert_eq!(invoke(&window,"recovery_notes",json!({"session":token})).unwrap()[0]["id"], id.to_string());
+    let reopened = invoke(&window,"editor_open",json!({"path":path,"create":false})).unwrap();
+    for (command, args) in [
+        ("editor_submit_note", submit_args),
+        ("editor_note_state", json!({"session":token,"blockId":block})),
+        ("recovery_note_put", capture_args),
+        ("recovery_notes", json!({"session":token})),
+        ("recovery_note_remove", json!({"session":token,"id":id,"version":newer["version"]})),
+    ] {
+        assert_eq!(invoke(&window,command,args).unwrap_err()["code"],"stale_session", "{command}");
+    }
+    assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap()["preferences"],prefs);
+    invoke(&window,"recovery_note_remove",json!({"session":reopened["token"],"id":id,"version":newer["version"]})).unwrap();
+    assert_eq!(invoke(&window,"recovery_inventory",json!({})).unwrap(),0);
+    invoke(&window,"open_graph",json!({"path":path,"create":false})).unwrap();
+    assert_eq!(invoke(&window,"recovery_notes",json!({"session":reopened["token"]})).unwrap_err()["code"], "stale_session");
+}
+
+#[test]
+fn pending_note_capture_does_not_wait_for_graph_mutex() {
+    use tauri::Manager;
+    let directory = tempfile::tempdir().unwrap();
+    let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+    app.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(directory.path().join("recovery"));
+    let window = tauri::WebviewWindowBuilder::new(&app,"main",Default::default()).build().unwrap();
+    let session = invoke(&window,"editor_open",json!({"path":directory.path().join("g.db"),"create":true})).unwrap();
+    let state = app.state::<AppState>();
+    let _held = state.0.lock().unwrap();
+    assert!(invoke(&window,"recovery_note_put",json!({"session":session["token"],"id":Uuid::new_v4(),"blockId":Uuid::new_v4(),"date":"2024-02-29","content":"independent"})).is_ok());
+    assert!(invoke(&window,"recovery_note_put",json!({"session":session["token"],"id":Uuid::new_v4(),"blockId":Uuid::new_v4(),"date":"2023-02-29","content":"invalid"})).is_err());
+}
+
+#[test]
 fn commands_roundtrip_and_preserve_state_on_errors() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("graph.sqlite3");

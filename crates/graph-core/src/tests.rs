@@ -376,3 +376,38 @@ fn randomized_reorders_match_a_vector_model() -> Result<()> {
     }
     Ok(())
 }
+#[test]
+fn persian_search_normalization_backfill_rebuild_and_rollback() -> Result<()> {
+    assert_eq!(normalize_persian("ي ك ۰۱۲۳۴۵۶۷۸۹ ٠١٢٣٤٥٦٧٨٩ می\u{200c}روم e\u{301}"), "ی ک 0123456789 0123456789 می روم é");
+    let mut conn = Connection::open_in_memory()?;
+    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA recursive_triggers=ON;
+        CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT NOT NULL,source TEXT NOT NULL,applied_at INTEGER NOT NULL DEFAULT(unixepoch())) STRICT;")?;
+    for (i, (name, sql)) in migrations::MIGRATIONS.iter().take(4).enumerate() {
+        conn.execute_batch(sql)?;
+        conn.execute("INSERT INTO schema_migrations(version,name,source) VALUES(?1,?2,?3)", params![i as i64+1, name, sql])?;
+    }
+    let id = Uuid::new_v4();
+    let raw = "كتاب يكي ۱۲٣ می\u{200c}روم";
+    conn.execute("INSERT INTO pages(id,title,title_key) VALUES(?1,?2,?2)", params![id.to_string(), raw])?;
+    conn.execute_batch("CREATE TABLE blocks_persian_fts(conflict TEXT)")?;
+    assert!(migrations::migrate(&mut conn).is_err());
+    assert_eq!(conn.query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get::<_, i64>(0))?, 4);
+    assert!(!conn.prepare("SELECT 1 FROM sqlite_schema WHERE name='pages_persian_fts'")?.exists([])?);
+    conn.execute_batch("DROP TABLE blocks_persian_fts")?;
+    migrations::migrate(&mut conn)?;
+    let mut g = Graph { conn };
+    assert_eq!(g.search_mode("کتاب یکی 123 می روم", true)?[0].text, raw);
+    assert!(g.search("کتاب")?.is_empty());
+    assert_eq!(g.search("كتاب")?.len(), 1);
+    assert!(g.search_mode("میروم", true)?.is_empty());
+    g.conn.execute_batch("DELETE FROM pages_persian_fts")?;
+    assert!(g.search_mode("کتاب", true)?.is_empty());
+    g.rebuild_persian_search()?;
+    assert_eq!(g.search_mode("کتاب", true)?.len(), 1);
+    g.rename_page(id, "تازه كاری")?;
+    assert!(g.search_mode("کتاب", true)?.is_empty());
+    assert_eq!(g.search_mode("کاری", true)?.len(), 1);
+    g.delete_page(id)?;
+    assert!(g.search_mode("کاری", true)?.is_empty());
+    Ok(())
+}

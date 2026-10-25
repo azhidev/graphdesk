@@ -7,9 +7,16 @@ import random
 import sqlite3
 import tempfile
 import unittest
+import unicodedata
 from uuid import uuid4
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "crates/graph-core/migrations"
+
+
+def persian_normalize(text):
+    mapping = {ord("ي"): "ی", ord("ك"): "ک", 0x200c: " "}
+    mapping.update({ord(c): str(i) for digits in ("۰۱۲۳۴۵۶۷۸۹", "٠١٢٣٤٥٦٧٨٩") for i, c in enumerate(digits)})
+    return unicodedata.normalize("NFC", text.translate(mapping))
 
 
 def apply_sql(conn, name):
@@ -27,6 +34,7 @@ def connect(path=":memory:"):
     conn = sqlite3.connect(path, isolation_level=None)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA recursive_triggers=ON")
+    conn.create_function("persian_normalize", 1, persian_normalize, deterministic=True)
     return conn
 
 
@@ -39,6 +47,7 @@ class SchemaTests(unittest.TestCase):
         apply_sql(self.db, "002_search.sql")
         apply_sql(self.db, "003_inline_references.sql")
         apply_sql(self.db, "004_reliability.sql")
+        apply_sql(self.db, "005_persian_search.sql")
         self.db.execute("INSERT INTO graph_identity VALUES(1,?)", (str(uuid4()),))
         self.db.execute("COMMIT")
         self.page = self.add_page("Notes")
@@ -239,6 +248,51 @@ class SchemaTests(unittest.TestCase):
         apply_sql(conn, "002_search.sql")
         conn.execute("COMMIT")
         self.assertEqual(conn.execute("SELECT count(*) FROM pages_fts WHERE pages_fts MATCH 'Existing'").fetchone()[0], 1)
+
+    def test_persian_search_backfill_originals_and_transactional_triggers(self):
+        conn = connect()
+        self.addCleanup(conn.close)
+        for name in ("001_initial.sql", "002_search.sql", "003_inline_references.sql", "004_reliability.sql"):
+            apply_sql(conn, name)
+        page, block = str(uuid4()), str(uuid4())
+        raw = "كتاب يكي ۱۲٣ می\u200cروم e\u0301"
+        conn.execute("INSERT INTO pages(id,title,title_key) VALUES(?,?,?)", (page, raw, raw))
+        conn.execute("INSERT INTO blocks(id,page_id,position,content) VALUES(?,?,0,?)", (block, page, raw))
+        conn.execute("BEGIN IMMEDIATE")
+        apply_sql(conn, "005_persian_search.sql")
+        conn.execute("COMMIT")
+        count = lambda table, term: conn.execute(f"SELECT count(*) FROM {table} WHERE {table} MATCH ?", (term,)).fetchone()[0]
+        self.assertEqual(count("blocks_persian_fts", '"کتاب یکی 123 می روم é"'), 1)
+        self.assertEqual(count("blocks_fts", '"کتاب"'), 0)
+        self.assertEqual(count("blocks_fts", '"كتاب"'), 1)
+        self.assertEqual(count("blocks_persian_fts", '"میروم"'), 0)
+        self.assertEqual(conn.execute("SELECT content FROM blocks").fetchone()[0], raw)
+        self.assertEqual(conn.execute("SELECT title FROM pages").fetchone()[0], raw)
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("UPDATE blocks SET content='replacement' WHERE id=?", (block,))
+        conn.execute("DELETE FROM pages WHERE id=?", (page,))
+        self.assertEqual(count("blocks_persian_fts", "replacement"), 0)
+        conn.execute("ROLLBACK")
+        self.assertEqual(count("blocks_persian_fts", '"کتاب"'), 1)
+        self.assertEqual(count("pages_persian_fts", '"کتاب"'), 1)
+        conn.execute("UPDATE blocks SET content='replacement' WHERE id=?", (block,))
+        self.assertEqual(count("blocks_persian_fts", '"کتاب"'), 0)
+        self.assertEqual(count("blocks_persian_fts", "replacement"), 1)
+        conn.execute("DELETE FROM pages WHERE id=?", (page,))
+        self.assertEqual(count("blocks_persian_fts", "replacement"), 0)
+        self.assertEqual(count("pages_persian_fts", '"کتاب"'), 0)
+
+    def test_persian_migration_failure_rolls_back(self):
+        conn = connect()
+        self.addCleanup(conn.close)
+        for name in ("001_initial.sql", "002_search.sql", "003_inline_references.sql", "004_reliability.sql"):
+            apply_sql(conn, name)
+        conn.execute("CREATE TABLE blocks_persian_fts(conflict TEXT)")
+        conn.execute("BEGIN IMMEDIATE")
+        with self.assertRaises(sqlite3.OperationalError):
+            apply_sql(conn, "005_persian_search.sql")
+        conn.execute("ROLLBACK")
+        self.assertIsNone(conn.execute("SELECT name FROM sqlite_master WHERE name='pages_persian_fts'").fetchone())
 
     def test_failed_migration_rolls_back_ddl(self):
         conn = connect()

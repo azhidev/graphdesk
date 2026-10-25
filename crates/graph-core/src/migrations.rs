@@ -6,9 +6,11 @@ pub(crate) const MIGRATIONS: &[(&str, &str)] = &[
     ("search", include_str!("../migrations/002_search.sql")),
     ("inline_references", include_str!("../migrations/003_inline_references.sql")),
     ("reliability", include_str!("../migrations/004_reliability.sql")),
+    ("persian_search", include_str!("../migrations/005_persian_search.sql")),
 ];
 
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
+    crate::search::register(conn)?;
     // Acquire the writer lock before inspecting history, including on concurrent opens.
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let has_history: bool = tx.query_row(

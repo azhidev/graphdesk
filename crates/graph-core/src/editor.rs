@@ -42,6 +42,12 @@ pub struct EditResult {
     pub revisions: BTreeMap<Uuid, i64>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SubmittedNote { pub page: crate::Page, pub block: Block, pub revision: i64 }
+
+#[derive(Debug, Serialize)]
+pub struct NoteState { pub block: Option<Block>, pub revision: Option<i64>, pub deleted: bool }
+
 /// History is in-memory, page-scoped and bounded across the entire editor by
 /// 100 entries / 8 MiB (conservative retained-allocation accounting). Oversized
 /// edits still persist, but clear that page's history rather than cross a gap.
@@ -96,6 +102,62 @@ impl Editor {
 
     pub fn find_journal(&self, date: &str) -> Result<Option<crate::Page>> {
         self.graph.lookup_journal(date)
+    }
+
+    /// Explicit recovery comparison includes revision tombstones for absent rows.
+    pub fn note_state(&self, id: Uuid) -> Result<NoteState> {
+        let tx = self.graph.conn.unchecked_transaction()?;
+        let block = tx.query_row("SELECT id,page_id,parent_id,position,content,task_status FROM blocks WHERE id=?1",
+            [id.to_string()], read_block).optional()?.map(decode_block).transpose()?;
+        let revision = tx.query_row("SELECT revision FROM block_revisions WHERE block_id=?1", [id.to_string()], |r| r.get(0)).optional()?;
+        let deleted = block.is_none() && revision.is_some();
+        tx.commit()?;
+        Ok(NoteState { block, revision, deleted })
+    }
+
+    /// Retry only the identical intended UUID/content at its initial revision.
+    /// A tombstone or content ABA is a conflict, never permission to recreate.
+    pub fn submit_note(&mut self, date: &str, id: Uuid, content: &str) -> Result<SubmittedNote> {
+        crate::validate_journal_date(date)?;
+        if content.trim().is_empty() { return Err(Error::Invalid("note content cannot be empty".into())); }
+        let tx = self.graph.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.history.check_version(&tx)?;
+        let revision: Option<i64> = tx.query_row("SELECT revision FROM block_revisions WHERE block_id=?1", [id.to_string()], |r| r.get(0)).optional()?;
+        let existing = tx.query_row("SELECT id,page_id,parent_id,position,content,task_status FROM blocks WHERE id=?1",
+            [id.to_string()], read_block).optional()?.map(decode_block).transpose()?;
+        if revision.is_some() || existing.is_some() {
+            if let (Some(0), Some(block), Some(page)) = (revision, existing, crate::lookup_journal(&tx, date)?) {
+                if block.page_id == page.id && block.content == content {
+                    tx.commit()?;
+                    return Ok(SubmittedNote { page, block, revision: 0 });
+                }
+            }
+            return Err(Error::Conflict("intended note changed or was deleted; compare persisted state".into()));
+        }
+        let page = match crate::lookup_journal(&tx, date)? {
+            Some(page) => page,
+            None => {
+                let page_id = Uuid::new_v4();
+                tx.execute("INSERT INTO pages(id,title,title_key) VALUES(?1,?2,?2)", params![page_id.to_string(), date])?;
+                tx.execute("INSERT INTO journals(page_id,date) VALUES(?1,?2)", params![page_id.to_string(), date])?;
+                crate::Page { id: page_id, title: date.into(), journal_date: Some(date.into()) }
+            }
+        };
+        crate::references::resolve(&tx)?;
+        tx.execute("INSERT INTO blocks(id,page_id,position,content)
+            SELECT ?1,?2,coalesce(max(position)+1,0),?3 FROM blocks WHERE page_id=?2 AND parent_id IS NULL",
+            params![id.to_string(), page.id.to_string(), content])?;
+        crate::references::sync(&tx, id, content, None)?;
+        let after = snapshot_scope(&tx, page.id, Some(id))?;
+        let block = after[&id].block.clone();
+        let entry = Entry { delta: differences(&Snapshot::new(), &after), focus_before: None, focus_after: Some(id), serial: 0 };
+        if entry.bytes() + self.history.container_bytes() + 8192 > MAX_BYTES {
+            return Err(Error::Invalid("note exceeds the session undo budget".into()));
+        }
+        tx.commit()?;
+        self.resolve_history(&page);
+        self.history.push(page.id, entry, None);
+        Ok(SubmittedNote { page, block, revision: 0 })
     }
 
     fn resolve_history(&mut self, page: &crate::Page) {

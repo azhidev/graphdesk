@@ -7,9 +7,21 @@ use uuid::Uuid;
 use crate::{ActiveGraph, AppState};
 
 #[tauri::command]
-pub(crate) async fn editor_search(session: Uuid, text: String, state: State<'_, AppState>) -> Result<Vec<graph_core::SearchHit>, EditorError> {
+pub(crate) async fn editor_search(session: Uuid, text: String, persian: Option<bool>, state: State<'_, AppState>) -> Result<Vec<graph_core::SearchHit>, EditorError> {
     let state = state.inner().clone();
-    blocking(move || with_session(&state, session, |g| g.editor.graph().search(&text))).await
+    blocking(move || with_session(&state, session, |g| g.editor.graph().search_mode(&text, persian.unwrap_or(false)))).await
+}
+
+#[tauri::command]
+pub(crate) async fn editor_submit_note(session: Uuid, date: String, block_id: Uuid, content: String, state: State<'_, AppState>) -> Result<graph_core::SubmittedNote, EditorError> {
+    let state = state.inner().clone();
+    blocking(move || with_session(&state, session, |g| g.editor.submit_note(&date, block_id, &content))).await
+}
+
+#[tauri::command]
+pub(crate) async fn editor_note_state(session: Uuid, block_id: Uuid, state: State<'_, AppState>) -> Result<graph_core::NoteState, EditorError> {
+    let state = state.inner().clone();
+    blocking(move || with_session(&state, session, |g| g.editor.note_state(block_id))).await
 }
 
 #[derive(Debug, Serialize)]

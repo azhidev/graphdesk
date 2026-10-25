@@ -1,6 +1,123 @@
 use super::*;
 
 #[test]
+fn atomic_note_submission_retry_undo_revisions_and_reopen() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("notes.db");
+    let mut e = Editor::new(Graph::create(&path)?);
+    let target = e.create_page("Target")?;
+    let id = Uuid::new_v4();
+    let raw = "كتاب می\u{200c}روم ۱۲٣ [[Target]] 😀";
+    let first = e.submit_note("2024-02-29", id, raw)?;
+    assert_eq!(first.revision, 0);
+    assert_eq!(first.block.id, id);
+    assert_eq!(first.block.content, raw);
+    assert_eq!(first.page.journal_date.as_deref(), Some("2024-02-29"));
+    // Simulate a lost acknowledgement: exact retry returns identities, no write/history.
+    let retry = e.submit_note("2024-02-29", id, raw)?;
+    assert_eq!(retry.page, first.page);
+    assert_eq!(retry.block, first.block);
+    assert_eq!(e.graph.incoming_links(target.id)?.len(), 1);
+    assert_eq!(e.graph.page_blocks(first.page.id)?.len(), 1);
+    assert_eq!(e.graph.search_mode("کتاب می روم 123", true)?.len(), 1);
+    assert!(e.graph.search("کتاب")?.is_empty());
+    e.history(first.page.id, false)?;
+    assert!(e.graph.page_blocks(first.page.id)?.is_empty());
+    assert!(e.graph.lookup_journal("2024-02-29")?.is_some());
+    assert!(e.note_state(id)?.deleted);
+    assert_eq!(e.note_state(id)?.revision, Some(1));
+    assert!(matches!(e.submit_note("2024-02-29", id, raw), Err(Error::Conflict(_))));
+    assert!(e.graph.search_mode("کتاب", true)?.is_empty());
+    e.history(first.page.id, true)?;
+    assert_eq!(e.note_state(id)?.revision, Some(2));
+    assert!(matches!(e.submit_note("2024-02-29", id, raw), Err(Error::Conflict(_))));
+    assert_eq!(e.graph.search_mode("کتاب", true)?.len(), 1);
+    drop(e);
+    let mut e = Editor::new(Graph::open(path)?);
+    assert_eq!(e.note_state(id)?.block, Some(first.block));
+    assert!(matches!(e.submit_note("2024-02-29", id, raw), Err(Error::Conflict(_))));
+    assert!(e.note_state(Uuid::new_v4())?.revision.is_none());
+    Ok(())
+}
+
+#[test]
+fn initial_note_lost_ack_reconciles_after_reopen_without_duplicate() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("lost-ack.db");
+    let id = Uuid::new_v4();
+    let first = {
+        let mut e = Editor::new(Graph::create(&path)?);
+        e.submit_note("2024-02-29", id, "durable initial text")?
+    };
+    let mut e = Editor::new(Graph::open(path)?);
+    let retry = e.submit_note("2024-02-29", id, "durable initial text")?;
+    assert_eq!(retry.page,first.page);
+    assert_eq!(retry.block,first.block);
+    assert_eq!(retry.revision,0);
+    assert_eq!(e.graph.pages()?.len(),1);
+    assert_eq!(e.graph.page_blocks(first.page.id)?.len(),1);
+    // Session-only history must not be fabricated by a reconciliation read.
+    assert_eq!(e.history_state(first.page.id),(false,false));
+    Ok(())
+}
+
+#[test]
+fn note_retries_reject_modified_deleted_aba_and_wrong_page() -> Result<()> {
+    let mut e = Editor::new(Graph::in_memory()?);
+    let id = Uuid::new_v4();
+    let note = e.submit_note("2024-02-29", id, "first")?;
+    assert!(matches!(e.submit_note("2024-03-01", id, "first"), Err(Error::Conflict(_))));
+    assert!(e.graph.lookup_journal("2024-03-01")?.is_none());
+    assert!(matches!(e.submit_note("2024-02-29", id, "other"), Err(Error::Conflict(_))));
+    e.apply(note.page.id, EditAction::SaveText { id, expected: "first".into(), revision: 0, content: "other".into() }, None)?;
+    assert!(matches!(e.submit_note("2024-02-29", id, "first"), Err(Error::Conflict(_))));
+    e.history(note.page.id, false)?;
+    assert!(matches!(e.submit_note("2024-02-29", id, "first"), Err(Error::Conflict(_))));
+    delete(&mut e, note.page.id, id)?;
+    assert!(matches!(e.submit_note("2024-02-29", id, "first"), Err(Error::Conflict(_))));
+    let ordinary = e.create_page("Ordinary")?;
+    let block = e.graph.create_block(ordinary.id, None, "same")?;
+    assert!(matches!(e.submit_note("2024-03-02", block.id, "same"), Err(Error::Conflict(_))));
+    assert!(e.graph.lookup_journal("2024-03-02")?.is_none());
+    let collision = e.create_page("2024-03-03")?;
+    assert!(e.submit_note("2024-03-03", Uuid::new_v4(), "no conversion").is_err());
+    assert_eq!(e.graph.page_blocks(collision.id)?.len(), 0);
+    for date in ["2024-2-29", "2023-02-29", "2024-02-30"] {
+        assert!(e.submit_note(date, Uuid::new_v4(), "text").is_err());
+    }
+    assert!(e.submit_note("2024-03-04", Uuid::new_v4(), " \n ").is_err());
+    Ok(())
+}
+
+#[test]
+fn note_transaction_rolls_back_page_block_references_indexes_and_history() -> Result<()> {
+    let mut e = Editor::new(Graph::in_memory()?);
+    let target = e.create_page("Target")?;
+    let id = Uuid::new_v4();
+    e.graph.conn.execute_batch("CREATE TEMP TRIGGER fail_note AFTER INSERT ON inline_references BEGIN SELECT RAISE(ABORT,'injected'); END")?;
+    assert!(e.submit_note("2024-02-29", id, "كتاب [[Target]]").is_err());
+    assert_eq!(e.graph.pages()?.len(), 1);
+    assert!(e.graph.lookup_journal("2024-02-29")?.is_none());
+    assert!(e.note_state(id)?.revision.is_none());
+    assert!(e.graph.search("2024-02-29")?.is_empty());
+    assert!(e.graph.search_mode("کتاب", true)?.is_empty());
+    assert!(e.graph.incoming_links(target.id)?.is_empty());
+    e.graph.conn.execute_batch("DROP TRIGGER fail_note")?;
+    let note = e.submit_note("2024-02-29", id, "كتاب [[Target]]")?;
+    let renamed = e.rename_page(note.page.id, "Renamed day")?;
+    let retry = e.submit_note("2024-02-29", id, "كتاب [[Target]]")?;
+    assert_eq!(retry.page, renamed);
+    let next = e.submit_note("2024-02-29", Uuid::new_v4(), "second")?;
+    assert_eq!(next.page, renamed);
+    assert_eq!(next.block.position, 1);
+    e.history(renamed.id, false)?;
+    assert_eq!(e.graph.page_blocks(renamed.id)?.len(), 1);
+    e.history(renamed.id, false)?;
+    assert!(e.graph.page_blocks(renamed.id)?.is_empty());
+    Ok(())
+}
+
+#[test]
 fn reliable_text_revisions_reject_stale_aba_and_noops_avoid_writes() -> Result<()> {
     let (mut e, page, id) = setup("base")?;
     let graph_id = e.graph.id()?;

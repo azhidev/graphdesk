@@ -1,4 +1,4 @@
-//! Durable TEXT drafts, separate from the authoritative graph database.
+//! Durable text drafts and pending journal notes, separate from the graph.
 //!
 //! The caller chooses one app-private local file per graph and creates its private
 //! parent directory. This module never creates/chmods parents or opens graph data.
@@ -12,7 +12,7 @@
 
 use std::{fmt, fs::OpenOptions, io, path::Path, time::Duration};
 
-use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -20,7 +20,22 @@ use crate::{Error, Result};
 
 const RETENTION_SECONDS: i64 = 14 * 24 * 60 * 60;
 const APPLICATION_ID: i64 = 0x47524452; // GRDR; deliberately not a graph database.
-const STORE_VERSION: i64 = 1;
+const STORE_VERSION: i64 = 2;
+const NOTES_SQL: &str = "CREATE TABLE pending_journal_notes (
+    id TEXT PRIMARY KEY NOT NULL,
+    graph_id TEXT NOT NULL,
+    block_id TEXT NOT NULL,
+    journal_date TEXT NOT NULL,
+    content TEXT NOT NULL,
+    version INTEGER NOT NULL CHECK(version > 0),
+    updated_at INTEGER NOT NULL
+) STRICT";
+const NOTES_INDEX_SQL: &str = "CREATE INDEX pending_journal_notes_expiry ON pending_journal_notes(graph_id, updated_at, id)";
+// Persistent generation survives conditional removal/expiry and ID reuse (ABA).
+const GENERATION_SQL: &str = "CREATE TABLE pending_note_generation (
+    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+    version INTEGER NOT NULL CHECK(version >= 0)
+) STRICT";
 const TABLE_SQL: &str = "CREATE TABLE recovery_drafts (
     id TEXT PRIMARY KEY NOT NULL,
     graph_id TEXT NOT NULL,
@@ -47,6 +62,24 @@ pub struct RecoveryDraft {
     pub updated_at: i64,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PendingJournalNote {
+    pub id: Uuid,
+    pub graph_id: Uuid,
+    pub block_id: Uuid,
+    pub journal_date: String,
+    pub content: String,
+    pub version: i64,
+    pub updated_at: i64,
+}
+
+impl fmt::Debug for PendingJournalNote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PendingJournalNote").field("id", &self.id)
+            .field("content", &"[redacted]").field("version", &self.version).finish_non_exhaustive()
+    }
+}
+
 // Keep note text out of incidental diagnostics, including assertion failures.
 impl fmt::Debug for RecoveryDraft {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -68,6 +101,59 @@ pub struct RecoveryStore {
 }
 
 impl RecoveryStore {
+    /// Capture pre-submission text without opening or locking the graph. The
+    /// generation changes even for identical text and survives removal/ID reuse.
+    pub fn note_put(&mut self, graph: Uuid, id: Uuid, block: Uuid, date: &str, content: &str, now: i64) -> Result<PendingJournalNote> {
+        crate::validate_journal_date(date)?;
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // An ID is bound to the intended graph/block/date while it exists.
+        let identity: Option<(String, String, String)> = tx.query_row(
+            "SELECT graph_id,block_id,journal_date FROM pending_journal_notes WHERE id=?1", [id.to_string()],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?;
+        if identity.is_some_and(|v| v != (graph.to_string(), block.to_string(), date.into())) {
+            return Err(Error::Conflict("pending note identity changed".into()));
+        }
+        if let Some(cutoff) = now.checked_sub(RETENTION_SECONDS) {
+            tx.execute("DELETE FROM pending_journal_notes WHERE graph_id=?1 AND updated_at<=?2", params![graph.to_string(), cutoff])?;
+        }
+        let version: i64 = tx.query_row("UPDATE pending_note_generation SET version=version+1 WHERE singleton=1 RETURNING version", [], |r| r.get(0))?;
+        let note = tx.query_row("INSERT INTO pending_journal_notes(id,graph_id,block_id,journal_date,content,version,updated_at)
+            VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET content=excluded.content,version=excluded.version,updated_at=excluded.updated_at
+            RETURNING id,graph_id,block_id,journal_date,content,version,updated_at",
+            params![id.to_string(), graph.to_string(), block.to_string(), date, content, version, now], read_note)?;
+        tx.commit()?;
+        Ok(note)
+    }
+
+    /// Expire at age >= 14 days. Reads never extend retention.
+    pub fn notes(&mut self, graph: Uuid, now: i64) -> Result<Vec<PendingJournalNote>> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(cutoff) = now.checked_sub(RETENTION_SECONDS) {
+            tx.execute("DELETE FROM pending_journal_notes WHERE graph_id=?1 AND updated_at<=?2", params![graph.to_string(), cutoff])?;
+        }
+        let notes = {
+            let mut stmt = tx.prepare("SELECT id,graph_id,block_id,journal_date,content,version,updated_at FROM pending_journal_notes
+                WHERE graph_id=?1 ORDER BY updated_at DESC,id DESC")?;
+            let rows = stmt.query_map([graph.to_string()], read_note)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        tx.commit()?;
+        Ok(notes)
+    }
+
+    /// Same generation guard for acknowledged submission and confirmed discard.
+    pub fn note_remove(&mut self, graph: Uuid, id: Uuid, version: i64) -> Result<()> {
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let removed = tx.execute("DELETE FROM pending_journal_notes WHERE graph_id=?1 AND id=?2 AND version=?3",
+            params![graph.to_string(), id.to_string(), version])?;
+        if removed == 0 && tx.query_row("SELECT EXISTS(SELECT 1 FROM pending_journal_notes WHERE graph_id=?1 AND id=?2)",
+            params![graph.to_string(), id.to_string()], |r| r.get::<_, bool>(0))? {
+            return Err(Error::Conflict("pending note changed; refresh before discarding".into()));
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Open/create a local recovery file. Missing parents and final-file symlinks
     /// are errors. Unix files are created mode 0600; existing files must already
     /// have no group/other permissions. The caller owns parent-directory privacy.
@@ -224,11 +310,19 @@ fn initialize(conn: &mut Connection) -> Result<()> {
     };
     let empty = version == 0 && identity == 0 && objects.is_empty();
     if !empty {
-        let expected = vec![
+        let mut expected = vec![
             ("table".to_owned(), "recovery_drafts".to_owned(), TABLE_SQL.to_owned()),
             ("index".to_owned(), "recovery_drafts_expiry".to_owned(), INDEX_SQL.to_owned()),
         ];
-        if identity != APPLICATION_ID || version != STORE_VERSION || objects != expected {
+        if version == STORE_VERSION {
+            expected.extend([
+                ("table".into(), "pending_journal_notes".into(), NOTES_SQL.into()),
+                ("index".into(), "pending_journal_notes_expiry".into(), NOTES_INDEX_SQL.into()),
+                ("table".into(), "pending_note_generation".into(), GENERATION_SQL.into()),
+            ]);
+            expected.sort_by(|a, b| a.1.cmp(&b.1));
+        }
+        if identity != APPLICATION_ID || !matches!(version, 1 | STORE_VERSION) || objects != expected {
             return Err(Error::Migration("unknown recovery store identity, version or schema".into()));
         }
     }
@@ -241,23 +335,39 @@ fn initialize(conn: &mut Connection) -> Result<()> {
         tx.execute_batch(TABLE_SQL)?;
         tx.execute_batch(INDEX_SQL)?;
         tx.pragma_update(None, "application_id", APPLICATION_ID)?;
+    }
+    if empty || version == 1 {
+        tx.execute_batch(NOTES_SQL)?;
+        tx.execute_batch(NOTES_INDEX_SQL)?;
+        tx.execute_batch(GENERATION_SQL)?;
+        tx.execute("INSERT INTO pending_note_generation VALUES(1,0)", [])?;
         tx.pragma_update(None, "user_version", STORE_VERSION)?;
     }
+    let generation: Option<i64> = tx.query_row("SELECT version FROM pending_note_generation WHERE singleton=1", [], |r| r.get(0)).optional()?;
+    if generation.is_none() { return Err(Error::Migration("missing pending note generation".into())); }
     tx.commit()?;
     Ok(())
 }
 
+fn id(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Uuid> {
+    let text: String = row.get(index)?;
+    Uuid::parse_str(&text).map_err(|_| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(io::Error::new(io::ErrorKind::InvalidData, "invalid recovery identifier")),
+        )
+    })
+}
+
+fn read_note(row: &rusqlite::Row<'_>) -> rusqlite::Result<PendingJournalNote> {
+    let date: String = row.get(3)?;
+    crate::validate_journal_date(&date).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    Ok(PendingJournalNote { id: id(row, 0)?, graph_id: id(row, 1)?, block_id: id(row, 2)?,
+        journal_date: date, content: row.get(4)?, version: row.get(5)?, updated_at: row.get(6)? })
+}
+
 fn read_draft(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecoveryDraft> {
-    fn id(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Uuid> {
-        let text: String = row.get(index)?;
-        Uuid::parse_str(&text).map_err(|_| {
-            rusqlite::Error::FromSqlConversionFailure(
-                index,
-                rusqlite::types::Type::Text,
-                Box::new(io::Error::new(io::ErrorKind::InvalidData, "invalid recovery identifier")),
-            )
-        })
-    }
     Ok(RecoveryDraft {
         id: id(row, 0)?,
         graph_id: id(row, 1)?,
@@ -276,6 +386,87 @@ mod tests {
 
     fn ids() -> (Uuid, Uuid, Uuid) {
         (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4())
+    }
+
+    #[test]
+    fn v1_upgrade_preserves_drafts_and_pending_notes_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("v1.db");
+        let (graph, page, block) = ids();
+        let draft_id = Uuid::new_v4();
+        {
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+            drop(options.open(&path).unwrap());
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(TABLE_SQL).unwrap();
+            conn.execute_batch(INDEX_SQL).unwrap();
+            conn.pragma_update(None, "application_id", APPLICATION_ID).unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+            conn.execute("INSERT INTO recovery_drafts VALUES(?1,?2,?3,?4,'base',7,'retained 😀',100)",
+                params![draft_id.to_string(), graph.to_string(), page.to_string(), block.to_string()]).unwrap();
+        }
+        let note_id = Uuid::new_v4();
+        let note = {
+            let mut store = RecoveryStore::open(&path).unwrap();
+            assert_eq!(store.list(graph, 101).unwrap()[0].id, draft_id);
+            let draft = &store.list(graph, 101).unwrap()[0];
+            assert_eq!((&*draft.base, draft.revision, &*draft.content), ("base", 7, "retained 😀"));
+            store.note_put(graph, note_id, block, "2024-02-29", "پیش\u{200c}نویس 😀\n", 101).unwrap()
+        };
+        let mut store = RecoveryStore::open(&path).unwrap();
+        let recovered = &store.notes(graph, 102).unwrap()[0];
+        assert_eq!(recovered.id, note.id);
+        assert_eq!(recovered.journal_date, "2024-02-29");
+        assert_eq!(recovered.content, note.content);
+        assert!(!format!("{recovered:?}").contains("پیش"));
+        assert_eq!(store.list(graph, 102).unwrap()[0].id, draft_id);
+    }
+
+    #[test]
+    fn pending_note_generation_identity_expiry_and_failure_are_safe() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = RecoveryStore::open(dir.path().join("notes.db")).unwrap();
+        let (graph, _, block) = ids();
+        let id = Uuid::new_v4();
+        let first = store.note_put(graph, id, block, "2024-02-29", "same", 100).unwrap();
+        let second = store.note_put(graph, id, block, "2024-02-29", "same", 100).unwrap();
+        assert!(second.version > first.version);
+        assert!(store.note_remove(graph, id, first.version).is_err());
+        assert_eq!(store.notes(graph, 101).unwrap().len(), 1);
+        store.note_remove(Uuid::new_v4(), id, second.version).unwrap();
+        assert_eq!(store.notes(graph, 101).unwrap().len(), 1);
+        store.note_remove(graph, id, second.version).unwrap();
+        let third = store.note_put(graph, id, block, "2024-02-29", "same", 100).unwrap();
+        assert!(third.version > second.version);
+        assert!(store.note_remove(graph, id, second.version).is_err());
+        for (g, b, date) in [(Uuid::new_v4(), block, "2024-02-29"), (graph, Uuid::new_v4(), "2024-02-29"), (graph, block, "2024-03-01")] {
+            assert!(store.note_put(g, id, b, date, "wrong identity", 101).is_err());
+        }
+        assert!(store.note_put(graph, Uuid::new_v4(), block, "2023-02-29", "bad date", 101).is_err());
+        store.conn.execute_batch("CREATE TEMP TRIGGER fail_note BEFORE UPDATE ON pending_journal_notes BEGIN SELECT RAISE(ABORT,'injected'); END").unwrap();
+        assert!(store.note_put(graph, id, block, "2024-02-29", "not captured", 101).is_err());
+        assert_eq!(store.notes(graph, 102).unwrap()[0].version, third.version);
+        assert_eq!(store.notes(graph, 100 + RETENTION_SECONDS - 1).unwrap()[0].updated_at, 100);
+        assert!(store.notes(graph, 100 + RETENTION_SECONDS).unwrap().is_empty());
+        store.note_remove(graph, id, third.version).unwrap();
+    }
+
+    #[test]
+    fn v1_unknown_schema_is_not_upgraded_and_failed_upgrade_rolls_back() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(TABLE_SQL).unwrap();
+        conn.execute_batch(INDEX_SQL).unwrap();
+        conn.pragma_update(None, "application_id", APPLICATION_ID).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute_batch("CREATE TABLE unexpected(x TEXT)").unwrap();
+        assert!(initialize(&mut conn).is_err());
+        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert!(!conn.prepare("SELECT 1 FROM sqlite_schema WHERE name='pending_journal_notes'").unwrap().exists([]).unwrap());
+        conn.execute_batch("DROP TABLE unexpected; PRAGMA query_only=ON").unwrap();
+        assert!(initialize(&mut conn).is_err());
+        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 1);
     }
 
     #[test]
@@ -469,14 +660,14 @@ mod tests {
         drop(RecoveryStore::open(&path).unwrap());
         {
             let conn = Connection::open(&path).unwrap();
-            conn.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA user_version=2").unwrap();
+            conn.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA user_version=99").unwrap();
         }
         let before = std::fs::read(&path).unwrap();
         assert!(RecoveryStore::open(&path).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), before);
         {
             let conn = Connection::open(&path).unwrap();
-            conn.execute_batch("PRAGMA user_version=1; DROP INDEX recovery_drafts_expiry").unwrap();
+            conn.execute_batch("PRAGMA user_version=2; DROP INDEX recovery_drafts_expiry").unwrap();
         }
         assert!(RecoveryStore::open(&path).is_err());
         std::fs::write(&path, b"not a SQLite database").unwrap();

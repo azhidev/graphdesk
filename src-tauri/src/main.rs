@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 mod editor;
 mod recovery;
+mod preferences;
 
 struct ActiveGraph { token: Uuid, editor: Editor }
 impl ActiveGraph {
@@ -23,10 +24,12 @@ fn with_graph<T>(state: &AppState, operation: impl FnOnce(&mut Graph) -> graph_c
 }
 
 #[tauri::command]
-fn open_graph(path: String, create: bool, state: State<'_, AppState>) -> Result<Vec<Page>, String> {
+fn open_graph(path: String, create: bool, state: State<'_, AppState>, recovery: State<'_, recovery::RecoveryState>) -> Result<Vec<Page>, String> {
     let mut guard = state.0.lock().map_err(|_| "graph lock poisoned".to_string())?;
     let graph = if create { Graph::create(path) } else { Graph::open(path) }.map_err(|e| e.to_string())?;
     let pages = graph.pages().map_err(|e| e.to_string())?;
+    // Legacy graph switching must invalidate independent recovery access too.
+    recovery.0.lock().map_err(|_| "recovery lock unavailable".to_string())?.session = None;
     *guard = Some(ActiveGraph::new(graph));
     Ok(pages)
 }
@@ -56,9 +59,13 @@ fn app_builder<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<
     builder
         .manage(AppState::default())
         .manage(recovery::RecoveryState::default())
+        .manage(preferences::PreferencesState::default())
         .invoke_handler(tauri::generate_handler![open_graph, create_page, create_journal, list_blocks, create_block,
             editor::editor_open, editor::editor_page, editor::editor_apply, editor::editor_history, editor::editor_create_page,
             editor::editor_rename_page, editor::editor_journal, editor::editor_find_journal, editor::editor_tasks, editor::editor_search, editor::editor_links, editor::editor_prepare_delete,
+            editor::editor_submit_note, editor::editor_note_state,
+            recovery::recovery_note_put, recovery::recovery_notes, recovery::recovery_note_remove,
+            preferences::preferences_load, preferences::preferences_save,
             recovery::recovery_put, recovery::recovery_list, recovery::recovery_remove, recovery::recovery_clear, recovery::recovery_inventory])
 }
 

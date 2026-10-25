@@ -1,7 +1,7 @@
 //! Private recovery IO has its own mutex/connection: a busy graph must not block
 //! capture into the independent store. Never log draft text or include it in errors.
 use std::{path::PathBuf, sync::{Arc, Mutex}, time::{SystemTime, UNIX_EPOCH}};
-use graph_core::recovery::{RecoveryDraft, RecoveryStore};
+use graph_core::recovery::{PendingJournalNote, RecoveryDraft, RecoveryStore};
 use serde::Serialize;
 use tauri::{Manager, State};
 use uuid::Uuid;
@@ -40,7 +40,7 @@ async fn run<R: tauri::Runtime, T: Send + 'static>(app: tauri::AppHandle<R>, sta
     work: impl FnOnce(&mut RecoveryStore, Uuid) -> graph_core::Result<T> + Send + 'static) -> Result<T, RecoveryError> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut access = state.0.lock().map_err(failure)?;
-        let (token, graph) = access.session.ok_or_else(|| failure("no session"))?;
+        let (token, graph) = access.session.ok_or(RecoveryError { code: "stale_session", message: "Open a graph before accessing recovery." })?;
         if token != session { return Err(RecoveryError { code: "stale_session", message: "The graph session changed. Reopen its recovery list." }); }
         let root = match &access.root {
             Some(root) => root.clone(),
@@ -83,6 +83,23 @@ pub(crate) async fn recovery_clear<R: tauri::Runtime>(app: tauri::AppHandle<R>, 
 }
 
 #[tauri::command]
+pub(crate) async fn recovery_note_put<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, RecoveryState>, session: Uuid,
+    id: Uuid, block_id: Uuid, date: String, content: String) -> Result<PendingJournalNote, RecoveryError> {
+    run(app, state.inner().clone(), session, move |store, graph| store.note_put(graph, id, block_id, &date, &content, now())).await
+}
+
+#[tauri::command]
+pub(crate) async fn recovery_notes<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, RecoveryState>, session: Uuid) -> Result<Vec<PendingJournalNote>, RecoveryError> {
+    run(app, state.inner().clone(), session, move |store, graph| store.notes(graph, now())).await
+}
+
+#[tauri::command]
+pub(crate) async fn recovery_note_remove<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, RecoveryState>, session: Uuid,
+    id: Uuid, version: i64) -> Result<(), RecoveryError> {
+    run(app, state.inner().clone(), session, move |store, graph| store.note_remove(graph, id, version)).await
+}
+
+#[tauri::command]
 pub(crate) async fn recovery_inventory<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, RecoveryState>) -> Result<usize, RecoveryError> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -98,7 +115,9 @@ pub(crate) async fn recovery_inventory<R: tauri::Runtime>(app: tauri::AppHandle<
             if path.extension().and_then(|s| s.to_str()) != Some("sqlite3") { continue; }
             let Some(graph) = path.file_stem().and_then(|s| s.to_str()).and_then(|s| Uuid::parse_str(s).ok()) else { continue; };
             let mut store = RecoveryStore::open(path).map_err(failure)?;
-            if !store.list(graph, now()).map_err(failure)?.is_empty() { count += 1; }
+            let drafts = store.list(graph, now()).map_err(failure)?;
+            let notes = store.notes(graph, now()).map_err(failure)?;
+            if !drafts.is_empty() || !notes.is_empty() { count += 1; }
         }
         Ok(count)
     }).await.map_err(failure)?
