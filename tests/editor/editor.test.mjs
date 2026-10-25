@@ -21,7 +21,7 @@ test('reference completion preserves Unicode source and uses bounded literal tit
 
 test('search rejects stale successes/errors and graph-switch responses', async () => {
   const requests = [];
-  const search = new SearchController((session, text) => new Promise((resolve, reject) => requests.push({ session, text, resolve, reject })));
+  const search = new SearchController((session, text) => new Promise((resolve, reject) => requests.push({ session, text, resolve, reject })), () => {}, 0);
   const old = search.query('one', 'old');
   const latest = search.query('one', 'سلام');
   requests[1].resolve([{ id: 'b', page_id: 'p', kind: 'block', text: 'سلام' }]); await latest;

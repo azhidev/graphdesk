@@ -1,4 +1,4 @@
-# GraphDesk architecture (Milestones 1–3)
+# GraphDesk architecture (Milestones 1–4)
 
 ## Boundaries
 
@@ -319,3 +319,47 @@ No remote content, HTML rendering, network capability, plugin, or dependency was
 The executable WebView smoke fixture is `tests/webview/smoke.py`; its fixed geometry
 is deliberately separate from UI-independent tests. It runs production assets/IPC
 in an isolated authenticated Xvfb session, not a browser-only shell or mock runtime.
+
+## Milestone 4 daily workspace
+
+No migration or dependency was added. `Page` now includes optional `journal_date`,
+read by joining the existing journal table rather than parsing a title. Session-guarded
+`editor_find_journal` performs a validated, read-only lookup. The editor controller's
+`unload` flushes/guards composition before detaching a page for a date-only preview;
+the preview has no fake UUID, persistent block model or separate autosave queue.
+
+Opening a graph explicitly creates/opens today's journal. Date browsing only looks
+up existing journals. An absent day's first-note form submits nonempty text before
+creating the journal, then reuses append, revision-guarded text saves and recovery.
+The pre-submit form is explicitly not autosaved/recovery-protected; it blocks normal
+close and confirms nonempty cancellation. Failed submission retains form text; once
+a block is acknowledged, retries reconcile that same block instead of appending it
+again. Canonical journal creation, block append and text save remain separate guarded
+operations, not an atomic multi-command transaction: failure may leave an empty journal
+or block, but must not silently lose the submitted text. No structural action is
+automatically replayed after an uncertain acknowledgement.
+
+`dates.ts` defines ISO civil-day identity, calendar-independent day stepping and a
+calendar presentation interface. Its current Gregorian formatter/picker are UI
+choices, not stored page titles or alternative day keys. Future Jalali display and
+picker conversion must map to the same ISO day/UUID without a database migration.
+Jalali UI is deferred; regular Persian-language readiness is not claimed.
+
+Search retains both existing FTS5 indexes and literal phrase semantics/ranking.
+The controller debounces dispatch for 200 ms but invalidates prior generations
+immediately; the shell pauses preedit queries and coalesces acknowledged-state
+refreshes. Results show owning-page context and bounded previews. Draft/recovery
+content is not indexed. No fuzzy search, new normalization or search cache was added.
+
+`editor_tasks` uses the same blocking worker, session token, mutex and explicit ACL
+as other editor reads. The core queries the existing partial `blocks_tasks` index,
+joins page titles, validates typed filters and caps each request at 100 rows. Stable
+ordering is page title key, page UUID, block UUID; offset pagination reflects current
+acknowledged state, not a persistent snapshot under unsupported concurrent writers.
+The Tasks UI is discovery-only: source navigation uses existing reveal/focus and task
+changes still use `EditAction::Task` with its expected-state/history guarantees.
+
+The shell retains the mounted editor while Tasks is visible, but all transitions
+flush first. Application shortcuts avoid composition and modal dialogs. Graph
+switching remains explicit path entry; no persistent settings/path registry, extra
+filesystem capability, network listener or background service was introduced.

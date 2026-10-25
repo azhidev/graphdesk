@@ -1,4 +1,4 @@
-export interface Page { id: string; title: string }
+export interface Page { id: string; title: string; journal_date?: string | null }
 export type TaskState = 'todo' | 'doing' | 'done' | 'cancelled';
 export interface Block {
   id: string; page_id: string; parent_id: string | null;

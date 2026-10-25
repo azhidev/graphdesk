@@ -14,6 +14,12 @@ string-based UI. OS filename, path-length and permission restrictions still appl
 No automatic graph discovery, graph registry, persistent settings or durable
 undo/collapse state exists. Re-enter the graph path after restart. Private text
 recovery snapshots are described below; they do not replace graph backups.
+Opening a graph now creates/opens today's journal. Browsing other absent dates does
+not write records. Their first-note form creates a journal only on explicit content
+submission; before submission its text is not autosaved/recovery-captured. Normal
+close is blocked and nonempty cancellation requires confirmation. After submission,
+the normal editor's save/recovery guards apply; failures can leave an empty journal
+or block while submitted text remains retained for retry. See [workflows](workflows.md).
 There is no single-instance enforcement: use only one process per graph.
 
 Tauri/the system WebView may create runtime state or caches in platform-managed

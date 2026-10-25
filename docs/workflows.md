@@ -1,7 +1,25 @@
 # Workflows and keyboard reference
 
-Create/open a graph, create/select a page, then choose **Add first block**.
+Create/open a graph to land on today's local-date journal. Choose **Capture today**
+(Ctrl/Cmd+Shift+J) to focus an empty root leaf or append a new block. Create/select
+other pages through the sidebar; empty pages offer **Add first block**.
 Click a block to edit. Markdown is literal source; multiline paste stays in one block.
+
+**Previous day / Today / Next day** follow journal identity, including renamed
+journals. The sidebar's **Journal date** is an explicitly Gregorian picker. Browsing
+an absent day shows an empty preview without creating a page, block or reference.
+**Add a note** opens a small first-note form: write text and choose **Save first note**
+to create the journal and save through the normal editor. Before submission this
+form is not autosaved or recovery-captured; normal close is blocked and cancelling
+nonempty text requires a second confirmation. After submission, failed saves retain
+both the form text and the normal editor draft; retry reconciles text saves rather
+than appending another block. Forced termination before submission can lose form text.
+
+Graph opening creates today's journal even if empty. No automatic page switch occurs
+at midnight; Today/Capture calculate the local day when invoked. A date-shaped ordinary
+page is never silently converted: rename it before creating a journal for that date.
+**Switch graph** opens the path controls without a recent-graph registry. Actual
+page/date/task/graph departures flush drafts and respect unfinished composition/errors.
 
 | Key | Behavior |
 | --- | --- |
@@ -55,6 +73,28 @@ Journals use local Gregorian civil dates even if renamed. Search returns up to
 100 page and 100 block phrase matches from acknowledged text, not drafts. Block
 results reveal ancestors and focus the UUID. Unicode tokenization does not promise
 stemming, transliteration, ZWNJ normalization or Arabic/Persian letter equivalence.
+
+Ctrl/Cmd+K focuses search. Input is debounced 200 ms and paused during composition;
+query/graph changes immediately invalidate earlier results. Up/Down choose a result,
+Enter opens it, and Escape clears search. Results remain ordinary keyboard-focusable
+buttons, show the owning page and bounded previews, and refresh after acknowledged
+edits/page changes. Search indexes persisted text, not drafts or private recovery.
+Pages precede blocks; each group retains its existing FTS5 relevance ordering. A
+100-result group shows a refinement hint rather than silently implying completeness.
+
+The **Tasks** workspace defaults to Active (TODO + DOING), across pages, journals
+and nested blocks. Filter by Active/TODO/DOING/DONE and optionally page. Open a result
+to reveal/focus the original block; use its existing task selector and undo/redo.
+There is no second task editor. Reads use the existing task index, at most 100 rows
+per request; **Load more tasks** fetches the next batch. Ordering is page title key,
+page UUID, block UUID, not priority or outline order. Refresh restarts pagination;
+concurrent external writers remain unsupported. CANCELLED is readable in the source
+editor but excluded from these filters.
+
+Gregorian ISO civil days remain storage identity; calendar labels are a UI interface.
+Jalali presentation/picking is not shipped and remains necessary before claiming
+readiness for regular Persian-language use. Existing notes, page IDs and day identity
+must not change when another calendar presentation is added.
 
 Type `[[` for up to eight page suggestions. Saved links offer navigation;
 unresolved links offer explicit creation, never creation while typing. Resolved

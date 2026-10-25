@@ -18,7 +18,9 @@ are published. Use disposable graphs or backed-up copies for evaluation.
 - Private local text-draft snapshots with explicit compare/recover/discard.
 - Confirmed subtree deletion with affected-block counts and session undo/redo.
 - Pages, renaming, local-date journals, `[[page links]]` and backlinks.
-- Unicode-aware phrase search and TODO / DOING / DONE tasks.
+- Journal-first graph opening, previous/next day previews and focused daily capture.
+- Debounced Unicode phrase search with page context and keyboard navigation.
+- Cross-page active-task discovery with status/page filters; edit tasks at their source.
 - Transactional migrations, SQLite constraints and atomic structural edits.
 - Native text inputs for Unicode/bidi text; Markdown stays literal source.
 
@@ -89,7 +91,11 @@ graph-core` needs no GTK/WebKit. See [testing](docs/testing.md) for scope and ev
 
 Enter a native full database path in an existing writable directory. Create never
 overwrites an existing file. No graph picker, default graph directory, recent-file
-registry or persistent application settings are implemented.
+registry or persistent application settings are implemented. An opened graph lands
+on today's journal; **Switch graph** remains accessible in the header. Browsing an
+absent day is read-only. Its first-note form creates the journal on submission,
+not while browsing or typing. The form is explicitly not autosaved before submit;
+normal close is blocked and cancelling nonempty text requires confirmation.
 
 **Saved** means SQLite acknowledged the write. Normal navigation/close flushes
 drafts; forced termination can lose unacknowledged text. Graphs are unencrypted
@@ -103,6 +109,11 @@ Undo/collapse state is memory-only; page renaming is not block-undoable. Search
 uses bounded acknowledged-state phrase matches. Rich text, Markdown import/export,
 sync, plugins, encryption, automatic backups and structural crash recovery are not
 implemented.
+
+Jalali display/date selection remains deferred and is required before claiming
+readiness for regular Persian-language use. Civil-day identity is independent of
+presentation. Search retains SQLite FTS5 phrase semantics: no Persian stemming,
+ZWNJ normalization or Arabic/Persian yeh/kaf equivalence is promised.
 
 Finalized text drafts target a recovery snapshot after about 700 ms, independently
 of graph writes. Recovery lives in app-private local storage, not the graph/export;

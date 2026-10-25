@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { EditorTransport, Page, RecoveryTransport, RecoveryDraft } from './editor/types';
 import type { SearchHit } from './search';
 import type { Links } from './references';
+import type { TaskHit, TaskFilter } from './tasks';
 export type { Page, Block } from './editor/types';
 
 export const api = {
@@ -9,6 +10,8 @@ export const api = {
   createPage: (session: string, title: string) => invoke<Page>('editor_create_page', { session, title }),
   renamePage: (session: string, pageId: string, title: string) => invoke<Page>('editor_rename_page', { session, pageId, title }),
   journal: (session: string, date: string) => invoke<Page>('editor_journal', { session, date }),
+  findJournal: (session: string, date: string) => invoke<Page | null>('editor_find_journal', { session, date }),
+  tasks: (session: string, status: TaskFilter, pageId: string | null, offset: number) => invoke<TaskHit[]>('editor_tasks', { session, status, pageId, offset }),
   search: (session: string, text: string) => invoke<SearchHit[]>('editor_search', { session, text }),
   links: (session: string, pageId: string) => invoke<Links>('editor_links', { session, pageId }),
 };

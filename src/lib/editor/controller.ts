@@ -113,6 +113,20 @@ export class EditorController {
     } finally { this.working = false; this.changed(); }
   }
 
+  /** Detach an acknowledged page for a date-only journal preview. No graph writes. */
+  async unload(): Promise<void> {
+    this.guardComposition();
+    const epoch = this.compositionEpoch;
+    if (this.working) throw new Error('Wait for the current editor operation');
+    this.working = true; this.changed();
+    try {
+      await this.flush(); this.guardComposition(epoch);
+      this.pageId = null; this.blocks = []; this.revisions = {};
+      this.activeId = null; this.focus = null; this.canUndo = false; this.canRedo = false;
+      this.cachedRows = null; this.groups.clear();
+    } finally { this.working = false; this.changed(); }
+  }
+
   setDraft(id: string, content: string): void {
     if ((this.working && !this.composing) || !this.blocks.some(b => b.id === id)) return;
     const now = Date.now();
