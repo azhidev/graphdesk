@@ -13,6 +13,13 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
+
+
+def persian_normalize(text):
+    mapping = {ord('ي'): 'ی', ord('ك'): 'ک', 0x200c: ' '}
+    mapping.update({ord(c): str(i) for digits in ('۰۱۲۳۴۵۶۷۸۹', '٠١٢٣٤٥٦٧٨٩') for i, c in enumerate(digits)})
+    return unicodedata.normalize('NFC', text.translate(mapping))
 
 
 def main():
@@ -21,6 +28,7 @@ def main():
     parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--reliability', action='store_true', help='Exercise private recovery after forced termination')
     parser.add_argument('--daily', action='store_true', help='Daily workflow suite (the default)')
+    parser.add_argument('--persian', action='store_true', help='Bilingual calendar/search and pending-note crash recovery')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     args.artifacts.mkdir(parents=True, exist_ok=True)
@@ -46,7 +54,8 @@ def main():
                            'XDG_CACHE_HOME': str(work / 'cache'), 'GRAPHDESK_SMOKE_WORK': str(work)}
                     subprocess.run(['dbus-run-session', '--', sys.executable, str(Path(__file__).resolve()),
                                     '--inside', '--artifacts', str(args.artifacts.resolve()),
-                                    *(['--reliability'] if args.reliability else [])], cwd=root, env=env, check=True, timeout=300)
+                                    *(['--reliability'] if args.reliability else []),
+                                    *(['--persian'] if args.persian else [])], cwd=root, env=env, check=True, timeout=300)
                 finally:
                     os.close(display_read)
                     xvfb.terminate(); xvfb.wait(timeout=10)
@@ -145,6 +154,10 @@ def main():
         paste(text); wait_sql('SELECT content FROM blocks', [(text,)])
         block_id, page_id = sql('SELECT id,page_id FROM blocks')[0]
         shot('03-capture')
+        if args.persian:
+            from persian_smoke import run
+            run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, lambda: app)
+            return
         if args.reliability:
             graph_id = sql('SELECT id FROM graph_identity')[0][0]
             draft = text + ' recovered 😀'
@@ -168,6 +181,7 @@ def main():
             finally:
                 lock.execute('ROLLBACK'); lock.close()
             with sqlite3.connect(graph) as connection:
+                connection.create_function('persian_normalize', 1, persian_normalize, deterministic=True)
                 connection.execute('UPDATE blocks SET content=? WHERE id=?', ('external newer', block_id))
             start(); shot('r02-startup-detection')
             field(220, 140, str(graph)); click(130, 200)
@@ -238,7 +252,7 @@ def main():
                 shot('08-retained-error')
             finally:
                 lock.execute('ROLLBACK'); lock.close()
-            click(440, 439); pump()
+            click(440, 391); pump()
             text += ' retained draft'
             wait_sql('SELECT content FROM blocks WHERE id=?', [(text,)], (block_id,))
             find('daily'); xdo('key', 'Return'); pump()

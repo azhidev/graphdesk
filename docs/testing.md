@@ -45,6 +45,86 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### Milestone 5 bilingual input/calendar validation — 2026-10-25
+
+On the existing isolated Ubuntu 24.04 guest, Node 24.21.0, Python 3.12.3, WebKitGTK
+2.52.6 / GTK 3.24.41 and pinned Rust 1.99.1 (`stable` verified to match the pin):
+
+- Locked workspace tests passed in **both default and production-protocol modes**:
+  **60 core/recovery + 8 IPC/ACL + 2 preferences tests**, zero failures.
+- **50 Node tests** passed, including all prior editor regressions, all-day Jalali
+  round trips over the approved interval, Nowruz/Esfand/Gregorian leap boundaries,
+  digit parsing, localization fallback/interpolation, Persian-layout shortcut guards,
+  pending capture timing/failure, lost/never-arriving acknowledgements and composition
+  during capture, canonical submission and post-submit page loading.
+- **19 actual SQLite schema fixtures** passed, including normalized-index backfill,
+  exact-source preservation, mixed digit/Yeh/Kaf/ZWNJ matching, joined-word negative
+  cases, trigger updates/deletes, migration failure and rollback.
+- Svelte/TypeScript: **zero errors/warnings**. Frontend production build and unbundled
+  locked Tauri production build passed. Only `jalaali-js` 2.0.1 was added as a runtime
+  dependency package; existing `serde_json` is now a direct adapter dependency and
+  the existing rusqlite dependency enables scalar functions. No historical graph
+  migration was changed.
+
+All three production WebView suites passed against the final built assets:
+
+```sh
+python3 tests/webview/smoke.py --daily --artifacts test-artifacts/webview-m5-daily-final
+python3 tests/webview/smoke.py --reliability --artifacts test-artifacts/webview-m5-recovery-final
+python3 tests/webview/smoke.py --persian --artifacts test-artifacts/webview-m5-persian-final
+```
+
+The daily and existing-block recovery suites retain Milestone 4 coverage described
+below, including ordinary journal/page/task/link/search workflows, subtree/history,
+graph switching, busy-error retained drafts, normal-close flushing, restart and
+SIGKILL recovery. The bilingual suite additionally verifies:
+
+- English → Persian → English chrome, with calendar/search choices independent and
+  persisted across process restarts; the final English UI still displays Jalali dates.
+- Persian/Arabic-digit Jalali selection, localized unsupported-date feedback only
+  after an actual attempt, and a valid Nowruz date preview. A persistent observer's
+  `PRAGMA data_version` plus page/journal identities prove preferences/calendar
+  changes and absent-date browsing perform no canonical commits.
+- Private first-note capture while a real graph writer lock is held, no early page
+  or block, SIGKILL/restart, explicit restoration without submission, atomic submit,
+  conditional cleanup and subsequent reopen. The final run observed the durable
+  capture after **0.81 s** from paste initiation; this is one smoke observation,
+  not a latency benchmark or a zero-loss/power-failure guarantee.
+- Exact native clipboard selection of mixed Persian/English, punctuation, URL,
+  Persian/Arabic/ASCII digits, ZWNJ, multiline text and emoji. A real XKB Persian
+  layout on the owned disposable X display plus physical XTest keycodes exercises
+  Persian letter entry and the non-Latin Ctrl+K fallback. The display's US layout
+  is restored in `finally`; no system or host keyboard configuration is changed.
+- Original versus Persian-friendly result behavior, source-block focus and edits,
+  raw Unicode persistence, graph/private integrity and graph foreign-key checks.
+
+Reviewed screenshots include unsupported feedback, the restored Persian first-note
+form, normalized results, English/Jalali independence, RTL chrome and mixed text.
+Artifacts are ignored fixture data, not committed notes. Production testing found
+and fixed lost focus after asynchronous first-note discard. Fixture corrections
+also address native-select Escape reverting a choice, changed layout coordinates,
+and waiting for private cleanup acknowledgement rather than merely observing the
+canonical commit. No application safety guard was weakened to make a fixture pass.
+Final review also removed an accidental new first-note size restriction: oversized
+nondestructive first-note submissions now follow the established save-and-clear-
+unretainable-history rule, with a dedicated core regression.
+
+A separate **in-memory Python SQLite** fixture with 1,000 synthetic blocks measured
+allocated pages at **1,179,648 → 1,773,568 bytes**, migration/backfill about **39.37 ms**
+and 1,001 normalizer calls (one page + 1,000 blocks). Task-only/no-op content updates
+made zero normalization calls; one changed block made one call. This is a small SQL
+fixture measurement, not a Rust IPC/WebView throughput benchmark or a universal
+storage multiplier. Derived indexes deliberately increase graph size/write cost.
+
+Native XKB input is **not an IME candidate/preedit service**. Composition ordering
+tests use deterministic transports/events; an actually dropped WebView response
+was not injected. `ibus`/`fcitx5` executables were unavailable on PATH, and the private
+session still reports a missing accessibility bus. Real IME services, screen readers,
+physical hardware/Wayland, zoom/scaling, Windows/macOS and power-loss remain
+unvalidated. Sandbox, ACL and VM networking were unchanged; no system packages or
+services were installed. Milestone 5 is ready to close within the tested local,
+single-user Ubuntu scope, not as a cross-platform or assistive-technology guarantee.
+
 ### Milestone 4 daily workspace validation — 2026-10-25
 
 On the existing Ubuntu 24.04 guest, Node 24.21.0, Python 3.12.3 and pinned Rust

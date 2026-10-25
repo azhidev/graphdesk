@@ -78,17 +78,17 @@ without Unix path concatenation or shell expansion. Bundled SQLite avoids relian
 on system SQLite feature versions. OS WebView, input, file-locking and packaging
 behavior still requires native testing.
 
-There is currently no application-owned persistent settings store or default graph
-directory to migrate. Future settings/cache paths should use Tauri's platform path
-resolver in the adapter, keeping the core independent of desktop directories.
-See [data locations and recovery](data.md). No new storage abstraction, background
-process or runtime dependency is justified for this portability review.
+The adapter owns app-local language, calendar and search-mode preferences in
+`preferences.json`, using Tauri's platform path resolver and private atomic writes.
+Private recovery storage also stays outside graphs; the core remains independent
+of desktop directories. No default graph directory or persistent graph registry
+exists. See [data locations and recovery](data.md).
 
 SQLite is authoritative; Markdown will be an interchange format, not a second database.
 Disk graphs use WAL and `synchronous=FULL`. Timestamps are UTC Unix seconds;
 journal days are ISO 8601 Gregorian `YYYY-MM-DD` civil dates, not UTC instants.
-Future Gregorian/Jalali presentation must convert at the UI boundary without changing
-the stored identity of the day.
+Gregorian/Jalali presentation converts at the UI boundary without changing the
+stored identity of the day.
 
 Never copy only a live `.sqlite3` file while WAL may contain writes. Close all graph
 connections before copying the database, or use SQLite's backup API/tool. Automated
@@ -112,8 +112,9 @@ exact drift checks; this is consistency detection, not tamper-proof authenticati
 
 FTS5 external-content tables index titles/content with `unicode61`; triggers update
 indexes in the same transaction as source changes. Rust quotes literal phrase queries
-rather than exposing FTS syntax. Persian UTF-8 token search works, but stemming,
-ZWNJ handling, Arabic/Persian yeh/kaf equivalence and transliteration are not promised.
+rather than exposing FTS syntax. Original search preserves existing token behavior;
+the optional Persian-friendly mode adds Yeh/Kaf/digit normalization and treats ZWNJ
+as a boundary, as described below. Neither mode promises stemming or transliteration.
 Search is a rebuildable index, never an independent source of truth.
 
 ## Security and validation boundary
