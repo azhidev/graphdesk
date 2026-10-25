@@ -1,6 +1,6 @@
 //! Blocking SQLite work stays off the GUI event loop. Session checks and operations
 //! share one lock, so queued writes cannot cross a graph switch.
-use graph_core::{Block, EditAction, EditResult, Error, Graph, Page};
+use graph_core::{Block, EditAction, EditResult, Error, Graph, Page, TaskFilter, TaskHit};
 use serde::Serialize;
 use tauri::State;
 use uuid::Uuid;
@@ -120,4 +120,16 @@ pub(crate) async fn editor_rename_page(session: Uuid, page_id: Uuid, title: Stri
 pub(crate) async fn editor_journal(session: Uuid, date: String, state: State<'_, AppState>) -> Result<Page, EditorError> {
     let state = state.inner().clone();
     blocking(move || with_session(&state, session, |g| g.editor.journal(&date))).await
+}
+
+#[tauri::command]
+pub(crate) async fn editor_find_journal(session: Uuid, date: String, state: State<'_, AppState>) -> Result<Option<Page>, EditorError> {
+    let state = state.inner().clone();
+    blocking(move || with_session(&state, session, |g| g.editor.find_journal(&date))).await
+}
+
+#[tauri::command]
+pub(crate) async fn editor_tasks(session: Uuid, status: TaskFilter, page_id: Option<Uuid>, limit: Option<usize>, offset: usize, state: State<'_, AppState>) -> Result<Vec<TaskHit>, EditorError> {
+    let state = state.inner().clone();
+    blocking(move || with_session(&state, session, |g| g.editor.graph().tasks(status, page_id, limit.unwrap_or(100), offset))).await
 }

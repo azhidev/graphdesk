@@ -77,6 +77,126 @@ fn graph_commands_are_denied_outside_main_window() {
 }
 
 #[test]
+fn journal_lookup_ipc_never_creates_and_returns_metadata_after_rename_and_reopen() {
+    use tauri::Manager;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("journal-lookup.sqlite3");
+    let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+    assert_eq!(invoke(&window, "editor_find_journal", json!({"session":Uuid::new_v4(),"date":"2024-02-29"})).unwrap_err()["code"], "stale_session");
+    let session = invoke(&window, "editor_open", json!({"path":path,"create":true})).unwrap()["token"].clone();
+    let find = |date: &str| invoke(&window, "editor_find_journal", json!({"session":session,"date":date}));
+    assert_eq!(find("2024-02-29").unwrap(), Value::Null);
+    let ordinary = invoke(&window, "editor_create_page", json!({"session":session,"title":"2024-02-29"})).unwrap();
+    assert_eq!(ordinary.get("journal_date"), Some(&Value::Null));
+    assert_eq!(find("2024-02-29").unwrap(), Value::Null);
+    for date in ["2023-02-29", "2024-2-29", "2024-02-30", "2024-02-29 ", "+10000-01-01"] {
+        assert_eq!(find(date).unwrap_err()["code"], "invalid");
+    }
+    // Neither absent/invalid lookups nor a date-shaped ordinary page are converted.
+    assert_eq!(app.state::<AppState>().0.lock().unwrap().as_ref().unwrap().editor.graph().pages().unwrap().len(), 1);
+    assert!(invoke(&window, "editor_journal", json!({"session":session,"date":"2024-02-29"})).is_err());
+    invoke(&window, "editor_rename_page", json!({"session":session,"pageId":ordinary["id"],"title":"Ordinary"})).unwrap();
+    let journal = invoke(&window, "editor_journal", json!({"session":session,"date":"2024-02-29"})).unwrap();
+    assert_eq!(journal["journal_date"], "2024-02-29");
+    let renamed = invoke(&window, "editor_rename_page", json!({"session":session,"pageId":journal["id"],"title":"Leap day سلام"})).unwrap();
+    assert_eq!(renamed["id"], journal["id"]);
+    assert_eq!(renamed["journal_date"], journal["journal_date"]);
+    assert_eq!(find("2024-02-29").unwrap(), renamed);
+    assert_eq!(invoke(&window, "editor_journal", json!({"session":session,"date":"2024-02-29"})).unwrap(), renamed);
+    let reused = invoke(&window, "editor_create_page", json!({"session":session,"title":"2024-02-29"})).unwrap();
+    assert_eq!(reused.get("journal_date"), Some(&Value::Null));
+    assert_eq!(find("2024-02-29").unwrap(), renamed);
+    let reopened = invoke(&window, "editor_open", json!({"path":path,"create":false})).unwrap();
+    assert!(reopened["pages"].as_array().unwrap().contains(&renamed));
+    assert!(reopened["pages"].as_array().unwrap().contains(&reused));
+    assert_eq!(find("2024-02-29").unwrap_err()["code"], "stale_session");
+    assert_eq!(invoke(&window, "editor_find_journal", json!({"session":reopened["token"],"date":"2024-02-29"})).unwrap(), renamed);
+    assert_eq!(invoke(&window, "editor_find_journal", json!({"session":reopened["token"],"date":"2024-03-01"})).unwrap(), Value::Null);
+}
+
+#[test]
+fn task_query_ipc_filters_pages_paginates_and_preserves_editor_history() {
+    use graph_core::{TaskHit, TaskStatus};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("task-query.sqlite3");
+    let mut graph = Graph::create(&path).unwrap();
+    let alpha = graph.create_page("alpha").unwrap();
+    let beta = graph.create_page("Beta").unwrap();
+    let journal = graph.create_journal("2024-02-29").unwrap();
+    graph.rename_page(journal.id, "Zulu").unwrap();
+    let root = graph.create_block(alpha.id, None, "not a task").unwrap();
+    let cancelled = graph.create_block(alpha.id, None, "cancelled").unwrap();
+    graph.set_task_status(cancelled.id, Some(TaskStatus::Cancelled)).unwrap();
+    let mut expected = Vec::new();
+    for n in 0..103 {
+        let parent = (n == 0).then_some(root.id);
+        let block = graph.create_block(alpha.id, parent, &format!("task {n} سلام😀")).unwrap();
+        graph.set_task_status(block.id, Some(TaskStatus::Todo)).unwrap();
+        expected.push(TaskHit { id: block.id, page_id: alpha.id, page_title: alpha.title.clone(), content: block.content, task_status: "todo".into() });
+    }
+    expected.sort_by_key(|hit| hit.id);
+    let doing = graph.create_block(journal.id, None, "journal task").unwrap();
+    graph.set_task_status(doing.id, Some(TaskStatus::Doing)).unwrap();
+    expected.push(TaskHit { id: doing.id, page_id: journal.id, page_title: "Zulu".into(), content: doing.content, task_status: "doing".into() });
+    let done = graph.create_block(beta.id, None, "completed").unwrap();
+    graph.set_task_status(done.id, Some(TaskStatus::Done)).unwrap();
+    drop(graph);
+    let expected = serde_json::to_value(expected).unwrap();
+    let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+    assert_eq!(invoke(&window, "editor_tasks", json!({"session":Uuid::new_v4(),"status":"active","limit":100,"offset":0})).unwrap_err()["code"], "stale_session");
+    let session = invoke(&window, "editor_open", json!({"path":path,"create":false})).unwrap()["token"].clone();
+    let tasks = |status: &str, page: Option<Uuid>, limit: usize, offset: usize| invoke(&window, "editor_tasks",
+        json!({"session":session,"status":status,"pageId":page,"limit":limit,"offset":offset}));
+    let first = tasks("active", None, 101, 0).unwrap();
+    let second = tasks("active", None, 100, 100).unwrap();
+    assert_eq!(first.as_array().unwrap(), &expected.as_array().unwrap()[..100]);
+    assert_eq!(second.as_array().unwrap(), &expected.as_array().unwrap()[100..]);
+    assert_eq!(tasks("active", None, 100, 0).unwrap(), first);
+    assert_eq!(tasks("active", None, 100, 104).unwrap(), json!([]));
+    assert_eq!(tasks("active", None, 0, 0).unwrap(), json!([]));
+    assert_eq!(tasks("todo", Some(alpha.id), 100, 100).unwrap().as_array().unwrap(), &expected.as_array().unwrap()[100..103]);
+    assert_eq!(tasks("doing", None, 100, 0).unwrap(), json!([expected[103]]));
+    assert_eq!(tasks("active", Some(journal.id), 100, 0).unwrap(), json!([expected[103]]));
+    assert_eq!(tasks("doing", Some(alpha.id), 100, 0).unwrap(), json!([]));
+    assert_eq!(tasks("active", Some(Uuid::new_v4()), 100, 0).unwrap(), json!([]));
+    let completed = tasks("done", None, 100, 0).unwrap();
+    assert_eq!(completed.as_array().unwrap().len(), 1);
+    assert_eq!(completed[0]["id"], done.id.to_string());
+    assert_eq!(completed[0]["task_status"], "done");
+    for status in ["cancelled", "all", "Active", "bogus"] {
+        assert!(tasks(status, None, 100, 0).is_err());
+    }
+    for (field, value) in [("pageId", json!("invalid")), ("limit", json!(-1)), ("offset", json!(-1))] {
+        let mut args = json!({"session":session,"status":"active","limit":100,"offset":0});
+        args[field] = value;
+        assert!(invoke(&window, "editor_tasks", args).is_err());
+    }
+    // Page scope is optional, not an implicit restriction to the active outline.
+    assert_eq!(invoke(&window, "editor_tasks", json!({"session":session,"status":"active","limit":100,"offset":100})).unwrap(), second);
+    assert_eq!(invoke(&window, "editor_tasks", json!({"session":session,"status":"active","pageId":null,"offset":0})).unwrap(), first);
+    let apply = |action: Value| invoke(&window, "editor_apply", json!({"session":session,"pageId":journal.id,"action":action}));
+    apply(json!({"kind":"task","id":doing.id,"expected":"doing","status":"done"})).unwrap();
+    assert_eq!(tasks("active", Some(journal.id), 100, 0).unwrap(), json!([]));
+    assert_eq!(tasks("done", Some(journal.id), 100, 0).unwrap()[0]["id"], doing.id.to_string());
+    let history = |redo: bool| invoke(&window, "editor_history", json!({"session":session,"pageId":journal.id,"redo":redo}));
+    history(false).unwrap();
+    assert_eq!(tasks("doing", Some(journal.id), 100, 0).unwrap(), json!([expected[103]]));
+    // Read queries must retain redo and must not clear page-scoped history.
+    history(true).unwrap();
+    assert_eq!(tasks("active", Some(journal.id), 100, 0).unwrap(), json!([]));
+    history(false).unwrap();
+    apply(json!({"kind":"save","id":doing.id,"expected":"journal task","content":"updated text"})).unwrap();
+    assert_eq!(tasks("doing", Some(journal.id), 100, 0).unwrap()[0]["content"], "updated text");
+    history(false).unwrap();
+    assert_eq!(tasks("doing", Some(journal.id), 100, 0).unwrap(), json!([expected[103]]));
+    let reopened = invoke(&window, "editor_open", json!({"path":path,"create":false})).unwrap();
+    assert_eq!(tasks("active", None, 100, 0).unwrap_err()["code"], "stale_session");
+    assert_eq!(invoke(&window, "editor_tasks", json!({"session":reopened["token"],"status":"active","limit":100,"offset":100})).unwrap(), second);
+}
+
+#[test]
 fn editor_session_transactions_and_structured_errors() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("editor.sqlite3");

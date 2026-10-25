@@ -6,7 +6,7 @@ mod references;
 pub mod recovery;
 pub use references::InlineReference;
 pub use editor::{Editor, EditAction, EditResult, DeletePreview};
-pub use model::{Block, Page, SearchHit, TaskStatus};
+pub use model::{Block, Page, SearchHit, TaskFilter, TaskHit, TaskStatus};
 
 use std::{fs::OpenOptions, path::Path, time::Duration};
 use chrono::NaiveDate;
@@ -80,7 +80,7 @@ impl Graph {
             params![id.to_string(), title, key])?;
         references::resolve(&tx)?;
         tx.commit()?;
-        Ok(Page { id, title })
+        Ok(Page { id, title, journal_date: None })
     }
 
     pub fn rename_page(&mut self, id: Uuid, title: &str) -> Result<()> {
@@ -94,9 +94,10 @@ impl Graph {
     }
 
     pub fn pages(&self) -> Result<Vec<Page>> {
-        let mut stmt = self.conn.prepare("SELECT id, title FROM pages ORDER BY title_key, id")?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
-        rows.map(|r| { let (id, title) = r?; Ok(Page { id: parse_id(&id)?, title }) }).collect()
+        let mut stmt = self.conn.prepare("SELECT p.id,p.title,j.date FROM pages p
+            LEFT JOIN journals j ON j.page_id=p.id ORDER BY p.title_key,p.id")?;
+        let rows = stmt.query_map([], read_page)?;
+        rows.map(|r| decode_page(r?)).collect()
     }
 
     pub fn delete_page(&mut self, id: Uuid) -> Result<()> {
@@ -104,27 +105,26 @@ impl Graph {
     }
 
     pub fn create_journal(&mut self, date: &str) -> Result<Page> {
-        let parsed = NaiveDate::parse_from_str(date, "%Y-%m-%d")
-            .map_err(|_| Error::Invalid("expected valid ISO Gregorian date YYYY-MM-DD".into()))?;
-        if parsed.format("%Y-%m-%d").to_string() != date {
-            return Err(Error::Invalid("expected canonical ISO date".into()));
-        }
+        validate_journal_date(date)?;
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let existing: Option<(String, String)> = tx.query_row(
-            "SELECT p.id, p.title FROM pages p JOIN journals j ON j.page_id=p.id WHERE j.date=?1",
-            [date], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
-        let page = if let Some((id, title)) = existing {
-            Page { id: parse_id(&id)?, title }
+        let page = if let Some(page) = lookup_journal(&tx, date)? {
+            page
         } else {
             let id = Uuid::new_v4();
             // An ordinary page with the same title is not silently converted.
             tx.execute("INSERT INTO pages(id, title, title_key) VALUES (?1, ?2, ?2)", params![id.to_string(), date])?;
             tx.execute("INSERT INTO journals(page_id, date) VALUES (?1, ?2)", params![id.to_string(), date])?;
-            Page { id, title: date.into() }
+            Page { id, title: date.into(), journal_date: Some(date.into()) }
         };
         references::resolve(&tx)?;
         tx.commit()?;
         Ok(page)
+    }
+
+    /// Find by journal identity, not title. Never creates pages or resolves links.
+    pub fn lookup_journal(&self, date: &str) -> Result<Option<Page>> {
+        validate_journal_date(date)?;
+        lookup_journal(&self.conn, date)
     }
 
     pub fn create_block(&mut self, page: Uuid, parent: Option<Uuid>, content: &str) -> Result<Block> {
@@ -183,6 +183,20 @@ impl Graph {
             params![id.to_string(), status.map(TaskStatus::as_str)])?)
     }
 
+    /// Cross-page task query, including journals and nested blocks. Each read returns
+    /// at most 100 rows; offsets refer to the current, deterministic result order.
+    pub fn tasks(&self, status: TaskFilter, page: Option<Uuid>, limit: usize, offset: usize) -> Result<Vec<TaskHit>> {
+        let offset = i64::try_from(offset).map_err(|_| Error::Invalid("task offset is too large".into()))?;
+        let (first, second) = status.statuses();
+        let mut stmt = self.conn.prepare(TASKS_SQL)?;
+        let rows = stmt.query_map(params![first, second, page.map(|p| p.to_string()), limit.min(100) as i64, offset],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?;
+        rows.map(|r| {
+            let (id, page_id, page_title, content, task_status) = r?;
+            Ok(TaskHit { id: parse_id(&id)?, page_id: parse_id(&page_id)?, page_title, content, task_status })
+        }).collect()
+    }
+
     pub fn add_reference(&mut self, source: Uuid, target: Uuid) -> Result<()> {
         self.conn.execute("INSERT INTO page_references(source_block_id,target_page_id) VALUES (?1,?2) ON CONFLICT DO NOTHING",
             params![source.to_string(), target.to_string()])?;
@@ -231,6 +245,32 @@ impl Graph {
         }
         Ok(hits)
     }
+}
+
+const TASKS_SQL: &str = "SELECT b.id,b.page_id,p.title,b.content,b.task_status FROM blocks b
+    JOIN pages p ON p.id=b.page_id WHERE b.task_status IN (?1,?2) AND (?3 IS NULL OR b.page_id=?3)
+    ORDER BY p.title_key,p.id,b.id LIMIT ?4 OFFSET ?5";
+
+fn validate_journal_date(date: &str) -> Result<()> {
+    if date.len() != 10 { return Err(Error::Invalid("expected canonical ISO date YYYY-MM-DD".into())); }
+    let parsed = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|_| Error::Invalid("expected valid ISO Gregorian date YYYY-MM-DD".into()))?;
+    if parsed.format("%Y-%m-%d").to_string() != date {
+        return Err(Error::Invalid("expected canonical ISO date".into()));
+    }
+    Ok(())
+}
+
+type RawPage = (String, String, Option<String>);
+fn read_page(r: &rusqlite::Row<'_>) -> rusqlite::Result<RawPage> {
+    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+}
+fn decode_page(raw: RawPage) -> Result<Page> {
+    Ok(Page { id: parse_id(&raw.0)?, title: raw.1, journal_date: raw.2 })
+}
+fn lookup_journal(conn: &Connection, date: &str) -> Result<Option<Page>> {
+    conn.query_row("SELECT p.id,p.title,j.date FROM journals j JOIN pages p ON p.id=j.page_id WHERE j.date=?1",
+        [date], read_page).optional()?.map(decode_page).transpose()
 }
 
 fn text_revisions(conn: &Connection, page: Uuid) -> Result<std::collections::BTreeMap<Uuid, i64>> {

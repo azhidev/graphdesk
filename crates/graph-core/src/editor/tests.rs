@@ -230,11 +230,23 @@ fn page_workflows_preserve_identity_and_block_history() -> Result<()> {
     assert_eq!(editor.rename_page(page, "  سلام  ")?.id, page);
     assert!(editor.rename_page(page, " ").is_err());
     let journal = editor.journal("2024-02-29")?;
-    editor.rename_page(journal.id, "Leap day")?;
-    assert_eq!(editor.journal("2024-02-29")?.id, journal.id);
+    let renamed = editor.rename_page(journal.id, "Leap day")?;
+    assert_eq!(renamed.journal_date.as_deref(), Some("2024-02-29"));
+    assert_eq!(editor.journal("2024-02-29")?, renamed);
+    let changes = editor.graph.conn.total_changes();
+    assert_eq!(editor.find_journal("2024-02-29")?, Some(renamed));
+    assert_eq!(editor.find_journal("2024-03-01")?, None);
+    assert!(matches!(editor.find_journal("2023-02-29"), Err(Error::Invalid(_))));
+    assert!(editor.graph().tasks(crate::TaskFilter::Active, None, 100, 0)?.is_empty());
+    assert_eq!(editor.graph.conn.total_changes(), changes);
+    assert_eq!(editor.history_state(page), (true, false));
     assert!(editor.journal("2023-02-29").is_err());
     editor.history(page, false)?;
     assert_eq!(editor.graph().page_blocks(page)?[0].content, "before");
+    assert_eq!(editor.find_journal("2024-03-01")?, None);
+    assert_eq!(editor.history_state(page), (false, true));
+    editor.history(page, true)?;
+    assert_eq!(editor.graph().page_blocks(page)?[0].content, "after");
     Ok(())
 }
 use crate::TaskStatus;

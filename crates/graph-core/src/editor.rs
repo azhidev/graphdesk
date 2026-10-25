@@ -94,6 +94,10 @@ impl Editor {
         Ok(page)
     }
 
+    pub fn find_journal(&self, date: &str) -> Result<Option<crate::Page>> {
+        self.graph.lookup_journal(date)
+    }
+
     fn resolve_history(&mut self, page: &crate::Page) {
         let Ok((_, key)) = crate::title_parts(&page.title) else { return; };
         for history in self.history.pages.values_mut() {

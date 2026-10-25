@@ -1,6 +1,133 @@
 use super::*;
 
 #[test]
+fn journal_lookup_is_read_only_and_preserves_renamed_identity() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("journals.sqlite3");
+    let mut g = Graph::create(&path)?;
+    let ordinary = g.create_page("2026-10-24")?;
+    assert_eq!(ordinary.journal_date, None);
+    assert_eq!(serde_json::to_value(&ordinary).unwrap()["journal_date"], serde_json::Value::Null);
+    assert_eq!(g.lookup_journal("2026-10-24")?, None); // A date title is not journal identity.
+    let journal = g.create_journal("2024-02-29")?;
+    assert_eq!(journal.journal_date.as_deref(), Some("2024-02-29"));
+    g.rename_page(journal.id, "Leap day سلام")?;
+    let reused_title = g.create_page("2024-02-29")?;
+    assert_eq!(reused_title.journal_date, None);
+    let renamed = g.lookup_journal("2024-02-29")?.unwrap();
+    assert_eq!(renamed.id, journal.id);
+    assert_eq!(renamed.title, "Leap day سلام");
+    assert_eq!(renamed.journal_date, journal.journal_date);
+    assert_eq!(g.create_journal("2024-02-29")?, renamed);
+    drop(g);
+    let mut g = Graph::open(&path)?;
+    assert!(g.pages()?.contains(&renamed));
+    let before = g.pages()?;
+    let changes = g.conn.total_changes();
+    g.conn.execute_batch("PRAGMA query_only=ON")?;
+    assert_eq!(g.lookup_journal("2024-02-29")?, Some(renamed));
+    assert_eq!(g.lookup_journal("2026-10-25")?, None);
+    assert_eq!(g.lookup_journal("2026-10-24")?, None);
+    for date in ["2023-02-29", "1900-02-29", "2026-04-31", "2026-2-09", "2026-02-9",
+        "2026-02-30", "2026-13-01", "2026-00-01", "2026-01-00", "2026-10-24T00:00:00Z",
+        " 2026-10-24", "2026-10-24 ", "+10000-01-01", ""] {
+        assert!(matches!(g.lookup_journal(date), Err(Error::Invalid(_))), "{date}");
+        assert!(matches!(g.create_journal(date), Err(Error::Invalid(_))), "{date}");
+    }
+    assert_eq!(g.lookup_journal("2000-02-29")?, None);
+    assert_eq!(g.pages()?, before);
+    assert_eq!(g.conn.total_changes(), changes);
+    g.conn.execute_batch("PRAGMA query_only=OFF")?;
+    g.delete_page(journal.id)?;
+    assert_eq!(g.lookup_journal("2024-02-29")?, None);
+    // Reused ordinary titles still cannot be silently converted into a journal.
+    assert!(g.create_journal("2024-02-29").is_err());
+    Ok(())
+}
+
+#[test]
+fn task_queries_include_journals_nested_blocks_and_only_selected_statuses() -> Result<()> {
+    let mut g = Graph::in_memory()?;
+    let beta = g.create_page("Beta")?;
+    let alpha = g.create_page("alpha")?;
+    let journal = g.create_journal("2026-10-24")?;
+    let plain = g.create_block(alpha.id, None, "not a task")?;
+    let todo = g.create_block(alpha.id, Some(plain.id), "nested سلام😀")?;
+    let doing = g.create_block(beta.id, None, "in progress")?;
+    let journal_todo = g.create_block(journal.id, None, "journal task")?;
+    let done = g.create_block(beta.id, None, "completed")?;
+    let cancelled = g.create_block(alpha.id, None, "cancelled")?;
+    for (id, status) in [(todo.id, TaskStatus::Todo), (doing.id, TaskStatus::Doing),
+        (journal_todo.id, TaskStatus::Todo), (done.id, TaskStatus::Done), (cancelled.id, TaskStatus::Cancelled)] {
+        g.set_task_status(id, Some(status))?;
+    }
+    let expected = vec![
+        TaskHit { id: journal_todo.id, page_id: journal.id, page_title: journal.title.clone(), content: "journal task".into(), task_status: "todo".into() },
+        TaskHit { id: todo.id, page_id: alpha.id, page_title: alpha.title.clone(), content: "nested سلام😀".into(), task_status: "todo".into() },
+        TaskHit { id: doing.id, page_id: beta.id, page_title: beta.title.clone(), content: "in progress".into(), task_status: "doing".into() },
+    ];
+    let changes = g.conn.total_changes();
+    g.conn.execute_batch("PRAGMA query_only=ON")?;
+    assert_eq!(g.tasks(TaskFilter::Active, None, 100, 0)?, expected);
+    assert_eq!(g.tasks(TaskFilter::Todo, None, 100, 0)?, expected[..2]);
+    assert_eq!(g.tasks(TaskFilter::Doing, None, 100, 0)?, expected[2..]);
+    let completed = g.tasks(TaskFilter::Done, None, 100, 0)?;
+    assert_eq!(completed.len(), 1);
+    assert_eq!(completed[0].id, done.id);
+    assert_eq!(completed[0].task_status, "done");
+    assert_eq!(g.tasks(TaskFilter::Active, Some(alpha.id), 100, 0)?, expected[1..2]);
+    assert_eq!(g.tasks(TaskFilter::Todo, Some(journal.id), 100, 0)?, expected[..1]);
+    assert!(g.tasks(TaskFilter::Doing, Some(alpha.id), 100, 0)?.is_empty());
+    assert!(g.tasks(TaskFilter::Active, Some(Uuid::new_v4()), 100, 0)?.is_empty());
+    assert_eq!(g.conn.total_changes(), changes);
+    g.conn.execute_batch("PRAGMA query_only=OFF")?;
+    g.rename_page(journal.id, "Zulu")?;
+    let renamed = g.tasks(TaskFilter::Active, None, 100, 0)?;
+    assert_eq!(renamed.iter().map(|hit| hit.id).collect::<Vec<_>>(), vec![todo.id, doing.id, journal_todo.id]);
+    assert_eq!(renamed[2].page_title, "Zulu");
+    g.set_task_status(todo.id, None)?;
+    g.update_block(doing.id, "current text")?;
+    g.delete_page(journal.id)?;
+    let remaining = g.tasks(TaskFilter::Active, None, 100, 0)?;
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, doing.id);
+    assert_eq!(remaining[0].content, "current text");
+    Ok(())
+}
+
+#[test]
+fn task_pagination_is_bounded_stable_and_uses_existing_task_index() -> Result<()> {
+    let mut g = Graph::in_memory()?;
+    let page = g.create_page("Paging")?;
+    let mut expected = Vec::new();
+    for n in 0..205 {
+        let block = g.create_block(page.id, None, &format!("task {n}"))?;
+        g.set_task_status(block.id, Some(TaskStatus::Todo))?;
+        expected.push(block.id);
+    }
+    expected.sort_unstable(); // Within a page, order is block UUID, not outline position.
+    let first = g.tasks(TaskFilter::Active, None, usize::MAX, 0)?;
+    let second = g.tasks(TaskFilter::Active, None, 100, 100)?;
+    let last = g.tasks(TaskFilter::Active, None, 100, 200)?;
+    assert_eq!((first.len(), second.len(), last.len()), (100, 100, 5));
+    assert_eq!(g.tasks(TaskFilter::Active, None, 100, 0)?, first);
+    let actual: Vec<_> = first.iter().chain(&second).chain(&last).map(|hit| hit.id).collect();
+    assert_eq!(actual, expected);
+    assert_eq!(g.tasks(TaskFilter::Todo, Some(page.id), 7, 99)?.iter().map(|hit| hit.id).collect::<Vec<_>>(), expected[99..106]);
+    assert!(g.tasks(TaskFilter::Active, None, 0, 0)?.is_empty());
+    assert!(g.tasks(TaskFilter::Active, None, 100, 205)?.is_empty());
+    assert!(g.tasks(TaskFilter::Active, None, 100, i64::MAX as usize)?.is_empty());
+    if usize::BITS > 63 {
+        assert!(matches!(g.tasks(TaskFilter::Active, None, 100, usize::MAX), Err(Error::Invalid(_))));
+    }
+    let mut stmt = g.conn.prepare(&format!("EXPLAIN QUERY PLAN {TASKS_SQL}"))?;
+    let plan = stmt.query_map(params!["todo", "doing", Option::<String>::None, 100, 0], |r| r.get::<_, String>(3))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    assert!(plan.iter().any(|line| line.contains("blocks_tasks")), "{plan:?}");
+    Ok(())
+}
+
+#[test]
 fn native_paths_with_spaces_and_unicode_preserve_graph_data() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let parent = dir.path().join("Graph notes سلام");
