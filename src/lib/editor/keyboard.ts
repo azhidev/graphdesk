@@ -9,8 +9,9 @@ export type Intent = 'split' | 'indent' | 'outdent' | 'up' | 'down' | 'reorder_u
 export function keyIntent(e: KeyContext): Intent | null {
   if (e.isComposing || e.keyCode === 229) return null;
   if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-    if (e.key.toLowerCase() === 'z') return e.shiftKey ? 'redo' : 'undo';
-    if (e.key.toLowerCase() === 'y') return 'redo';
+    const key = shortcutLetter(e.key, e.code);
+    if (key === 'z') return e.shiftKey ? 'redo' : 'undo';
+    if (key === 'y') return 'redo';
     return null;
   }
   if (e.altKey) {
@@ -32,4 +33,10 @@ export function keyIntent(e: KeyContext): Intent | null {
     return e.nested ? 'outdent' : 'remove_empty';
   }
   return null;
+}
+
+/** Preserve Latin layout meanings; only fall back for non-Latin shortcut keys. */
+export function shortcutLetter(key: string, code?: string): string {
+  if (/^[a-z]$/i.test(key)) return key.toLowerCase();
+  return /^Key[A-Z]$/.test(code ?? '') ? code!.slice(3).toLowerCase() : key.toLowerCase();
 }
