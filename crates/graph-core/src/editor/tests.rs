@@ -1,6 +1,21 @@
 use super::*;
 
 #[test]
+fn oversized_initial_note_saves_like_other_nondestructive_edits() -> Result<()> {
+    let mut e = Editor::new(Graph::in_memory()?);
+    let id = Uuid::new_v4();
+    let content = "x".repeat(MAX_BYTES);
+    let first = e.submit_note("2024-02-29", id, &content)?;
+    assert_eq!(first.block.content, content);
+    assert_eq!(e.history_state(first.page.id), (false, false));
+    let retry = e.submit_note("2024-02-29", id, &content)?;
+    assert_eq!(retry.block.id, id);
+    assert_eq!(e.graph.page_blocks(first.page.id)?.len(), 1);
+    assert_eq!(e.note_state(id)?.revision, Some(0));
+    Ok(())
+}
+
+#[test]
 fn atomic_note_submission_retry_undo_revisions_and_reopen() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("notes.db");

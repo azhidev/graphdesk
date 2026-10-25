@@ -151,11 +151,10 @@ impl Editor {
         let after = snapshot_scope(&tx, page.id, Some(id))?;
         let block = after[&id].block.clone();
         let entry = Entry { delta: differences(&Snapshot::new(), &after), focus_before: None, focus_after: Some(id), serial: 0 };
-        if entry.bytes() + self.history.container_bytes() + 8192 > MAX_BYTES {
-            return Err(Error::Invalid("note exceeds the session undo budget".into()));
-        }
         tx.commit()?;
         self.resolve_history(&page);
+        // Creation is nondestructive: like ordinary text saves, an oversized
+        // entry persists safely and clears this page's unretainable history.
         self.history.push(page.id, entry, None);
         Ok(SubmittedNote { page, block, revision: 0 })
     }
