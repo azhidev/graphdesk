@@ -78,3 +78,11 @@ export function dateLabel(day: CivilDate, calendar: Calendar, language: 'en' | '
   const label = calendar === 'gregorian' ? day : `${fields.year}/${String(fields.month).padStart(2, '0')}/${String(fields.day).padStart(2, '0')}`;
   return language === 'fa' ? label.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]) : label;
 }
+
+/** A presentation label, never a rename or a reference-resolution key. */
+export function displayPageTitle(page: { title: string; journal_date?: string | null }, calendar: Calendar, language: 'en' | 'fa'): string {
+  if (page.journal_date && page.title === page.journal_date) {
+    try { return dateLabel(page.journal_date, calendar, language); } catch { /* Existing out-of-range journals remain accessible. */ }
+  }
+  return page.title;
+}

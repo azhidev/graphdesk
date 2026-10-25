@@ -6,14 +6,18 @@ other pages through the sidebar; empty pages offer **Add first block**.
 Click a block to edit. Markdown is literal source; multiline paste stays in one block.
 
 **Previous day / Today / Next day** follow journal identity, including renamed
-journals. The sidebar's **Journal date** is an explicitly Gregorian picker. Browsing
+journals. The sidebar's **Journal date** uses the calendar selected in Settings. Browsing
 an absent day shows an empty preview without creating a page, block or reference.
 **Add a note** opens a small first-note form: write text and choose **Save first note**
-to create the journal and save through the normal editor. Before submission this
-form is not autosaved or recovery-captured; normal close is blocked and cancelling
-nonempty text requires a second confirmation. After submission, failed saves retain
-both the form text and the normal editor draft; retry reconciles text saves rather
-than appending another block. Forced termination before submission can lose form text.
+to create the journal and its initial block atomically. Finalized form input targets
+private recovery capture within 700 ms without creating graph records. Normal close
+attempts capture but remains blocked until the form is resolved; discarding nonempty
+text requires confirmation. Recovery status distinguishes pending/stored/failed.
+Preedit and input not yet captured can still be lost on forced termination. After
+reopening the graph, **Pending journal notes → Restore first-note form** explicitly
+restores text for review, never automatic submission. Persisted text is compared;
+modified/deleted committed notes are never silently overwritten/recreated. Retry
+uses the same intended block UUID, not another append.
 
 Graph opening creates today's journal even if empty. No automatic page switch occurs
 at midnight; Today/Capture calculate the local day when invoked. A date-shaped ordinary
@@ -69,10 +73,13 @@ Recover**. Recovery is explicit, text-only and revision-guarded; discard require
 confirmation. **Review local recovery drafts** refreshes the list. Unresolved
 versions expire after 14 days; see [data and recovery limits](data.md#text-draft-recovery).
 
-Journals use local Gregorian civil dates even if renamed. Search returns up to
+Journal identity uses local Gregorian civil dates even if renamed. Search returns up to
 100 page and 100 block phrase matches from acknowledged text, not drafts. Block
 results reveal ancestors and focus the UUID. Unicode tokenization does not promise
-stemming, transliteration, ZWNJ normalization or Arabic/Persian letter equivalence.
+stemming or transliteration. Original mode preserves existing token/phrase semantics.
+Optional Persian-friendly mode folds Arabic Yeh/Kaf and Persian/Arabic digits in
+queries and derived indexes only. ZWNJ and spaces are boundaries; joined words
+still differ from separated words. Title uniqueness and link resolution are unchanged.
 
 Ctrl/Cmd+K focuses search. Input is debounced 200 ms and paused during composition;
 query/graph changes immediately invalidate earlier results. Up/Down choose a result,
@@ -91,10 +98,17 @@ page UUID, block UUID, not priority or outline order. Refresh restarts paginatio
 concurrent external writers remain unsupported. CANCELLED is readable in the source
 editor but excluded from these filters.
 
-Gregorian ISO civil days remain storage identity; calendar labels are a UI interface.
-Jalali presentation/picking is not shipped and remains necessary before claiming
-readiness for regular Persian-language use. Existing notes, page IDs and day identity
-must not change when another calendar presentation is added.
+Gregorian ISO civil days remain storage identity. Settings independently selects
+English/Persian, Gregorian/Jalali and original/Persian-friendly search and remembers
+each choice locally. Language changes never change the other choices. Year/month/day
+entry accepts ASCII, Persian and Arabic digits and validates before navigation.
+Jalali labels and selection use one conversion implementation. Unsupported attempts
+show a localized message and retain the calendar/date; existing journals remain
+accessible with their Gregorian identity displayed. Notes, page titles/UUIDs and
+references are never rewritten for presentation. Today follows the computer's local
+date, not a forced Tehran timezone. Interface direction follows language; text remains
+automatic per block, while paths and technical identifiers stay LTR. Copy/paste never
+inserts formatting or directional-control characters into notes.
 
 Type `[[` for up to eight page suggestions. Saved links offer navigation;
 unresolved links offer explicit creation, never creation while typing. Resolved

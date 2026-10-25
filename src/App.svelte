@@ -2,12 +2,19 @@
   import { onMount, tick, untrack } from 'svelte';
   import { isTauri } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { api, editorApi, recoveryApi, type Page } from './lib/api';
+  import { api, editorApi, recoveryApi, noteApi, preferencesApi, type Page } from './lib/api';
   import { EditorController, errorMessage } from './lib/editor/controller';
   import PageEditor from './lib/editor/PageEditor.svelte';
   import RecoveryPanel from './lib/editor/RecoveryPanel.svelte';
   import type { RecoveryDraft, Block } from './lib/editor/types';
-  import { localDate, adjacentDay, gregorianPresentation } from './lib/dates';
+  import { localDate, adjacentDay, dateLabel, calendarFields, displayPageTitle } from './lib/dates';
+  import CalendarPicker from './lib/CalendarPicker.svelte';
+  import { preferences, tr } from './lib/preferences';
+  import { get } from 'svelte/store';
+  import ErrorNotice from './lib/ErrorNotice.svelte';
+  import { FirstNoteController, type PendingNote, type NoteState } from './lib/firstNote';
+  import { shortcutLetter } from './lib/editor/keyboard';
+  import type { MessageKey } from './lib/i18n';
   import TasksView from './lib/TasksView.svelte';
   import { SearchController, type SearchHit } from './lib/search';
   import type { InlineReference, Links } from './lib/references';
@@ -17,16 +24,20 @@
   let selected = $state<Page | null>(null);
   let session = $state<string | null>(null);
   let busy = $state(false);
-  let operation = $state('');
+  let operation = $state<MessageKey | ''>('');
   let activePath = $state('');
   let switching = $state(false);
   let view = $state<'notes' | 'tasks'>('notes');
   let previewDate = $state<string | null>(null);
   let firstNoteDialog: HTMLDialogElement;
+  let firstNoteReturn: HTMLElement | null = null;
   let firstNoteDate = $state<string | null>(null);
-  let firstNote = $state('');
-  let firstNoteBlock: string | null = null;
-  let firstNoteComposing = $state(false);
+  let firstNote: FirstNoteController | null = null;
+  let noteRevision = $state(0);
+  const noteView = $derived.by(() => { noteRevision; return { content: firstNote?.content ?? '', composing: firstNote?.composing ?? false, protected: firstNote?.protected ?? false, error: firstNote?.error ?? '' }; });
+  let pendingNotes = $state<PendingNote[]>([]);
+  let noteComparison = $state<NoteState | null>(null);
+  let prefsReady = $state(false), prefsSaving = $state(false), prefsError = $state('');
   let confirmCancelNote = $state(false);
   let error = $state('');
   let title = $state('');
@@ -36,11 +47,12 @@
   let searchComposing = $state(false);
   let resultIndex = $state(0);
   let searchRevision = $state(0);
-  const search = new SearchController(api.search, () => { searchRevision += 1; });
+  const search = new SearchController((session, text) => api.search(session, text, get(preferences).search_mode === 'persian'), () => { searchRevision += 1; });
   const results = $derived.by(() => { searchRevision; return { hits: search.hits, error: search.error, pending: search.pending }; });
   const acknowledgedKey = $derived.by(() => { revision; return JSON.stringify([pages, editor.blocks]); });
   $effect(() => {
     acknowledgedKey;
+    $preferences.search_mode;
     const token = session, text = query, composing = searchComposing;
     untrack(() => {
       if (token && !composing) void search.query(token, text);
@@ -48,6 +60,25 @@
       resultIndex = 0;
     });
   });
+  $effect(() => { document.documentElement.lang = $preferences.language; document.documentElement.dir = $preferences.language === 'fa' ? 'rtl' : 'ltr'; });
+  function presentDate(day: string) {
+    try { return dateLabel(day, $preferences.calendar, $preferences.language); } catch { return day; }
+  }
+  function unsupportedDate(day: string) { try { calendarFields(day, $preferences.calendar); return false; } catch { return true; } }
+  function pageLabel(page: Page) { return displayPageTitle(page, $preferences.calendar, $preferences.language); }
+  function contextLabel(id: string) { const page = pages.find(p => p.id === id); return page ? pageLabel(page) : ''; }
+  async function changePreference(key: keyof typeof $preferences, select: HTMLSelectElement) {
+    if (locked || prefsSaving || editor.composing || searchComposing) { select.value = get(preferences)[key]; return; }
+    const next = { ...$preferences, [key]: select.value };
+    const restoreFocus = document.activeElement === select;
+    prefsSaving = true;
+    try { await preferencesApi.save(next); preferences.set(next); prefsError = ''; }
+    catch { prefsError = 'Preferences could not be saved. Your previous settings remain active.'; }
+    finally {
+      prefsSaving = false; await tick(); select.value = get(preferences)[key];
+      if (restoreFocus && (document.activeElement === document.body || document.activeElement === select)) select.focus();
+    }
+  }
   let links = $state<Links>({ references: [], backlinks: [] });
   let linksError = $state('');
   const linksKey = $derived.by(() => { revision; return JSON.stringify([session, selected?.id, pages, editor.blocks]); });
@@ -68,7 +99,7 @@
   let inventory = $state(0);
   async function refreshRecovery() {
     if (!session) return;
-    try { recoveryRecords = await recoveryApi.list(session); recoveryError = ''; }
+    try { const token = session; const [blocks, notes] = await Promise.all([recoveryApi.list(token), noteApi.list(token)]); if (token !== session) return; recoveryRecords = blocks; pendingNotes = notes; recoveryError = ''; }
     catch (e) { recoveryError = errorMessage(e); }
   }
   async function recover(draft: RecoveryDraft, block: Block, textRevision: number) {
@@ -85,7 +116,7 @@
   }
   const locked = $derived.by(() => { revision; return busy || editor.working; });
 
-  async function run(action: () => Promise<void>, label = 'Loading…') {
+  async function run(action: () => Promise<void>, label: MessageKey = 'Loading…') {
     if (locked) return;
     busy = true; operation = label; error = '';
     try { await action(); } catch (e) { error = errorMessage(e); }
@@ -98,7 +129,7 @@
       search.reset(); query = '';
       editor.reset(result.token); session = result.token; pages = result.pages; selected = null;
       activePath = path; switching = false; previewDate = null; view = 'notes';
-      recoveryRecords = []; await refreshRecovery();
+      recoveryRecords = []; pendingNotes = []; await refreshRecovery();
       await openJournal(localDate(), true);
     });
   }
@@ -143,7 +174,7 @@
     try { page = create ? await api.journal(session!, date) : await api.findJournal(session!, date); }
     catch (e) {
       if (errorMessage(e).includes('UNIQUE constraint failed: pages.title_key')) {
-        throw new Error(`Cannot create journal ${date}: an ordinary page already uses that title. Rename that page, then retry. No page was converted or overwritten.`);
+        throw new Error('A page already uses this date title. Rename that page before creating this journal.');
       }
       throw e;
     }
@@ -163,40 +194,52 @@
       else await editor.action({ kind: 'append' });
     }, 'Preparing capture…');
   }
-  async function startFirstNote(date: string) {
-    firstNoteDate = date; firstNote = ''; firstNoteBlock = null; confirmCancelNote = false; error = '';
+  async function startFirstNote(date: string, record?: PendingNote) {
+    if (locked || editor.composing) return;
+    firstNoteReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    firstNote = new FirstNoteController(session!, date, noteApi, () => noteRevision++, record);
+    firstNoteDate = date; noteRevision++; confirmCancelNote = false; error = ''; noteComparison = null;
     firstNoteDialog.showModal(); await tick(); document.getElementById('first-note')?.focus();
+    if (record) {
+      const instance = firstNote, token = session!;
+      try { const comparison = await noteApi.state(token, record.block_id); if (firstNote === instance && token === session) noteComparison = comparison; }
+      catch (e) { if (firstNote === instance && token === session) error = errorMessage(e); }
+    }
   }
-  function cancelFirstNote() {
-    if (firstNoteComposing || locked) return;
-    if (firstNote && !confirmCancelNote) { confirmCancelNote = true; return; }
-    firstNoteDialog.close(); firstNoteDate = null; firstNote = '';
+  async function cancelFirstNote() {
+    if (noteView.composing || locked) return;
+    if (noteView.content && !confirmCancelNote) { confirmCancelNote = true; return; }
+    await run(async () => {
+      await firstNote!.discard();
+      firstNoteDialog.close(); firstNoteDate = null; firstNote = null; noteRevision++;
+      await refreshRecovery();
+    });
+    if (!firstNoteDate) { await tick(); if (firstNoteReturn?.isConnected) firstNoteReturn.focus(); else await focusPage(); }
   }
   async function saveFirstNote(event: SubmitEvent) {
     event.preventDefault();
-    if (!firstNoteDate || !firstNote.trim() || firstNoteComposing) return;
+    if (!firstNoteDate || !noteView.content.trim() || noteView.composing) return;
     await run(async () => {
-      if (firstNoteBlock) await editor.retry();
-      else {
-        await openJournal(firstNoteDate!, true);
-        await editor.action({ kind: 'append' });
-        firstNoteBlock = editor.activeId;
-      }
-      editor.setDraft(firstNoteBlock!, firstNote);
       await editor.flush();
-      const id = firstNoteBlock!, end = firstNote.length;
-      firstNoteDialog.close(); firstNoteDate = null; firstNote = '';
-      await tick(); editor.activate(id, { start: end, end });
+      try {
+        const result = await firstNote!.submit();
+        const stamp = firstNote!.stamp;
+        const end = noteView.content.length;
+        await editor.load(result.page.id); firstNote!.assertStable(stamp); rememberPage(result.page);
+        firstNoteDialog.close(); firstNoteDate = null; firstNote = null; noteRevision++;
+        await tick(); editor.activate(result.block.id, { start: end, end }); await refreshRecovery();
+      } catch (e) { noteComparison = await noteApi.state(session!, firstNote!.blockId).catch(() => null); throw e; }
     }, 'Saving first note…');
   }
   async function showTasks() {
     await run(async () => { await editor.flush(); view = 'tasks'; await tick(); document.getElementById('tasks-heading')?.focus(); });
   }
   async function shortcut(event: KeyboardEvent) {
-    if (document.querySelector('dialog[open]') || event.isComposing || event.keyCode === 229 || editor.composing || !session || locked || !(event.ctrlKey || event.metaKey)) return;
-    if (event.key.toLowerCase() === 'k' && !event.shiftKey && !event.altKey) {
+    if (document.querySelector('dialog[open]') || event.isComposing || searchComposing || event.keyCode === 229 || editor.composing || !session || locked || !(event.ctrlKey || event.metaKey)) return;
+    const letter = shortcutLetter(event.key, event.code);
+    if (letter === 'k' && !event.shiftKey && !event.altKey) {
       event.preventDefault(); document.getElementById('search')?.focus();
-    } else if (event.key.toLowerCase() === 'j' && event.shiftKey && !event.altKey) {
+    } else if (letter === 'j' && event.shiftKey && !event.altKey) {
       event.preventDefault(); await capture();
     }
   }
@@ -222,11 +265,13 @@
   }
   onMount(() => {
     if (!isTauri()) return;
+    void preferencesApi.load().then(result => { preferences.set(result.preferences); if (result.warning) prefsError = 'Preferences could not be loaded. Safe defaults are in use.'; })
+      .catch(() => { prefsError = 'Preferences could not be loaded. Safe defaults are in use.'; }).finally(() => prefsReady = true);
     void recoveryApi.inventory().then(count => inventory = count).catch(() => { recoveryError = 'Recovery inventory unavailable. Open the original graph and retry recovery inspection.'; });
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void getCurrentWindow().onCloseRequested(async event => {
-      if (firstNoteDate) { event.preventDefault(); error = 'Finish or cancel the first-note form before closing. It is not autosaved before submission.'; return; }
+      if (firstNoteDate) { event.preventDefault(); try { await firstNote!.flush(); } catch (e) { error = errorMessage(e); return; } error = 'Finish or cancel the first-note form before closing.'; return; }
       if (locked) { event.preventDefault(); error = 'Wait for the current operation before closing.'; return; }
       busy = true;
       try { await editor.flush(); }
@@ -241,76 +286,91 @@
 <svelte:window onkeydown={shortcut} />
 
 <dialog bind:this={firstNoteDialog} aria-labelledby="first-note-heading" oncancel={event => { event.preventDefault(); cancelFirstNote(); }}>
-  <h2 id="first-note-heading">First note for {firstNoteDate ? gregorianPresentation.label(firstNoteDate) : ''}</h2>
-  <p>The journal is created when you save this note. This form is not autosaved before submission.</p>
+  <h2 id="first-note-heading">{$tr('First note for {date}', { date: firstNoteDate ? presentDate(firstNoteDate) : '' })}</h2>
+  <p>{$tr('Finalized text is captured privately before submission. The journal is created only when you submit.')}</p>
   <form onsubmit={saveFirstNote}>
-    <label for="first-note">Note text</label>
-    <textarea id="first-note" bind:value={firstNote} dir="auto" rows="5" readonly={locked}
-      oncompositionstart={() => firstNoteComposing = true} oncompositionend={() => firstNoteComposing = false}></textarea>
-    {#if error}<p role="alert">{error}</p>{/if}
-    <button disabled={locked || firstNoteComposing || !firstNote.trim()}>Save first note</button>
-    <button type="button" disabled={locked || firstNoteComposing} onclick={cancelFirstNote}>{confirmCancelNote ? 'Discard form text and cancel' : 'Cancel'}</button>
+    <label for="first-note">{$tr('Note text')}</label>
+    <textarea id="first-note" value={noteView.content} dir="auto" rows="5" readonly={locked}
+      oninput={e => firstNote?.input(e.currentTarget.value)}
+      oncompositionstart={() => firstNote?.composition(true)} oncompositionend={e => { firstNote?.input(e.currentTarget.value); firstNote?.composition(false); }}></textarea>
+    <p role="status">{$tr(noteView.composing ? 'Composing — finish input before leaving' : noteView.protected ? 'Recovery stored' : 'Recovery pending')}</p>
+    {#if noteView.error}<ErrorNotice message={noteView.error} /><button type="button" disabled={locked || noteView.composing} onclick={() => firstNote?.capture().catch(() => {})}>{$tr('Retry recovery snapshot')}</button>{/if}
+    {#if noteComparison}
+      {#if noteComparison.block}<label>{$tr('Persisted version')}<textarea readonly dir="auto" value={noteComparison.block.content}></textarea></label>
+        {#if noteComparison.revision !== 0 || noteComparison.block.content !== noteView.content}<p>{$tr('The persisted note differs. Copy the retained text if needed; it will not be overwritten.')}</p>{/if}
+      {:else}<p>{$tr(noteComparison.deleted ? 'This note was deleted after submission. It will not be recreated.' : 'No committed note exists.')}</p>{/if}
+    {/if}
+    {#if error}<ErrorNotice message={error} />{/if}
+    <button disabled={locked || noteView.composing || !noteView.content.trim() || noteComparison?.deleted}>{$tr('Save first note')}</button>
+    <button type="button" disabled={locked || noteView.composing} onclick={cancelFirstNote}>{$tr(confirmCancelNote ? 'Discard form text and cancel' : 'Cancel')}</button>
   </form>
 </dialog>
 
 <main>
   <header><h1>Graphdesk</h1>
-    {#if session}<p class="graph-path">Graph: {activePath}</p><button disabled={locked} onclick={() => switching = !switching}>{switching ? 'Cancel graph switch' : 'Switch graph'}</button>
-    {:else}<p>Open a local graph to begin your daily workspace.</p>{/if}
+    {#if session}<p class="graph-path">{$tr('Graph:')} <bdi dir="ltr">{activePath}</bdi></p><button disabled={locked} onclick={() => switching = !switching}>{$tr(switching ? 'Cancel graph switch' : 'Switch graph')}</button>
+    {:else}<p>{$tr('Open a local graph to begin your daily workspace.')}</p>{/if}
   </header>
   {#if !session || switching}
-  <section aria-label="Graph selection">
-    <label for="path">Database path (on this computer)</label>
-    <input id="path" bind:value={path} placeholder="Full path to notes.sqlite3" disabled={locked} />
-    <button disabled={locked || !path.trim()} onclick={() => open(false)}>Open graph</button>
-    <button disabled={locked || !path.trim()} onclick={() => open(true)}>Create graph</button>
-    <p class="hint">The parent directory must exist. Create never overwrites an existing file.</p>
+  <section aria-label={$tr('Graph selection')}>
+    <label for="path">{$tr('Database path (on this computer)')}</label>
+    <input id="path" bind:value={path} dir="ltr" placeholder={$tr('Full path to notes.sqlite3')} disabled={locked || !prefsReady} />
+    <button disabled={locked || !prefsReady || !path.trim()} onclick={() => open(false)}>{$tr('Open graph')}</button>
+    <button disabled={locked || !prefsReady || !path.trim()} onclick={() => open(true)}>{$tr('Create graph')}</button>
+    <p class="hint">{$tr('The parent directory must exist. Create never overwrites an existing file.')}</p>
   </section>
   {/if}
-  {#if operation}<p role="status">{operation}</p>{/if}
-  {#if error}<p role="alert">{error}</p>{/if}
-  {#if recoveryError}<p role="alert">{recoveryError}</p>{/if}
-  {#if !session && inventory}<p role="status">Recovery drafts found for {inventory} graph(s). Open the original graph to compare and recover text.</p>{/if}
+  {#if operation}<p role="status">{$tr(operation)}</p>{/if}
+  {#if error}<ErrorNotice message={error} />{/if}
+  {#if recoveryError}<ErrorNotice message={recoveryError} />{/if}
+  {#if prefsError}<ErrorNotice message={prefsError} />{/if}
+  {#if !session && inventory}<p role="status">{$tr('Recovery drafts found for {count} graph(s). Open the original graph to compare and recover text.', { count: inventory })}</p>{/if}
   {#if session}
     {#key session}<RecoveryPanel {session} records={recoveryRecords} disabled={locked} onChanged={refreshRecovery} onRecover={recover} />{/key}
+  {/if}
+  {#if session && pendingNotes.length}
+    <section aria-label={$tr('Pending journal notes')}>
+      <h2>{$tr('Pending journal notes')}</h2><p>{$tr('Restore never submits automatically. Compare persisted content before submitting again.')}</p>
+      {#each pendingNotes as note (note.id)}
+        <p><bdi>{presentDate(note.journal_date)}</bdi> <button disabled={locked} onclick={() => startFirstNote(note.journal_date, note)}>{$tr('Restore first-note form')}</button></p>
+      {/each}
+    </section>
   {/if}
   {#if session}
     <div class="workspace">
       <aside>
-        <nav aria-label="Workspace">
-          <button disabled={locked} onclick={() => journal(localDate())}>Today</button>
-          <button disabled={locked} onclick={showTasks} aria-current={view === 'tasks' ? 'page' : undefined}>Tasks</button>
-          <button disabled={locked} onclick={() => capture()} title="Ctrl/Cmd+Shift+J">Capture today</button>
+        <nav aria-label={$tr('Workspace')}>
+          <button disabled={locked} onclick={() => journal(localDate())}>{$tr('Today')}</button>
+          <button disabled={locked} onclick={showTasks} aria-current={view === 'tasks' ? 'page' : undefined}>{$tr('Tasks')}</button>
+          <button disabled={locked} onclick={() => capture()} title="Ctrl/Cmd+Shift+J">{$tr('Capture today')}</button>
         </nav>
-        <label for="search">Search pages and blocks</label>
-        <input id="search" type="search" bind:value={query} placeholder="Search · Ctrl/Cmd+K" onkeydown={searchKeys}
+        <label for="search">{$tr('Search pages and blocks')}</label>
+        <input id="search" type="search" dir="auto" bind:value={query} placeholder={$tr('Search · Ctrl/Cmd+K')} onkeydown={searchKeys}
           oncompositionstart={() => searchComposing = true} oncompositionend={() => searchComposing = false}
           aria-describedby="search-help" />
-        <p id="search-help" class="hint">Phrase search · ↑/↓ choose · Enter opens · Esc clears</p>
-        {#if results.pending}<p role="status">Searching…</p>{/if}
-        {#if results.error}<p role="alert">{results.error}</p>{/if}
-        {#if query.trim() && !results.pending && !results.error && !results.hits.length}<p>No matches.</p>{/if}
-        <ul aria-label="Search results" class="results">{#each results.hits as hit, index (`${hit.kind}:${hit.id}`)}
+        <p id="search-help" class="hint">{$tr('Phrase search · ↑/↓ choose · Enter opens · Esc clears')}</p>
+        {#if results.pending}<p role="status">{$tr('Searching…')}</p>{/if}
+        {#if results.error}<ErrorNotice message={results.error} />{/if}
+        {#if query.trim() && !results.pending && !results.error && !results.hits.length}<p>{$tr('No matches.')}</p>{/if}
+        <ul aria-label={$tr('Search results')} class="results">{#each results.hits as hit, index (`${hit.kind}:${hit.id}`)}
           <li><button id={`search-hit-${index}`} class:chosen={index === resultIndex} aria-current={index === resultIndex ? 'true' : undefined} disabled={locked} onclick={() => selectHit(hit)} dir="auto">
-            <strong>{hit.kind === 'page' ? 'Page' : `Block · ${pages.find(p => p.id === hit.page_id)?.title ?? ''}`}</strong>
-            <span>{hit.text.slice(0, 180)}</span>
+            <strong>{$tr(hit.kind === 'page' ? 'Page' : 'Block')} · <bdi>{contextLabel(hit.page_id)}</bdi></strong>
+            <span dir="auto">{hit.text.slice(0, 180)}</span>
           </button></li>
         {/each}</ul>
-        {#if results.hits.filter(h => h.kind === 'page').length === 100 || results.hits.filter(h => h.kind === 'block').length === 100}<p class="hint">Up to 100 results per kind. Refine your phrase to find more.</p>{/if}
-        <details><summary>Journal date</summary>
-          <label for="journal-date">Gregorian date</label>
-          <input id="journal-date" type="date" min="0001-01-01" max="9999-12-31" bind:value={journalDate} disabled={locked} />
-          <button disabled={locked || !journalDate} onclick={() => journal(journalDate)}>Open journal</button>
+        {#if results.hits.filter(h => h.kind === 'page').length === 100 || results.hits.filter(h => h.kind === 'block').length === 100}<p class="hint">{$tr('Up to 100 results per kind. Refine your phrase to find more.')}</p>{/if}
+        <details><summary>{$tr('Journal date')}</summary>
+          <CalendarPicker day={journalDate} calendar={$preferences.calendar} disabled={locked} onOpen={journal} />
         </details>
-        <h2>Pages</h2>
-        <details><summary>New page</summary>
+        <h2>{$tr('Pages')}</h2>
+        <details><summary>{$tr('New page')}</summary>
         <form onsubmit={addPage}>
-          <label for="title">New page title</label>
-          <input id="title" bind:value={title} disabled={locked} />
-          <button disabled={locked || !title.trim()}>Create page</button>
+          <label for="title">{$tr('New page title')}</label>
+          <input id="title" bind:value={title} dir="auto" disabled={locked} />
+          <button disabled={locked || !title.trim()}>{$tr('Create page')}</button>
         </form>
         </details>
-        <ul class="page-list">{#each pages as page (page.id)}<li><button disabled={locked} aria-current={view === 'notes' && selected?.id === page.id ? 'page' : undefined} onclick={() => select(page)} dir="auto">{page.title}</button></li>{/each}</ul>
+        <ul class="page-list">{#each pages as page (page.id)}<li><button disabled={locked} aria-current={view === 'notes' && selected?.id === page.id ? 'page' : undefined} onclick={() => select(page)} dir="auto"><bdi>{pageLabel(page)}</bdi></button></li>{/each}</ul>
       </aside>
       <div class="content">
       {#if view === 'tasks' && session}
@@ -318,47 +378,53 @@
           onOpen={hit => selectHit({ id: hit.id, page_id: hit.page_id, kind: 'block', text: hit.content })} />
       {/if}
       <div hidden={view !== 'notes'}>
-      <section aria-label="Page content">
+      <section aria-label={$tr('Page content')}>
         {#if selected || previewDate}
-          <h2 id="page-heading" tabindex="-1" dir="auto">{selected?.title ?? gregorianPresentation.label(previewDate!)}</h2>
+          <h2 id="page-heading" tabindex="-1" dir="auto">{selected ? pageLabel(selected) : presentDate(previewDate!)}</h2>
           {#if selected?.journal_date || previewDate}
             {@const day = selected?.journal_date ?? previewDate!}
-            <nav aria-label="Journal navigation">
-              <button disabled={locked || day === '0000-01-01'} onclick={() => journal(adjacentDay(day, -1))}>Previous day</button>
-              <button disabled={locked} onclick={() => journal(localDate())}>Today</button>
-              <button disabled={locked || day === '9999-12-31'} onclick={() => journal(adjacentDay(day, 1))}>Next day</button>
-              <span>{gregorianPresentation.label(day)}</span>
+            <nav aria-label={$tr('Journal navigation')}>
+              <button disabled={locked || day === '0000-01-01'} onclick={() => journal(adjacentDay(day, -1))}>{$tr('Previous day')}</button>
+              <button disabled={locked} onclick={() => journal(localDate())}>{$tr('Today')}</button>
+              <button disabled={locked || day === '9999-12-31'} onclick={() => journal(adjacentDay(day, 1))}>{$tr('Next day')}</button>
+              <bdi>{presentDate(day)}</bdi>
             </nav>
+            {#if unsupportedDate(day)}<p role="alert">{$tr('This date cannot be used in Jalali. Its Gregorian identity is unchanged.')}</p>{/if}
           {/if}
         {/if}
         {#if selected}
-          <details><summary>Rename page</summary>
+          <details><summary>{$tr('Rename page')}</summary>
           <form onsubmit={rename}>
-            <label for="rename-title">Page title</label>
-            <input id="rename-title" bind:value={renameTitle} disabled={locked} />
-            <button disabled={locked || !renameTitle.trim()}>Rename page</button>
+            <label for="rename-title">{$tr('Page title')}</label>
+            <input id="rename-title" bind:value={renameTitle} dir="auto" disabled={locked} />
+            <button disabled={locked || !renameTitle.trim()}>{$tr('Rename page')}</button>
           </form>
           </details>
           <PageEditor {editor} {revision} {pages} references={links.references} onReference={followReference} disabled={busy} />
-          <section aria-label="Incoming backlinks">
-            <h3>Backlinks</h3>
-            {#if linksError}<p role="alert">{linksError}</p>{/if}
-            {#if !links.backlinks.length}<p>No incoming links.</p>{/if}
+          <section aria-label={$tr('Incoming backlinks')}>
+            <h3>{$tr('Backlinks')}</h3>
+            {#if linksError}<ErrorNotice message={linksError} />{/if}
+            {#if !links.backlinks.length}<p>{$tr('No incoming links.')}</p>{/if}
             <ul>{#each links.backlinks as block (block.id)}
-              <li><button disabled={locked} onclick={() => selectHit({ id: block.id, page_id: block.page_id, kind: 'block', text: block.content })}>{pages.find(p => p.id === block.page_id)?.title}: {block.content}</button></li>
+              <li><button disabled={locked} onclick={() => selectHit({ id: block.id, page_id: block.page_id, kind: 'block', text: block.content })}><bdi>{contextLabel(block.page_id)}</bdi>: <bdi>{block.content}</bdi></button></li>
             {/each}</ul>
           </section>
         {:else if previewDate}
-          <p>No notes for this day yet. Browsing dates does not create a journal.</p>
-          <button disabled={locked} onclick={() => startFirstNote(previewDate!)}>Add a note</button>
-        {:else}<p>Select a page, open a journal, or capture a note for today.</p>{/if}
+          <p>{$tr('No notes for this day yet. Browsing dates does not create a journal.')}</p>
+          <button disabled={locked} onclick={() => startFirstNote(previewDate!)}>{$tr('Add a note')}</button>
+        {:else}<p>{$tr('Select a page, open a journal, or capture a note for today.')}</p>{/if}
       </section>
       </div>
       </div>
     </div>
   {/if}
-  <footer>Plain-text block editor · Undo and collapse state are session-local. Acknowledged saves survive restart.</footer>
-  {#if session}<button id="review-recovery" disabled={locked} onclick={refreshRecovery}>Review local recovery drafts</button>{/if}
+  <footer>{$tr('Plain-text block editor · Undo and collapse state are session-local. Acknowledged saves survive restart.')}</footer>
+  {#if session}<button id="review-recovery" disabled={locked} onclick={refreshRecovery}>{$tr('Review local recovery drafts')}</button>{/if}
+  <details id="settings"><summary>{$tr('Settings')}</summary>
+    <label>{$tr('Language')}<select value={$preferences.language} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('language', e.currentTarget)}><option value="en">English</option><option value="fa">فارسی</option></select></label>
+    <label>{$tr('Calendar')}<select value={$preferences.calendar} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('calendar', e.currentTarget)}><option value="gregorian">{$tr('Gregorian')}</option><option value="jalali">{$tr('Jalali')}</option></select></label>
+    <label>{$tr('Search mode')}<select value={$preferences.search_mode} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('search_mode', e.currentTarget)}><option value="original">{$tr('Original phrase search')}</option><option value="persian">{$tr('Persian-friendly')}</option></select></label>
+  </details>
 </main>
 
 <style>

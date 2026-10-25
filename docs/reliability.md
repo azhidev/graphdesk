@@ -1,5 +1,17 @@
 # Reliability hardening — Milestone 3
 
+## Milestone 5 extension
+
+Pending first-note text now uses the same independent private store, capture target,
+composition exclusion, conditional cleanup and retention policy as existing block
+drafts. Capturing/restoring a pending note never creates canonical journal content.
+Explicit submission atomically creates/reconciles one intended block UUID; unknown
+acknowledgements are not permission to append again. Changed revisions and deletion
+tombstones require explicit review. Before acknowledged capture, during preedit,
+after storage failure and under power/hardware failure, text can still be lost.
+See current [architecture](architecture.md) and [data](data.md), with actual results
+in [testing](testing.md). Historical Milestone 3 evidence below remains historical.
+
 ## Approved implementation (2026-10-24)
 
 The user approved reliability hardening and selected **app-private storage separate

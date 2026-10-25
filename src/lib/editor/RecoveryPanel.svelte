@@ -3,6 +3,8 @@
   import { editorApi, recoveryApi } from '../api';
   import { errorMessage } from './controller';
   import { tick } from 'svelte';
+  import { tr } from '../preferences';
+  import ErrorNotice from '../ErrorNotice.svelte';
   let { session, records, disabled, onChanged, onRecover }: {
     session: string; records: RecoveryDraft[]; disabled: boolean;
     onChanged: () => Promise<void>;
@@ -43,33 +45,33 @@
 </script>
 
 {#if records.length}
-  <section aria-label="Recoverable text drafts">
-    <h2>Recoverable text drafts ({records.length})</h2>
-    <p>Stored only on this computer, outside your graph. Unresolved snapshots expire after 14 days. Compare before recovering; no structure is replayed.</p>
+  <section aria-label={$tr('Recoverable text drafts')}>
+    <h2>{$tr('Recoverable text drafts')} (<bdi>{records.length}</bdi>)</h2>
+    <p>{$tr('Stored only on this computer, outside your graph. Unresolved snapshots expire after 14 days. Compare before recovering; no structure is replayed.')}</p>
     {#each records as draft (draft.id)}
       <div>
-        <span>Block {draft.block_id.slice(0, 8)} · {new Date(draft.updated_at * 1000).toLocaleString()}</span>
-        <button id={`recovery-compare-${draft.id}`} disabled={disabled || busy} onclick={() => compare(draft)}>Compare / Recover</button>
-        <button disabled={disabled || busy} onclick={() => { discarding = draft; discard.showModal(); }}>Discard recovery draft…</button>
+        <span>{$tr('Block')} <bdi dir="ltr">{draft.block_id.slice(0, 8)}</bdi> · <bdi>{new Date(draft.updated_at * 1000).toLocaleString()}</bdi></span>
+        <button id={`recovery-compare-${draft.id}`} disabled={disabled || busy} onclick={() => compare(draft)}>{$tr('Compare / Recover')}</button>
+        <button disabled={disabled || busy} onclick={() => { discarding = draft; discard.showModal(); }}>{$tr('Discard recovery draft…')}</button>
       </div>
     {/each}
     {#if comparison}
-      <section aria-label="Compare recovery draft">
-        <label>Persisted version<textarea readonly dir="auto" value={comparison.block?.content ?? 'Original block unavailable'}></textarea></label>
-        <label>Recovery version — select to copy<textarea readonly dir="auto" value={comparison.draft.content}></textarea></label>
-        <p>Recover replaces only the displayed block text, if its revision has not changed. Both versions remain available until you resolve this choice.</p>
-        <button disabled={disabled || busy || !comparison.block} onclick={recover}>Recover this text</button>
-        <button disabled={busy} onclick={closeComparison}>Close comparison</button>
+      <section aria-label={$tr('Compare recovery draft')}>
+        <label>{$tr('Persisted version')}<textarea readonly dir="auto" value={comparison.block?.content ?? $tr('Original block unavailable')}></textarea></label>
+        <label>{$tr('Recovery version — select to copy')}<textarea readonly dir="auto" value={comparison.draft.content}></textarea></label>
+        <p>{$tr('Recover replaces only the displayed block text, if its revision has not changed. Both versions remain available until you resolve this choice.')}</p>
+        <button disabled={disabled || busy || !comparison.block} onclick={recover}>{$tr('Recover this text')}</button>
+        <button disabled={busy} onclick={closeComparison}>{$tr('Close comparison')}</button>
       </section>
     {/if}
-    {#if error}<p role="alert">{error}</p>{/if}
+    {#if error}<ErrorNotice message={error} />{/if}
   </section>
 {/if}
 <dialog bind:this={discard} aria-labelledby="discard-recovery-heading" oncancel={() => discarding = null}>
-  <h3 id="discard-recovery-heading">Discard this recovery draft?</h3>
-  <p>This permanently removes the selected recovery copy, not the persisted block. It cannot be undone.</p>
-  <button onclick={() => { discard.close(); discarding = null; }}>Cancel</button>
-  <button onclick={remove}>Discard recovery draft</button>
+  <h3 id="discard-recovery-heading">{$tr('Discard this recovery draft?')}</h3>
+  <p>{$tr('This permanently removes the selected recovery copy, not the persisted block. It cannot be undone.')}</p>
+  <button onclick={() => { discard.close(); discarding = null; }}>{$tr('Cancel')}</button>
+  <button onclick={remove}>{$tr('Discard recovery draft')}</button>
 </dialog>
 
 <style>

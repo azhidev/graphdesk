@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calendarDate, calendarFields, adjacentDay, dateLabel, dateNumber, asciiDigits, localDate } from '../../src/lib/dates.ts';
+import { calendarDate, calendarFields, adjacentDay, dateLabel, dateNumber, asciiDigits, localDate, displayPageTitle } from '../../src/lib/dates.ts';
 import { messages, translate, errorText } from '../../src/lib/i18n.ts';
 import { keyIntent, shortcutLetter } from '../../src/lib/editor/keyboard.ts';
 import { FirstNoteController } from '../../src/lib/firstNote.ts';
@@ -19,6 +19,9 @@ test('Jalali Nowruz, Esfand leap days, month ends and digit input share one conv
   assert.throws(() => calendarDate({year:1403,month:7,day:31}, 'jalali'));
   assert.throws(() => calendarDate({year:2023,month:2,day:29}, 'gregorian'));
   assert.equal(calendarDate({year:2024,month:2,day:29}, 'gregorian'), '2024-02-29');
+  assert.throws(() => calendarDate({year:1900,month:2,day:29}, 'gregorian'));
+  assert.equal(calendarDate({year:2000,month:2,day:29}, 'gregorian'), '2000-02-29');
+  assert.throws(() => calendarDate({year:5000,month:1,day:1}, 'jalali'), { name: 'unsupported' });
   for (const value of ['1.5', '-1', '1e2', '۱۴۰۳/۱', '']) assert.throws(() => dateNumber(value));
 });
 
@@ -33,6 +36,12 @@ test('calendar range boundaries and date-only round trips never change the store
     assert.equal(calendarDate(calendarFields(iso, 'jalali'), 'jalali'), iso);
   }
   const date = new Date(2024, 2, 20, 0, 1); assert.equal(localDate(date), '2024-03-20');
+  const page={id:'stable-id',title:'2024-03-20',journal_date:'2024-03-20'};
+  assert.equal(displayPageTitle(page,'jalali','en'),'1403/01/01');
+  assert.equal(displayPageTitle({...page,title:'Renamed فارسی'},'jalali','fa'),'Renamed فارسی');
+  assert.equal(displayPageTitle(page,'gregorian','en'),'2024-03-20');
+  assert.deepEqual(page,{id:'stable-id',title:'2024-03-20',journal_date:'2024-03-20'});
+  assert.equal(displayPageTitle({title:'1700-01-01',journal_date:'1700-01-01'},'jalali','fa'),'1700-01-01');
 });
 
 test('translations cover every declared key, preserve content interpolation and have a safe fallback', () => {
@@ -42,6 +51,8 @@ test('translations cover every declared key, preserve content interpolation and 
   }
   assert.equal(translate('en', 'unknown future key'), 'unknown future key');
   assert.equal(translate('fa', 'unknown future key'), 'unknown future key');
+  assert.equal(translate('fa', '__proto__'), '__proto__');
+  assert.equal(translate('fa', 'toString'), 'toString');
   assert.match(translate('fa', 'Delete {count} block(s)?', {count:12}), /۱۲/);
   const content = 'فارسی GraphDesk ۱۲۳ [x]';
   assert.match(translate('fa', 'First note for {date}', {date:content}), new RegExp(content.replace('[x]', '\\[x\\]')));
@@ -128,5 +139,16 @@ test('a complete composition cycle during post-submit page loading cannot silent
   f.note.composition(true); f.note.input('متن جدید'); f.note.composition(false);
   assert.throws(()=>f.note.assertStable(stamp),/composition/);
   await f.note.flush(); assert.equal(f.stored.content,'متن جدید'); assert.equal(f.submitted.block.content,'saved');
+  await f.note.discard();
+});
+
+test('finalized composition during canonical submission survives its late acknowledgement and cleanup', async () => {
+  const f=fixture({delay:5}); const submit=f.transport.submit; let release;
+  f.transport.submit=async(...args)=>{ const result=await submit(...args); await new Promise(resolve=>release=resolve); return result; };
+  f.note.input('sent'); const saving=f.note.submit(); await new Promise(resolve=>setImmediate(resolve));
+  f.note.composition(true); f.note.input('نهایی تازه'); f.note.composition(false); await f.note.flush();
+  release(); await assert.rejects(saving,/composition/);
+  assert.equal(f.submitted.block.content,'sent'); assert.equal(f.stored.content,'نهایی تازه');
+  assert.equal(f.calls.filter(c=>c[0]==='remove').length,0);
   await f.note.discard();
 });

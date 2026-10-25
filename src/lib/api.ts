@@ -3,6 +3,8 @@ import type { EditorTransport, Page, RecoveryTransport, RecoveryDraft } from './
 import type { SearchHit } from './search';
 import type { Links } from './references';
 import type { TaskHit, TaskFilter } from './tasks';
+import type { Preferences } from './preferences';
+import type { PendingNote, NoteState, NoteSubmission } from './firstNote';
 export type { Page, Block } from './editor/types';
 
 export const api = {
@@ -12,8 +14,20 @@ export const api = {
   journal: (session: string, date: string) => invoke<Page>('editor_journal', { session, date }),
   findJournal: (session: string, date: string) => invoke<Page | null>('editor_find_journal', { session, date }),
   tasks: (session: string, status: TaskFilter, pageId: string | null, offset: number) => invoke<TaskHit[]>('editor_tasks', { session, status, pageId, offset }),
-  search: (session: string, text: string) => invoke<SearchHit[]>('editor_search', { session, text }),
+  search: (session: string, text: string, persian = false) => invoke<SearchHit[]>('editor_search', { session, text, persian }),
   links: (session: string, pageId: string) => invoke<Links>('editor_links', { session, pageId }),
+};
+
+export const preferencesApi = {
+  load: () => invoke<{ preferences: Preferences; warning: boolean }>('preferences_load'),
+  save: (preferences: Preferences) => invoke<void>('preferences_save', { preferences }),
+};
+export const noteApi = {
+  list: (session: string) => invoke<PendingNote[]>('recovery_notes', { session }),
+  put: (session: string, id: string, blockId: string, date: string, content: string) => invoke<PendingNote>('recovery_note_put', { session, id, blockId, date, content }),
+  remove: (session: string, id: string, version: number) => invoke<void>('recovery_note_remove', { session, id, version }),
+  submit: (session: string, date: string, blockId: string, content: string) => invoke<NoteSubmission>('editor_submit_note', { session, date, blockId, content }),
+  state: (session: string, blockId: string) => invoke<NoteState>('editor_note_state', { session, blockId }),
 };
 
 export const recoveryApi: RecoveryTransport & {

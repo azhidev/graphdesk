@@ -5,6 +5,7 @@
   import type { EditorController, Focus } from './controller';
   import type { Page, TaskState } from './types';
   import { completion, suggestions, insertReference } from '../references';
+  import { tr } from '../preferences';
   let { row, editor, text, active, busy, collapsed, focus, pages }: {
     row: Row; editor: EditorController; text: string; active: boolean;
     busy: boolean; collapsed: boolean; focus: Focus | null;
@@ -70,18 +71,18 @@
 </script>
 
 <div class="block-row" style:margin-inline-start={`${Math.min(row.depth, 20) * 1.3}rem`} data-block-id={row.block.id}>
-  <select aria-label="Task status" value={row.block.task_status ?? ''} disabled={busy}
+  <select aria-label={$tr('Task status')} value={row.block.task_status ?? ''} disabled={busy}
     onchange={setTask}>
-    <option value="">No task</option><option value="todo">TODO</option>
-    <option value="doing">DOING</option><option value="done">DONE</option>
-    {#if row.block.task_status === 'cancelled'}<option value="cancelled">CANCELLED</option>{/if}
+    <option value="">{$tr('No task')}</option><option value="todo">{$tr('TODO')}</option>
+    <option value="doing">{$tr('DOING')}</option><option value="done">{$tr('DONE')}</option>
+    {#if row.block.task_status === 'cancelled'}<option value="cancelled">{$tr('CANCELLED')}</option>{/if}
   </select>
   {#if row.hasChildren}
-    <button class="disclosure" aria-label={collapsed ? 'Expand children' : 'Collapse children'} aria-expanded={!collapsed}
+    <button class="disclosure" aria-label={$tr(collapsed ? 'Expand children' : 'Collapse children')} aria-expanded={!collapsed}
       disabled={busy} onclick={() => void editor.toggle(row.block.id).catch(report)}>{collapsed ? '▸' : '▾'}</button>
   {:else}<span class="bullet" aria-hidden="true">•</span>{/if}
   {#if active}
-    <textarea bind:this={input} value={text} dir="auto" aria-label="Block text" readonly={busy} rows="1"
+    <textarea bind:this={input} value={text} dir="auto" aria-label={$tr('Block text')} readonly={busy} rows="1"
       oninput={() => { if (input) { editor.setDraft(row.block.id, input.value); remember(); resize(); } }}
       onkeydown={keydown} onselect={remember} onclick={remember} onkeyup={remember}
       onblur={() => { remember(); editor.leave(row.block.id); }}
@@ -93,13 +94,13 @@
         }
       }}></textarea>
   {:else}
-    <button class="block-content" dir="auto" disabled={busy} onclick={() => editor.activate(row.block.id)}>{text || 'Empty block — click to edit'}</button>
+    <button class="block-content" dir="auto" disabled={busy} onclick={() => editor.activate(row.block.id)}>{text || $tr('Empty block — click to edit')}</button>
   {/if}
 </div>
 {#if match && choices.length}
-  <div role="group" aria-label="Page suggestions">
+  <div role="group" aria-label={$tr('Page suggestions')}>
     {#each choices as page (page.id)}
-      <button disabled={busy} onmousedown={e => e.preventDefault()} onclick={() => complete(page.title)}>{page.title}</button>
+      <button disabled={busy} onmousedown={e => e.preventDefault()} onclick={() => complete(page.title)}><bdi>{page.title}</bdi></button>
     {/each}
   </div>
 {/if}

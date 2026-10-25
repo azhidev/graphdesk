@@ -21,6 +21,9 @@ are published. Use disposable graphs or backed-up copies for evaluation.
 - Journal-first graph opening, previous/next day previews and focused daily capture.
 - Debounced Unicode phrase search with page context and keyboard navigation.
 - Cross-page active-task discovery with status/page filters; edit tasks at their source.
+- Independent Persian/English UI, Gregorian/Jalali presentation and date entry.
+- Optional Persian-friendly FTS5 search without rewriting notes or titles.
+- Private durable first-note capture before journal submission.
 - Transactional migrations, SQLite constraints and atomic structural edits.
 - Native text inputs for Unicode/bidi text; Markdown stays literal source.
 
@@ -90,12 +93,13 @@ graph-core` needs no GTK/WebKit. See [testing](docs/testing.md) for scope and ev
 ## Data and limitations
 
 Enter a native full database path in an existing writable directory. Create never
-overwrites an existing file. No graph picker, default graph directory, recent-file
-registry or persistent application settings are implemented. An opened graph lands
-on today's journal; **Switch graph** remains accessible in the header. Browsing an
+overwrites an existing file. No graph picker, default graph directory or recent-file
+registry is implemented. Language, calendar and search mode are remembered locally.
+An opened graph lands on today's journal; **Switch graph** remains accessible in the header. Browsing an
 absent day is read-only. Its first-note form creates the journal on submission,
-not while browsing or typing. The form is explicitly not autosaved before submit;
-normal close is blocked and cancelling nonempty text requires confirmation.
+not while browsing or typing. Finalized form text targets private recovery capture
+within about 700 ms; the journal is created only on explicit submission. Normal close
+attempts capture but remains blocked until the form is resolved. Discard requires confirmation.
 
 **Saved** means SQLite acknowledged the write. Normal navigation/close flushes
 drafts; forced termination can lose unacknowledged text. Graphs are unencrypted
@@ -110,10 +114,13 @@ uses bounded acknowledged-state phrase matches. Rich text, Markdown import/expor
 sync, plugins, encryption, automatic backups and structural crash recovery are not
 implemented.
 
-Jalali display/date selection remains deferred and is required before claiming
-readiness for regular Persian-language use. Civil-day identity is independent of
-presentation. Search retains SQLite FTS5 phrase semantics: no Persian stemming,
-ZWNJ normalization or Arabic/Persian yeh/kaf equivalence is promised.
+Choose English/Persian, Gregorian/Jalali and original/Persian-friendly search
+independently in **Settings**. Existing Gregorian ISO journal identities never change.
+Original FTS5 phrase behavior remains the default. Persian-friendly mode folds
+Yeh/Kaf variants and Persian/Arabic digits and treats ZWNJ as a word boundary;
+joined words are not automatically equivalent to separated words. No stemming,
+transliteration or fuzzy matching is implemented. Native IME and assistive-technology
+validation remain outstanding; bilingual UI is not a blanket native-platform guarantee.
 
 Finalized text drafts target a recovery snapshot after about 700 ms, independently
 of graph writes. Recovery lives in app-private local storage, not the graph/export;

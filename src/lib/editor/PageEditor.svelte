@@ -4,6 +4,9 @@
   import type { Page, DeletePreview } from './types';
   import { tick } from 'svelte';
   import type { InlineReference } from '../references';
+  import { preferences, tr } from '../preferences';
+  import { statusText } from '../i18n';
+  import ErrorNotice from '../ErrorNotice.svelte';
   let { editor, revision, disabled = false, pages, references, onReference }: {
     editor: EditorController; revision: number; disabled?: boolean; pages: Page[];
     references: InlineReference[]; onReference: (reference: InlineReference) => void;
@@ -46,54 +49,54 @@
   }
 </script>
 
-<div id="editor-toolbar" tabindex="-1" role="group" aria-label="Block editor actions">
-  <button disabled={view.busy || !view.canUndo} onclick={() => run(editor.action({ kind: 'undo' }))}>Undo</button>
-  <button disabled={view.busy || !view.canRedo} onclick={() => run(editor.action({ kind: 'redo' }))}>Redo</button>
-  <button disabled={view.busy || !view.active} onclick={() => operate('indent')}>Indent</button>
-  <button disabled={view.busy || !view.active} onclick={() => operate('outdent')}>Outdent</button>
-  <button disabled={view.busy || !view.active} onclick={() => operate('reorder', -1)}>Move up</button>
-  <button disabled={view.busy || !view.active} onclick={() => operate('reorder', 1)}>Move down</button>
-  <button aria-label="Delete block and descendants" title="Delete block and descendants" disabled={view.busy || !view.active} onclick={() => run(remove())}>Delete…</button>
-  <span role="status" title={view.protection}>{view.error ? 'Error — save failed' : view.status}{view.dirty && !view.composing ? view.protectionError ? ' · recovery failed' : view.protection.includes('stored locally') ? ' · recovery stored' : ' · recovery pending' : ''}</span>
+<div id="editor-toolbar" tabindex="-1" role="group" aria-label={$tr('Block editor actions')}>
+  <button disabled={view.busy || !view.canUndo} onclick={() => run(editor.action({ kind: 'undo' }))}>{$tr('Undo')}</button>
+  <button disabled={view.busy || !view.canRedo} onclick={() => run(editor.action({ kind: 'redo' }))}>{$tr('Redo')}</button>
+  <button disabled={view.busy || !view.active} onclick={() => operate('indent')}>{$tr('Indent')}</button>
+  <button disabled={view.busy || !view.active} onclick={() => operate('outdent')}>{$tr('Outdent')}</button>
+  <button disabled={view.busy || !view.active} onclick={() => operate('reorder', -1)}>{$tr('Move up')}</button>
+  <button disabled={view.busy || !view.active} onclick={() => operate('reorder', 1)}>{$tr('Move down')}</button>
+  <button aria-label={$tr('Delete block and descendants')} title={$tr('Delete block and descendants')} disabled={view.busy || !view.active} onclick={() => run(remove())}>{$tr('Delete…')}</button>
+  <span role="status">{view.error ? $tr('Error — save failed') : statusText($preferences.language, view.status)}{view.dirty && !view.composing ? ` · ${$tr(view.protectionError ? 'Recovery failed' : view.protection.includes('stored locally') ? 'Recovery stored' : 'Recovery pending')}` : ''}</span>
 </div>
 {#if view.protectionError}
-  <div role="alert">{view.protectionError}
-    <button disabled={view.busy} onclick={() => run(editor.capture())}>Retry recovery snapshot</button>
+  <div role="alert"><ErrorNotice message={view.protectionError} />
+    <button disabled={view.busy} onclick={() => run(editor.capture())}>{$tr('Retry recovery snapshot')}</button>
   </div>
 {/if}
 {#each view.conflicts as conflict (conflict.block.id)}
-  <section aria-label="Text save conflict">
-    <p>Persisted text changed. Replacing it requires your explicit choice.</p>
-    <label>Persisted version<textarea readonly value={conflict.block.content} dir="auto"></textarea></label>
-    <label>Your unsaved version<textarea readonly value={editor.text(conflict.block.id)} dir="auto"></textarea></label>
-    <button disabled={view.busy} onclick={() => run(editor.resolveConflict(conflict.block.id))}>Replace compared persisted text with my draft</button>
+  <section aria-label={$tr('Text save conflict')}>
+    <p>{$tr('Persisted text changed. Replacing it requires your explicit choice.')}</p>
+    <label>{$tr('Persisted version')}<textarea readonly value={conflict.block.content} dir="auto"></textarea></label>
+    <label>{$tr('Your unsaved version')}<textarea readonly value={editor.text(conflict.block.id)} dir="auto"></textarea></label>
+    <button disabled={view.busy} onclick={() => run(editor.resolveConflict(conflict.block.id))}>{$tr('Replace compared persisted text with my draft')}</button>
   </section>
 {/each}
 <dialog bind:this={dialog} aria-labelledby="delete-heading" oncancel={event => { event.preventDefault(); answer(false); }}>
-  <h3 id="delete-heading">Delete {confirmation?.count ?? 0} block(s)?</h3>
-  <p>The selected block and all descendants will be deleted. You can undo this during this graph session.</p>
-  <button onclick={() => answer(false)}>Cancel</button>
-  <button onclick={() => answer(true)}>Delete {confirmation?.count ?? 0} block(s)</button>
+  <h3 id="delete-heading">{$tr('Delete {count} block(s)?', { count: confirmation?.count ?? 0 })}</h3>
+  <p>{$tr('The selected block and all descendants will be deleted. You can undo this during this graph session.')}</p>
+  <button onclick={() => answer(false)}>{$tr('Cancel')}</button>
+  <button onclick={() => answer(true)}>{$tr('Delete {count} block(s)', { count: confirmation?.count ?? 0 })}</button>
 </dialog>
 {#if view.error}
   <div role="alert">
-    <p>{view.error}</p>
-    <button disabled={view.busy} onclick={() => run(editor.retry())}>Retry saves / clear error</button>
-    <button disabled={view.busy} onclick={() => run(editor.discardAndReload())}>Discard unsaved drafts and reload</button>
+    <ErrorNotice message={view.error} />
+    <button disabled={view.busy} onclick={() => run(editor.retry())}>{$tr('Retry saves / clear error')}</button>
+    <button disabled={view.busy} onclick={() => run(editor.discardAndReload())}>{$tr('Discard unsaved drafts and reload')}</button>
   </div>
 {/if}
-<p class="help">Enter: split · Shift+Enter: newline · Tab / Shift+Tab: nest · Alt+Shift+↑/↓: reorder · Escape: leave text editor. Changes autosave.</p>
+<p class="help">{$tr('Enter: split · Shift+Enter: newline · Tab / Shift+Tab: nest · Alt+Shift+↑/↓: reorder · Escape: leave text editor. Changes autosave.')}</p>
 {#if !view.rows.length}
-  <button disabled={view.busy} onclick={() => run(editor.action({ kind: 'append' }))}>Add first block</button>
+  <button disabled={view.busy} onclick={() => run(editor.action({ kind: 'append' }))}>{$tr('Add first block')}</button>
 {:else}
-  <div role="group" aria-label="Page blocks">
+  <div role="group" aria-label={$tr('Page blocks')}>
     {#each view.rows as row (row.block.id)}
       <BlockRow {row} {editor} {pages} text={editor.text(row.block.id)} active={view.active === row.block.id}
         busy={view.busy} collapsed={editor.collapsed.has(row.block.id)} focus={view.focus} />
       <div style:margin-inline-start={`${Math.min(row.depth, 20) * 1.3 + 2}rem`}>
         {#each references.filter(r => r.source_block_id === row.block.id) as reference (reference.title_key)}
           <button disabled={view.busy || editor.dirty} onclick={() => onReference(reference)}
-            title={reference.target_page_id ? 'Open referenced page' : 'Create referenced page'}>[[{reference.label}]]{reference.target_title && reference.target_title !== reference.label ? ` → ${reference.target_title}` : ''}{reference.target_page_id ? '' : ' (create)'}</button>
+            title={$tr(reference.target_page_id ? 'Open referenced page' : 'Create referenced page')}><bdi>[[{reference.label}]]</bdi>{#if reference.target_title && reference.target_title !== reference.label} → <bdi>{reference.target_title}</bdi>{/if}{reference.target_page_id ? '' : ` ${$tr('(create)')}`}</button>
         {/each}
       </div>
     {/each}

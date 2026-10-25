@@ -1,4 +1,4 @@
-# GraphDesk architecture (Milestones 1–4)
+# GraphDesk architecture (Milestones 1–5)
 
 ## Boundaries
 
@@ -322,6 +322,9 @@ in an isolated authenticated Xvfb session, not a browser-only shell or mock runt
 
 ## Milestone 4 daily workspace
 
+This section records the Milestone 4 boundary; Milestone 5 below supersedes the
+pre-submit recovery and calendar limitations without changing canonical identities.
+
 No migration or dependency was added. `Page` now includes optional `journal_date`,
 read by joining the existing journal table rather than parsing a title. Session-guarded
 `editor_find_journal` performs a validated, read-only lookup. The editor controller's
@@ -363,3 +366,56 @@ The shell retains the mounted editor while Tasks is visible, but all transitions
 flush first. Application shortcuts avoid composition and modal dialogs. Graph
 switching remains explicit path entry; no persistent settings/path registry, extra
 filesystem capability, network listener or background service was introduced.
+
+## Milestone 5 bilingual calendar and input boundary
+
+`jalaali-js` 2.0.1 (MIT, no runtime dependencies) supplies conversion and validation.
+The guaranteed Jalali window is Gregorian 1800-01-01 through 2256-12-31, inclusive;
+the Node fixture exhaustively round-trips every day in that interval. The window is
+developer documentation, not normal UI copy. Only an actual unsupported attempt
+shows a localized message. Existing dates outside the window stay accessible and
+retain Gregorian identity; calendar selection is never silently changed. Gregorian
+input retains the existing canonical range. `Intl` is not a second conversion
+authority. Labels/picker use the same calendar-fields functions; Today still takes
+local civil fields while day arithmetic avoids DST/UTC-instant conversion.
+
+English/Persian dictionaries are typed and centralized. Missing translations fall
+back to English source keys; unexpected domain errors have a localized explanation
+with optional LTR technical details. Language directs application chrome, not stored
+content. Native textareas retain auto direction, native horizontal movement and
+selection, with bidi isolation around user labels/identifiers. Shortcut physical-key
+fallbacks apply only to non-Latin shortcut keys and never during composition/AltGr.
+
+The first-note controller shares the existing private RecoveryStore and independent
+worker. A pending note has graph identity, canonical date, stable draft identity,
+intended block UUID and a versioned finalized snapshot. It has no fake page identity
+and does not enter canonical search before explicit submission. Capture uses the
+same 700-ms target, preedit exclusion, 14-day expiry and visible failure boundary.
+Restoration is explicit into the form. Submission uses a single Rust journal/block
+transaction and the same intended UUID on retries. Existing matching initial state
+reconciles; changed revision/content, wrong ownership or a deletion tombstone fails
+closed. An acknowledgement timeout does not cancel SQLite work or license a second
+append. Recovery cleanup is conditional and occurs only after acknowledged success.
+
+Minimal app-local preferences remember only language, calendar and search mode.
+Defaults are English/Gregorian/original; choices are independent of graphs and one
+another. The adapter owns private platform-resolved storage and serialized atomic
+writes. The UI applies changes only after acknowledgement. No general configuration
+framework, graph registry, broad filesystem plugin or remote service is introduced.
+
+Graph migration 5 adds contentful normalized FTS5 indexes, preserving the two
+original external-content indexes and their default query path. The deterministic,
+innocuous Rust `persian_normalize` SQLite scalar is registered before migrations.
+New triggers update normalized rows in the same canonical transaction, including
+history/recovery writes. Raw-unchanged title/content updates and task-only changes
+skip normalization. Each changed text is normalized once; no per-query index rebuild
+or frontend corpus cache exists. The explicit rebuild method regenerates from
+canonical text. Original text/title keys/reference bindings are never folded.
+
+This deliberately adds derived text/index storage and write cost even while original
+search mode is selected, so mode switching is immediate and does not change the
+graph schema. Normalized matching can alter ranking and return both distinct
+variant-title pages. Raw SQLite mutation clients must register the scalar function;
+raw writes remain unsupported. Read-only inspection does not need it. Existing
+backups need the usual pre-upgrade precautions; older binaries reject graph version
+5 and recovery-store version 2 rather than discarding unknown data.

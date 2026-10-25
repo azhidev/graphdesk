@@ -77,11 +77,18 @@ export const messages = {
   'Referenced page no longer exists; reopen the graph.': 'صفحهٔ پیوندشده دیگر وجود ندارد؛ گراف را دوباره باز کنید.',
   'Wait for the current operation before closing.': 'پیش از بستن، منتظر پایان عملیات جاری بمانید.',
   'A page already uses this date title. Rename that page before creating this journal.': 'صفحه‌ای با این عنوان تاریخ وجود دارد. پیش از ساخت روزانه، نام آن صفحه را تغییر دهید.',
+  'Database is busy. Wait for other writes to finish, then retry.': 'پایگاه داده مشغول است. منتظر پایان نوشتن‌های دیگر بمانید و دوباره تلاش کنید.',
+  'Could not save. Check available space and permissions; keep the app open.': 'ذخیره انجام نشد. فضای آزاد و مجوزهای دسترسی را بررسی کنید و برنامه را باز نگه دارید.',
+  'Persisted text changed. Compare both versions below before replacing it.': 'متن ذخیره‌شده تغییر کرده است. پیش از جایگزینی، هر دو نسخهٔ زیر را مقایسه کنید.',
+  'The edited block was deleted. Your text remains in the draft/recovery store; compare or copy it before discarding.': 'بلوک ویرایش‌شده حذف شده است. متن شما در پیش‌نویس یا بازیابی باقی مانده؛ پیش از دور ریختن، آن را مقایسه یا کپی کنید.',
+  'Recovery cleanup failed — an older snapshot may appear on reopen.': 'پاک‌سازی بازیابی ناموفق بود؛ ممکن است پس از بازگشایی نسخه‌ای قدیمی نمایش داده شود.',
+  'Wait for the current editor operation': 'منتظر پایان عملیات جاری ویرایشگر بمانید',
+  'Close protection unavailable. Copy important text before closing.': 'محافظت هنگام بستن در دسترس نیست. پیش از بستن، متن مهم را کپی کنید.',
 } as const;
 export type MessageKey = keyof typeof messages;
 
 export function translate(language: Language, key: MessageKey, values: Record<string, string | number> = {}): string {
-  const text = language === 'fa' ? messages[key] ?? key : key;
+  const text = language === 'fa' && Object.hasOwn(messages, key) ? messages[key] : key;
   return text.replace(/\{(\w+)\}/g, (_, name: string) => {
     const value = values[name];
     const formatted = String(value ?? `{${name}}`);
@@ -90,13 +97,16 @@ export function translate(language: Language, key: MessageKey, values: Record<st
 }
 
 export function statusText(language: Language, text: string): string {
-  return text in messages ? translate(language, text as MessageKey) : text;
+  return Object.hasOwn(messages, text) ? translate(language, text as MessageKey) : text;
 }
 
 export function errorText(language: Language, text: string): string {
   if (language === 'en') return text;
-  if (text in messages) return translate(language, text as MessageKey);
+  if (Object.hasOwn(messages, text)) return translate(language, text as MessageKey);
   if (/compos/i.test(text)) return translate(language, 'Finish text composition before leaving the editor');
+  if (/close protection/i.test(text)) return translate(language, 'Close protection unavailable. Copy important text before closing.');
+  if (/busy|locked/i.test(text)) return translate(language, 'Database is busy. Wait for other writes to finish, then retry.');
+  if (/read.only|disk|permission|readonly|full/i.test(text)) return translate(language, 'Could not save. Check available space and permissions; keep the app open.');
   if (/conflict|revision|changed|deleted|submission/i.test(text)) return translate(language, 'The persisted note differs. Copy the retained text if needed; it will not be overwritten.');
   return translate(language, 'Operation failed. Your text has not been discarded.');
 }

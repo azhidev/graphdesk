@@ -11,15 +11,16 @@ Relative paths resolve from the process working directory and are not recommende
 because launch methods differ. Non-UTF-8 filenames cannot be entered through the
 string-based UI. OS filename, path-length and permission restrictions still apply.
 
-No automatic graph discovery, graph registry, persistent settings or durable
-undo/collapse state exists. Re-enter the graph path after restart. Private text
-recovery snapshots are described below; they do not replace graph backups.
+No automatic graph discovery, graph registry or durable undo/collapse state exists.
+Only language/calendar/search-mode preferences are remembered locally. Re-enter the
+graph path after restart. Private text recovery snapshots are described below;
+they do not replace graph backups.
 Opening a graph now creates/opens today's journal. Browsing other absent dates does
 not write records. Their first-note form creates a journal only on explicit content
-submission; before submission its text is not autosaved/recovery-captured. Normal
-close is blocked and nonempty cancellation requires confirmation. After submission,
-the normal editor's save/recovery guards apply; failures can leave an empty journal
-or block while submitted text remains retained for retry. See [workflows](workflows.md).
+submission; finalized pre-submit text targets private recovery capture within 700 ms.
+Normal close attempts capture but remains blocked until the form is resolved, and
+nonempty discard requires confirmation. Journal/initial-block submission is atomic
+and retries reconcile a stable intended UUID. See [workflows](workflows.md).
 There is no single-instance enforcement: use only one process per graph.
 
 Tauri/the system WebView may create runtime state or caches in platform-managed
@@ -28,8 +29,10 @@ and macOS uses per-user Library locations. Exact subpaths depend on the backend;
 the app identifier is `org.graphdesk.desktop`. These are **not** graphs or backups.
 Do not delete them to repair notes. Future application-owned settings should use
 Tauri's `app_config_dir` / `app_data_dir` / `app_cache_dir` path resolver, not
-hardcoded home paths or environment-variable concatenation. No new settings
-abstraction is needed until settings exist.
+hardcoded home paths or environment-variable concatenation. Milestone 5 stores only
+the three approved preferences in `preferences.json` under the adapter's app-config directory. It does not
+store graph paths, note text or credentials. Missing/malformed settings use safe
+defaults with a visible warning where appropriate; failed writes retain prior choices.
 
 ## Backup and upgrade
 
@@ -65,6 +68,15 @@ collector or crash reporter. Logs, screenshots and databases can contain private
 notes and paths: sanitize before sharing, and never upload personal graphs or secrets.
 
 ## Text-draft recovery
+
+Milestone 5 extends this same store with pending first journal notes. Those records
+are keyed by stable draft identity and intended block UUID and include canonical
+date, finalized text and a conditional-cleanup version. The private schema upgrade
+preserves existing block drafts. Startup inventory includes either record type;
+open the graph and explicitly restore a pending note into the form. No journal is
+created by capture or restoration. Modified/deleted committed content requires review
+and is never automatically overwritten/recreated; keep/copy or explicitly discard
+unresolved text. The same expiry, privacy and loss-window limits below apply.
 
 Recovery uses separate per-graph SQLite files under Tauri's
 `app_local_data_dir()/recovery/<graph-UUID>.sqlite3`. This is app-private local
