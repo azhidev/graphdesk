@@ -26,7 +26,7 @@ fn invalid() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "invalid 
 
 // Reject existing symlinks in the config path, including parents. The directory
 // is app-private; no attempt is made to repair ownership/permissions silently.
-fn check_parents(root: &Path) -> io::Result<()> {
+pub(crate) fn check_parents(root: &Path) -> io::Result<()> {
     for path in root.ancestors() {
         match fs::symlink_metadata(path) {
             Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {},
@@ -37,7 +37,7 @@ fn check_parents(root: &Path) -> io::Result<()> {
     }
     Ok(())
 }
-fn check_root(root: &Path) -> io::Result<()> {
+pub(crate) fn check_root(root: &Path) -> io::Result<()> {
     check_parents(root)?;
     let metadata = fs::symlink_metadata(root)?;
     #[cfg(unix)] {
@@ -47,7 +47,7 @@ fn check_root(root: &Path) -> io::Result<()> {
     let _ = metadata;
     Ok(())
 }
-fn check_file(path: &Path) -> io::Result<()> {
+pub(crate) fn check_file(path: &Path) -> io::Result<()> {
     let meta = fs::symlink_metadata(path)?;
     if !meta.is_file() || meta.file_type().is_symlink() { return Err(invalid()); }
     #[cfg(unix)] {

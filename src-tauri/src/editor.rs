@@ -27,7 +27,7 @@ pub(crate) async fn editor_note_state(session: Uuid, block_id: Uuid, state: Stat
 #[derive(Debug, Serialize)]
 pub(crate) struct EditorError { code: &'static str, message: String }
 impl EditorError {
-    fn new(code: &'static str, message: impl Into<String>) -> Self { Self { code, message: message.into() } }
+    pub(crate) fn new(code: &'static str, message: impl Into<String>) -> Self { Self { code, message: message.into() } }
 }
 impl From<Error> for EditorError {
     fn from(error: Error) -> Self {
@@ -83,10 +83,11 @@ pub(crate) async fn editor_open(path: String, create: bool, state: State<'_, App
     let recovery = recovery.inner().clone();
     blocking(move || {
         let mut guard = state.0.lock().map_err(|_| EditorError::new("internal", "graph lock poisoned"))?;
-        let graph = if create { Graph::create(path) } else { Graph::open(path) }?;
+        let path = crate::switching::resolve_path(&path, create)?;
+        let graph = if create { Graph::create(&path) } else { Graph::open(&path) }?;
         let pages = graph.pages()?;
         let graph_id = graph.id()?;
-        let active = ActiveGraph::new(graph);
+        let active = ActiveGraph::at_path(graph, path);
         let session = Session { token: active.token, pages, graph_id };
         recovery.0.lock().map_err(|_| EditorError::new("internal", "recovery lock unavailable"))?.session = Some((active.token, graph_id));
         *guard = Some(active);

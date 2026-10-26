@@ -36,6 +36,34 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Graph { conn: Connection }
 
 impl Graph {
+    /// Inspect identity and exact supported migration history without migrations,
+    /// writer transactions, or connection configuration. Used before remembered opens.
+    pub fn inspect_identity(path: impl AsRef<Path>, current_only: bool) -> Result<Uuid> {
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        let tx = conn.unchecked_transaction()?;
+        let history = {
+            let mut stmt = tx.prepare("SELECT version,name,source FROM schema_migrations ORDER BY version")?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        if history.len() < 4 || history.len() > migrations::MIGRATIONS.len()
+            || (current_only && history.len() != migrations::MIGRATIONS.len()) {
+            return Err(Error::Migration("remembered graph has an unsupported schema".into()));
+        }
+        for (index, (version, name, source)) in history.iter().enumerate() {
+            let expected = migrations::MIGRATIONS[index];
+            if *version != index as i64 + 1 || name != expected.0
+                || source.replace("\r\n", "\n") != expected.1.replace("\r\n", "\n") {
+                return Err(Error::Migration("migration history has gaps or modified source".into()));
+            }
+        }
+        let id: String = tx.query_row("SELECT id FROM graph_identity WHERE singleton=1", [], |r| r.get(0))?;
+        let id = parse_id(&id)?;
+        tx.commit()?;
+        Ok(id)
+    }
+
     pub fn id(&self) -> Result<Uuid> {
         let id: String = self.conn.query_row("SELECT id FROM graph_identity WHERE singleton=1", [], |r| r.get(0))?;
         parse_id(&id)
@@ -64,12 +92,20 @@ impl Graph {
         Self::configure(Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?)
     }
 
+    /// Guard remembered identity/history on the writable connection inside the
+    /// migration transaction. Automatic reopen passes current_only to reject upgrades.
+    pub fn open_expected(path: impl AsRef<Path>, expected: Uuid, current_only: bool) -> Result<Self> {
+        Self::configure_expected(Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?, Some((expected, current_only)))
+    }
+
     pub fn in_memory() -> Result<Self> { Self::configure(Connection::open_in_memory()?) }
 
-    fn configure(mut conn: Connection) -> Result<Self> {
+    fn configure(conn: Connection) -> Result<Self> { Self::configure_expected(conn, None) }
+
+    fn configure_expected(mut conn: Connection, expected: Option<(Uuid, bool)>) -> Result<Self> {
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA recursive_triggers=ON;")?;
-        migrations::migrate(&mut conn)?;
+        migrations::migrate_expected(&mut conn, expected)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")?;
         Ok(Self { conn })
     }
@@ -364,3 +400,88 @@ fn order(conn: &Connection, ids: &[String]) -> Result<()> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod remembered_identity_tests {
+    use super::*;
+
+    fn old_graph(path: &Path, id: Uuid) {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT NOT NULL,source TEXT NOT NULL,applied_at INTEGER NOT NULL DEFAULT (unixepoch())) STRICT;").unwrap();
+        for (index, (name, source)) in migrations::MIGRATIONS.iter().take(4).enumerate() {
+            conn.execute_batch(source).unwrap();
+            conn.execute("INSERT INTO schema_migrations(version,name,source) VALUES(?1,?2,?3)", params![index as i64 + 1, name, source]).unwrap();
+        }
+        conn.execute("INSERT INTO graph_identity VALUES(1,?1)", [id.to_string()]).unwrap();
+    }
+
+    #[test]
+    fn identity_preflight_is_readonly_and_manual_upgrade_preserves_uuid() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old.db");
+        let id = Uuid::new_v4();
+        old_graph(&path, id);
+        let before = std::fs::read(&path).unwrap();
+        assert_eq!(Graph::inspect_identity(&path, false).unwrap(), id);
+        assert!(Graph::inspect_identity(&path, true).is_err());
+        assert!(Graph::open_expected(&path, id, true).is_err());
+        assert!(Graph::open_expected(&path, Uuid::new_v4(), false).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        drop(Graph::open_expected(&path, id, false).unwrap());
+        assert_eq!(Graph::inspect_identity(&path, true).unwrap(), id);
+        assert_eq!(Graph::open_expected(&path, id, true).unwrap().id().unwrap(), id);
+    }
+
+    #[test]
+    fn automatic_writable_guard_rejects_older_same_uuid_swap_before_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("remembered.db");
+        let id = Graph::create(&path).unwrap().id().unwrap();
+        assert_eq!(Graph::inspect_identity(&path, true).unwrap(), id);
+        let old = dir.path().join("older-copy.db");
+        old_graph(&old, id);
+        let before = std::fs::read(&old).unwrap();
+        std::fs::rename(&old, &path).unwrap();
+        assert!(Graph::open_expected(&path, id, true).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        assert_eq!(conn.query_row("SELECT max(version) FROM schema_migrations", [], |r| r.get::<_, i64>(0)).unwrap(), 4);
+    }
+
+    #[test]
+    fn unsupported_history_identity_corruption_and_missing_paths_fail_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("graph.db");
+        let id = Graph::create(&path).unwrap().id().unwrap();
+        let conn = Connection::open(&path).unwrap();
+        for mutation in ["UPDATE schema_migrations SET source='drift' WHERE version=5",
+            "DELETE FROM schema_migrations WHERE version=3",
+            "INSERT INTO schema_migrations(version,name,source) VALUES(99,'future','unknown')"] {
+            conn.execute_batch("BEGIN").unwrap();
+            conn.execute_batch(mutation).unwrap();
+            conn.execute_batch("COMMIT").unwrap();
+            let before = std::fs::read(&path).unwrap();
+            assert!(Graph::inspect_identity(&path, true).is_err());
+            assert!(Graph::inspect_identity(&path, false).is_err());
+            assert!(Graph::open_expected(&path, id, true).is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+            // Restore only disposable migration history for the next case.
+            conn.execute("DELETE FROM schema_migrations", []).unwrap();
+            for (n, (name, source)) in migrations::MIGRATIONS.iter().enumerate() {
+                conn.execute("INSERT INTO schema_migrations(version,name,source) VALUES(?1,?2,?3)", params![n as i64 + 1,name,source]).unwrap();
+            }
+        }
+        // Satisfy the SQL length constraint while exercising UUID parsing.
+        conn.execute("UPDATE graph_identity SET id=?1", ["x".repeat(36)]).unwrap();
+        assert!(Graph::inspect_identity(&path, true).is_err());
+        assert!(Graph::open_expected(&path, id, true).is_err());
+        let missing = dir.path().join("missing.db");
+        assert!(Graph::inspect_identity(&missing, true).is_err());
+        assert!(!missing.exists());
+        let corrupt = dir.path().join("corrupt.db");
+        std::fs::write(&corrupt, b"not sqlite").unwrap();
+        assert!(Graph::inspect_identity(&corrupt, false).is_err());
+        assert_eq!(std::fs::read(&corrupt).unwrap(), b"not sqlite");
+    }
+}

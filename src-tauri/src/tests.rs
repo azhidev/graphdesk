@@ -20,6 +20,99 @@ fn invoke_from(window: &tauri::WebviewWindow<MockRuntime>, command: &str, args: 
 }
 
 #[test]
+fn m6_registry_staged_switch_cancel_reconcile_and_failures_ipc() {
+    use tauri::Manager;
+    let dir = tempfile::tempdir().unwrap();
+    let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+    let config = dir.path().join("config");
+    app.state::<crate::registry::RegistryState>().0.lock().unwrap().replace(config.clone());
+    app.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(dir.path().join("recovery"));
+    let window = tauri::WebviewWindowBuilder::new(&app,"main",Default::default()).build().unwrap();
+    let defaults = json!({"remember":false,"reopen":false,"entries":[],"warning":false});
+    assert_eq!(invoke(&window,"graph_registry_load",json!({})).unwrap(),defaults);
+    assert!(!config.exists());
+    let path = dir.path().join("گراف اول 😀.db");
+    let prepared = invoke(&window,"graph_prepare",json!({"path":path,"create":true,"sourceSession":null,"expectedGraph":null,"automatic":false})).unwrap();
+    assert_eq!(invoke(&window,"graph_reconcile",json!({"ticket":prepared["ticket"]})).unwrap(),Value::Null);
+    assert!(app.state::<AppState>().0.lock().unwrap().is_none());
+    let first = invoke(&window,"graph_activate",json!({"ticket":prepared["ticket"],"sourceSession":null})).unwrap();
+    assert_eq!(first["graph_id"],prepared["graph_id"]);
+    assert_eq!(first["path"],json!(path.canonicalize().unwrap()));
+    // Lost activation acknowledgement: re-request only the still-current receipt.
+    for _ in 0..2 { assert_eq!(invoke(&window,"graph_reconcile",json!({"ticket":prepared["ticket"]})).unwrap(),first); }
+    assert!(invoke(&window,"graph_activate",json!({"ticket":prepared["ticket"],"sourceSession":null})).is_err());
+    assert_eq!(invoke(&window,"graph_registry_record",json!({"session":first["token"]})).unwrap(),defaults);
+    assert!(!config.exists());
+    let enabled = invoke(&window,"graph_registry_settings",json!({"remember":true,"reopen":true})).unwrap();
+    assert_eq!(enabled["entries"],json!([]));
+    let recorded = invoke(&window,"graph_registry_record",json!({"session":first["token"]})).unwrap();
+    assert_eq!(recorded["entries"],json!([{"path":first["path"],"graph_id":first["graph_id"]}]));
+    assert_eq!(invoke(&window,"graph_registry_record",json!({"session":Uuid::new_v4()})).is_err(),true);
+    let page = invoke(&window,"editor_create_page",json!({"session":first["token"],"title":"source retained"})).unwrap();
+    for args in [json!({"path":dir.path().join("missing.db"),"create":false,"sourceSession":first["token"],"expectedGraph":null,"automatic":false}),
+        json!({"path":path,"create":false,"sourceSession":first["token"],"expectedGraph":Uuid::new_v4(),"automatic":true})] {
+        assert!(invoke(&window,"graph_prepare",args).is_err());
+        assert!(invoke(&window,"editor_page",json!({"session":first["token"],"pageId":page["id"]})).is_ok());
+    }
+    let second_path = dir.path().join("second.db");
+    let candidate = invoke(&window,"graph_prepare",json!({"path":second_path,"create":true,"sourceSession":first["token"],"expectedGraph":null,"automatic":false})).unwrap();
+    // A stale cancellation must not release another candidate.
+    invoke(&window,"graph_cancel",json!({"ticket":Uuid::new_v4()})).unwrap();
+    invoke(&window,"graph_cancel",json!({"ticket":candidate["ticket"]})).unwrap();
+    assert!(invoke(&window,"graph_activate",json!({"ticket":candidate["ticket"],"sourceSession":first["token"]})).is_err());
+    assert!(second_path.exists()); // Cancel releases the handle; never deletes a newly created graph.
+    let candidate = invoke(&window,"graph_prepare",json!({"path":second_path,"create":false,"sourceSession":first["token"],"expectedGraph":null,"automatic":false})).unwrap();
+    let second = invoke(&window,"graph_activate",json!({"ticket":candidate["ticket"],"sourceSession":first["token"]})).unwrap();
+    assert_eq!(invoke(&window,"graph_reconcile",json!({"ticket":prepared["ticket"]})).unwrap(),Value::Null);
+    assert_eq!(invoke(&window,"graph_reconcile",json!({"ticket":candidate["ticket"]})).unwrap(),second);
+    // Successful activation is independent of a failed registry write.
+    #[cfg(unix)] {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&config,std::fs::Permissions::from_mode(0o500)).unwrap();
+        assert!(invoke(&window,"graph_registry_record",json!({"session":second["token"]})).is_err());
+        assert_eq!(invoke(&window,"graph_reconcile",json!({"ticket":candidate["ticket"]})).unwrap(),second);
+        std::fs::set_permissions(&config,std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let entries = invoke(&window,"graph_registry_record",json!({"session":second["token"]})).unwrap();
+    assert_eq!(entries["entries"].as_array().unwrap().len(),2);
+    assert_eq!(entries["entries"][0]["path"],second["path"]);
+    // Registry never scans graph paths or opens missing files while loading.
+    let forgotten = invoke(&window,"graph_registry_forget",json!({"path":first["path"]})).unwrap();
+    assert_eq!(forgotten["entries"].as_array().unwrap().len(),1);
+    assert_eq!(invoke(&window,"graph_registry_forget",json!({"path":null})).unwrap()["entries"],json!([]));
+    assert_eq!(invoke(&window,"graph_registry_settings",json!({"remember":false,"reopen":true})).unwrap(),defaults);
+    let unknown = br#"{"version":99,"remember":true,"reopen":true,"entries":[]}"#;
+    std::fs::write(config.join("graph-state.json"),unknown).unwrap();
+    assert_eq!(invoke(&window,"graph_registry_load",json!({})).unwrap()["warning"],true);
+    assert_eq!(invoke(&window,"graph_registry_record",json!({"session":second["token"]})).unwrap()["warning"],true);
+    assert!(invoke(&window,"graph_registry_forget",json!({"path":second["path"]})).is_err());
+    assert_eq!(std::fs::read(config.join("graph-state.json")).unwrap(),unknown);
+    assert_eq!(invoke(&window,"graph_registry_forget",json!({"path":null})).unwrap(),defaults);
+    std::fs::write(config.join("graph-state.json"),b"broken").unwrap();
+    assert_eq!(invoke(&window,"graph_registry_settings",json!({"remember":true,"reopen":false})).unwrap()["warning"],false);
+    // Any legacy open invalidates the activation receipt and pending source.
+    let pending = invoke(&window,"graph_prepare",json!({"path":path,"create":false,"sourceSession":second["token"],"expectedGraph":first["graph_id"],"automatic":true})).unwrap();
+    let reopened = invoke(&window,"editor_open",json!({"path":path,"create":false})).unwrap();
+    assert_eq!(invoke(&window,"graph_reconcile",json!({"ticket":candidate["ticket"]})).unwrap(),Value::Null);
+    assert_eq!(invoke(&window,"graph_activate",json!({"ticket":pending["ticket"],"sourceSession":second["token"]})).unwrap_err()["code"],"stale_session");
+    assert_eq!(invoke(&window,"recovery_notes",json!({"session":second["token"]})).unwrap_err()["code"],"stale_session");
+    assert_eq!(invoke(&window,"recovery_notes",json!({"session":reopened["token"]})).unwrap(),json!([]));
+}
+
+#[test]
+fn native_dialog_plugin_has_no_frontend_permission_even_in_main() {
+    let app = app_builder(mock_builder().plugin(tauri_plugin_dialog::init())).build(tauri::generate_context!()).unwrap();
+    let main = tauri::WebviewWindowBuilder::new(&app,"main",Default::default()).build().unwrap();
+    let untrusted = tauri::WebviewWindowBuilder::new(&app,"untrusted",Default::default()).build().unwrap();
+    for command in ["plugin:dialog|open","plugin:dialog|save","plugin:dialog|message", "plugin:fs|read_file", "plugin:fs|write_file"] {
+        for (window,url) in [(&main,"tauri://localhost"),(&untrusted,"tauri://localhost"),(&main,"https://example.invalid")] {
+            let error = invoke_from(window,command,json!({}),url).unwrap_err();
+            assert!(error.as_str().unwrap().contains("not allowed"),"{command}: {error}");
+        }
+    }
+}
+
+#[test]
 fn m5_notes_search_preferences_and_stale_sessions_ipc() {
     use tauri::Manager;
     let directory = tempfile::tempdir().unwrap();
