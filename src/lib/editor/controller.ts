@@ -53,6 +53,12 @@ export class EditorController {
   }
 
   get dirty(): boolean { return this.drafts.size > 0; }
+  /** Graph handoff also guards a complete composition cycle during candidate IO. */
+  departureStamp(): string { return JSON.stringify([this.session, this.compositionEpoch, this.generation]); }
+  assertDeparture(stamp: string): void {
+    this.guardComposition();
+    if (stamp !== this.departureStamp() || this.dirty || this.saving || this.working) throw new Error('Editor input changed during graph opening. Try again after saving.');
+  }
   get status(): string { return this.error ? 'Error — unsaved changes may remain' : this.composing ? 'Composing — finish input before leaving' : this.saving ? 'Saving…' : this.dirty ? 'Unsaved' : 'Saved'; }
   get protection(): string {
     if (this.protectionError) return this.protectionError;

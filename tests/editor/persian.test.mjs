@@ -57,6 +57,8 @@ test('translations cover every declared key, preserve content interpolation and 
   const content = 'فارسی GraphDesk ۱۲۳ [x]';
   assert.match(translate('fa', 'First note for {date}', {date:content}), new RegExp(content.replace('[x]', '\\[x\\]')));
   assert.notEqual(errorText('fa', 'unknown storage error'), 'unknown storage error');
+  assert.equal(errorText('fa', 'edit conflict: remembered path now contains a different graph'), translate('fa', 'remembered path now contains a different graph'));
+  assert.equal(errorText('fa', 'migration: remembered graph requires an explicit upgrade'), translate('fa', 'This graph needs an explicit open. Automatic reopening never upgrades old or unsupported graph formats.'));
 });
 
 test('Persian layout shortcut fallback does not reinterpret native movement or IME preedit', () => {

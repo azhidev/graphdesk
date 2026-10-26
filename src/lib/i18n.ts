@@ -1,6 +1,38 @@
 /** English source keys are centralized and checked at call sites. Notes are never translated. */
 export type Language = 'en' | 'fa';
 export const messages = {
+  'Open graph…': 'باز کردن گراف…', 'Create graph…': 'ساخت گراف…',
+  'Remember recent graphs': 'به‌خاطر سپردن گراف‌های اخیر', 'Reopen last graph on startup': 'باز کردن آخرین گراف هنگام شروع',
+  'Remembering stores file paths privately on this computer, not notes. Turning it off clears remembered paths.': 'با فعال کردن این گزینه، فقط مسیر فایل‌ها به‌صورت خصوصی در این رایانه ذخیره می‌شود، نه یادداشت‌ها. غیرفعال کردن آن مسیرهای ذخیره‌شده را پاک می‌کند.',
+  'Recent graphs': 'گراف‌های اخیر', 'Reopen last graph': 'باز کردن آخرین گراف', 'Forget graph': 'فراموش کردن گراف',
+  'Clear remembered graphs': 'پاک کردن گراف‌های به‌خاطر سپرده‌شده', 'No remembered graphs. Open a graph to add it here.': 'گرافی به‌خاطر سپرده نشده است. برای افزودن، گرافی باز کنید.',
+  'Graph registry': 'فهرست گراف‌ها', 'Remembered graphs could not be loaded. Paths will not be remembered until you explicitly reset these settings.': 'فهرست گراف‌ها خوانده نشد. تا بازنشانی صریح این تنظیمات، مسیری ذخیره نمی‌شود.',
+  'Graph opened, but could not be remembered.': 'گراف باز شد، اما در فهرست ذخیره نشد.', 'Graph registry changes could not be saved.': 'تغییرات فهرست گراف‌ها ذخیره نشد.',
+  'Reset remembered paths (turn off)': 'بازنشانی مسیرهای ذخیره‌شده (غیرفعال کردن)',
+  'Opening graph…': 'در حال باز کردن گراف…', 'Choosing graph…': 'در حال انتخاب گراف…',
+  'Graph opened, but today could not be loaded. Retry Today or switch graphs.': 'گراف باز شد، اما روزانهٔ امروز بارگذاری نشد. دوباره تلاش کنید یا گراف را تغییر دهید.',
+  'Retry Today': 'تلاش دوباره برای امروز', 'Back': 'بازگشت', 'Forward': 'جلو', 'Navigation history': 'تاریخچهٔ پیمایش',
+  'Go to page': 'رفتن به صفحه', 'Filter page titles': 'فیلتر عنوان صفحه‌ها',
+  '↑/↓ choose · Enter opens · Esc cancels · Up to 100 pages': '↑/↓ انتخاب · Enter باز کردن · Esc انصراف · حداکثر ۱۰۰ صفحه',
+  'No matching pages.': 'صفحه‌ای مطابق جست‌وجو نیست.', 'This destination is no longer available. Choose another page.': 'این مقصد دیگر در دسترس نیست. صفحهٔ دیگری انتخاب کنید.',
+  'Editor input changed during graph opening. Try again after saving.': 'هنگام باز کردن گراف، متن ویرایشگر تغییر کرد. پس از ذخیره دوباره تلاش کنید.',
+  'The graph operation changed. Try again.': 'عملیات گراف تغییر کرد. دوباره تلاش کنید.',
+  'graph switch state unavailable': 'وضعیت تغییر گراف در دسترس نیست. دوباره تلاش کنید.',
+  'graph session changed; prepare again': 'نشست گراف تغییر کرد. دوباره گراف را باز کنید.',
+  'graph preparation expired; prepare again': 'آماده‌سازی گراف منقضی شد. دوباره تلاش کنید.',
+  'remembered path now contains a different graph': 'اکنون گراف دیگری در مسیر ذخیره‌شده قرار دارد. فایل درست را صریحاً انتخاب کنید.',
+  'graph identity changed while opening': 'شناسهٔ گراف هنگام باز کردن تغییر کرد. فایل درست را دوباره انتخاب کنید.',
+  'automatic opening requires a remembered graph identity': 'باز کردن خودکار به شناسهٔ گراف ذخیره‌شده نیاز دارد.',
+  'creation cannot use a remembered identity': 'ساخت گراف نمی‌تواند از شناسهٔ ذخیره‌شده استفاده کند.',
+  'graph path is not representable as Unicode': 'مسیر گراف با متن یونیکد قابل نمایش نیست.',
+  'graph path is empty': 'مسیر گراف خالی است.', 'graph filename required': 'نام فایل گراف لازم است.',
+  'selected path is not representable as Unicode': 'مسیر انتخاب‌شده با متن یونیکد قابل نمایش نیست.',
+  'native dialog did not return a filesystem path': 'انتخابگر بومی مسیر فایل برنگرداند. از ورود دستی مسیر استفاده کنید.',
+  'Graph file unavailable. Choose its current location; no replacement was created.': 'فایل گراف در دسترس نیست. مسیر فعلی آن را انتخاب کنید؛ فایل جایگزین ساخته نشده است.',
+  'This graph needs an explicit open. Automatic reopening never upgrades old or unsupported graph formats.': 'این گراف باید صریحاً باز شود. باز کردن خودکار، قالب قدیمی یا پشتیبانی‌نشده را ارتقا نمی‌دهد.',
+  'Finish or cancel the first-note form before switching graphs.': 'پیش از تغییر گراف، فرم نخستین یادداشت را کامل کنید یا انصراف دهید.',
+  'Keyboard shortcuts': 'میان‌برهای صفحه‌کلید',
+  'Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Alt+←/→: history outside text fields': 'Ctrl/Cmd+K: جست‌وجو · Ctrl/Cmd+P: صفحه‌ها · Ctrl/Cmd+O: باز کردن گراف · Ctrl/Cmd+Shift+J: یادداشت · Alt+←/→: تاریخچه بیرون از فیلدهای متن',
   'Today': 'امروز', 'Tasks': 'کارها', 'Capture today': 'یادداشت امروز',
   'Previous day': 'روز قبل', 'Next day': 'روز بعد', 'Journal navigation': 'پیمایش روزانه',
   'Settings': 'تنظیمات', 'Language': 'زبان', 'Calendar': 'گاه‌شماری',
@@ -103,6 +135,10 @@ export function statusText(language: Language, text: string): string {
 export function errorText(language: Language, text: string): string {
   if (language === 'en') return text;
   if (Object.hasOwn(messages, text)) return translate(language, text as MessageKey);
+  const summary = text.replace(/^(?:invalid input|edit conflict|migration): /, '');
+  if (Object.hasOwn(messages, summary)) return translate(language, summary as MessageKey);
+  if (/remembered graph (?:has an unsupported schema|requires an explicit upgrade)|automatic.*schema|automatic.*migrat/i.test(text)) return translate(language, 'This graph needs an explicit open. Automatic reopening never upgrades old or unsupported graph formats.');
+  if (/No such file|cannot find the file/i.test(text)) return translate(language, 'Graph file unavailable. Choose its current location; no replacement was created.');
   if (/compos/i.test(text)) return translate(language, 'Finish text composition before leaving the editor');
   if (/close protection/i.test(text)) return translate(language, 'Close protection unavailable. Copy important text before closing.');
   if (/busy|locked/i.test(text)) return translate(language, 'Database is busy. Wait for other writes to finish, then retry.');

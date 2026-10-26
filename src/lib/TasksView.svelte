@@ -6,11 +6,10 @@
   import { displayPageTitle } from './dates';
   import { statusText } from './i18n';
   import ErrorNotice from './ErrorNotice.svelte';
-  let { session, pages, refreshKey, disabled, onOpen }: {
+  let { session, pages, refreshKey, disabled, onOpen, status = $bindable('active'), page = $bindable(''), onFilter }: {
     session: string; pages: Page[]; refreshKey: string; disabled: boolean; onOpen: (hit: TaskHit) => void;
+    status: TaskFilter; page: string; onFilter: () => void;
   } = $props();
-  let status = $state<TaskFilter>('active');
-  let page = $state('');
   let revision = $state(0);
   const tasks = new TaskController(api.tasks, () => revision++);
   const view = $derived.by(() => { revision; return { hits: tasks.hits, pending: tasks.pending, error: tasks.error, more: tasks.more }; });
@@ -24,11 +23,11 @@
 <section aria-label={$tr('Tasks')}>
   <h2 tabindex="-1" id="tasks-heading">{$tr('Tasks')}</h2>
   <p>{$tr('Tasks from this graph. Open a task to edit it on its original page.')}</p>
-  <label>{$tr('Status')} <select bind:value={status} disabled={disabled}>
+  <label>{$tr('Status')} <select bind:value={status} disabled={disabled} onchange={e => { status = e.currentTarget.value as TaskFilter; onFilter(); }}>
     <option value="active">{$tr('Active (TODO + DOING)')}</option><option value="todo">{$tr('TODO')}</option>
     <option value="doing">{$tr('DOING')}</option><option value="done">{$tr('DONE')}</option>
   </select></label>
-  <label>{$tr('Page')} <select bind:value={page} disabled={disabled}>
+  <label>{$tr('Page')} <select bind:value={page} disabled={disabled} onchange={e => { page = e.currentTarget.value; onFilter(); }}>
     <option value="">{$tr('All pages and journals')}</option>
     {#each pages as item (item.id)}<option value={item.id}>{displayPageTitle(item, $preferences.calendar, $preferences.language)}</option>{/each}
   </select></label>

@@ -13,7 +13,13 @@
   import { get } from 'svelte/store';
   import ErrorNotice from './lib/ErrorNotice.svelte';
   import { FirstNoteController, type PendingNote, type NoteState } from './lib/firstNote';
-  import { shortcutLetter } from './lib/editor/keyboard';
+  import { appShortcut } from './lib/appShortcuts';
+  import { NavigationHistory, type Destination } from './lib/navigation';
+  import { graphApi, type GraphRegistry, type RecentGraph } from './lib/graphs';
+  import { GraphSwitch } from './lib/graphSwitch';
+  import GraphChooser from './lib/GraphChooser.svelte';
+  import PageSwitcher from './lib/PageSwitcher.svelte';
+  import type { TaskFilter } from './lib/tasks';
   import type { MessageKey } from './lib/i18n';
   import TasksView from './lib/TasksView.svelte';
   import { SearchController, type SearchHit } from './lib/search';
@@ -27,6 +33,15 @@
   let operation = $state<MessageKey | ''>('');
   let activePath = $state('');
   let switching = $state(false);
+  let handoff = $state(false), landingError = $state(false);
+  let registry = $state<GraphRegistry>({ remember: false, reopen: false, entries: [], warning: false });
+  let registryReady = $state(false), registryError = $state(''), graphComposing = $state(false);
+  let quickPages: { show: () => Promise<void> };
+  const graphSwitch = new GraphSwitch(graphApi);
+  const navigation = new NavigationHistory();
+  let navRevision = $state(0);
+  const history = $derived.by(() => { navRevision; return { back: navigation.canBack, forward: navigation.canForward }; });
+  let taskStatus = $state<TaskFilter>('active'), taskPage = $state('');
   let view = $state<'notes' | 'tasks'>('notes');
   let previewDate = $state<string | null>(null);
   let firstNoteDialog: HTMLDialogElement;
@@ -99,8 +114,9 @@
   let inventory = $state(0);
   async function refreshRecovery() {
     if (!session) return;
-    try { const token = session; const [blocks, notes] = await Promise.all([recoveryApi.list(token), noteApi.list(token)]); if (token !== session) return; recoveryRecords = blocks; pendingNotes = notes; recoveryError = ''; }
-    catch (e) { recoveryError = errorMessage(e); }
+    const token = session;
+    try { const [blocks, notes] = await Promise.all([recoveryApi.list(token), noteApi.list(token)]); if (token !== session) return; recoveryRecords = blocks; pendingNotes = notes; recoveryError = ''; }
+    catch (e) { if (token === session) recoveryError = errorMessage(e); }
   }
   async function recover(draft: RecoveryDraft, block: Block, textRevision: number) {
     if (locked) throw new Error('Wait for the current operation');
@@ -115,34 +131,116 @@
     } finally { busy = false; }
   }
   const locked = $derived.by(() => { revision; return busy || editor.working; });
+  const composing = $derived.by(() => { revision; return editor.composing; });
+  async function goPages() {
+    if (locked) return;
+    try { departureAllowed(); await quickPages.show(); } catch (e) { error = errorMessage(e); }
+  }
 
   async function run(action: () => Promise<void>, label: MessageKey = 'Loading…') {
     if (locked) return;
     busy = true; operation = label; error = '';
     try { await action(); } catch (e) { error = errorMessage(e); }
-    finally { busy = false; operation = ''; }
+    finally { busy = false; operation = ''; navRevision++; }
   }
-  async function open(create: boolean) {
+  function departureAllowed() {
+    if (firstNoteDate) throw new Error('Finish or cancel the first-note form before switching graphs.');
+    if (editor.composing || searchComposing || graphComposing) throw new Error('Finish text composition before leaving the editor');
+  }
+  async function performSwitch(candidate: string, create: boolean, expectedGraph: string | null = null, automatic = false) {
+    departureAllowed();
+    const source = session, stamp = editor.departureStamp();
+    let installed = false;
+    try {
+      await graphSwitch.open({ path: candidate, create, sourceSession: source, expectedGraph, automatic }, source, {
+        flush: () => editor.flush(),
+        check: () => { departureAllowed(); if (session !== source) throw new Error('The graph operation changed. Try again.'); editor.assertDeparture(stamp); },
+        // Remove native inputs before the final activation IPC. Late finalized
+        // input during preparation is checked above, never erased by reset.
+        detach: async () => { handoff = true; await tick(); },
+        install: result => {
+          editor.reset(result.token); session = result.token; pages = result.pages; selected = null;
+          activePath = result.path; path = result.path; switching = false; previewDate = null; view = 'notes';
+          journalDate = localDate();
+          taskStatus = 'active'; taskPage = ''; title = ''; renameTitle = '';
+          search.reset(); query = ''; searchComposing = false;
+          recoveryRecords = []; pendingNotes = []; recoveryError = ''; landingError = false;
+          navigation.reset(result.token); navRevision++; installed = true;
+        },
+      });
+    } finally { handoff = false; }
+    if (!installed) return;
+    try { registry = await graphApi.record(session!); registryError = registry.warning ? 'Graph opened, but could not be remembered.' : ''; }
+    catch { registryError = 'Graph opened, but could not be remembered.'; }
+    await refreshRecovery();
+    await landToday();
+  }
+  async function landToday() {
+    try { await navigation.visit({ kind: 'journal', date: localDate() }, d => openJournal(d.kind === 'journal' ? d.date : localDate(), true)); landingError = false; }
+    catch (e) { landingError = true; throw e; }
+    finally { navRevision++; }
+  }
+  async function open(create: boolean) { await run(() => performSwitch(path, create), 'Opening graph…'); }
+  async function recent(graph: RecentGraph, automatic = false) { await run(() => performSwitch(graph.path, false, graph.graph_id, automatic), 'Opening graph…'); }
+  async function pick(create: boolean) {
+    const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     await run(async () => {
-      await editor.flush();
-      const result = await api.open(path, create);
-      search.reset(); query = '';
-      editor.reset(result.token); session = result.token; pages = result.pages; selected = null;
-      activePath = path; switching = false; previewDate = null; view = 'notes';
-      recoveryRecords = []; pendingNotes = []; await refreshRecovery();
-      await openJournal(localDate(), true);
+      departureAllowed();
+      const source = session;
+      const candidate = await graphApi.pick(create, $preferences.language);
+      if (source !== session) throw new Error('The graph operation changed. Try again.');
+      if (candidate) await performSwitch(candidate, create);
+    }, 'Choosing graph…');
+    await tick(); if (origin?.isConnected) origin.focus();
+  }
+  async function registrySettings(remember: boolean, reopen: boolean) {
+    const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    await run(async () => {
+      try {
+        registry = await graphApi.settings(remember, reopen); registryError = '';
+        if (remember && session) registry = await graphApi.record(session);
+      } catch { registryError = 'Graph registry changes could not be saved.'; }
     });
+    await tick(); if (origin?.isConnected) origin.focus();
+  }
+  async function forget(graphPath: string | null) {
+    await run(async () => { try { registry = await graphApi.forget(graphPath); registryError = ''; } catch { registryError = 'Graph registry changes could not be saved.'; } });
+  }
+  function destination(page: Page, block?: string): Destination { return page.journal_date ? { kind: 'journal', date: page.journal_date, block } : { kind: 'page', id: page.id, block }; }
+  function rememberLocation() {
+    if (view === 'tasks') navigation.replace({ kind: 'tasks', status: taskStatus, page: taskPage });
+    else if (selected) navigation.replace(destination(selected, editor.activeId ?? undefined));
+    navRevision++;
+  }
+  async function loadDestination(target: Destination) {
+    if (target.kind === 'tasks') {
+      const stamp = editor.departureStamp(); await editor.flush(); editor.assertDeparture(stamp);
+      taskStatus = target.status; taskPage = pages.some(p => p.id === target.page) ? target.page : '';
+      view = 'tasks'; await tick(); document.getElementById('tasks-heading')?.focus(); return;
+    }
+    if (target.kind === 'journal') await openJournal(target.date);
+    else {
+      const page = pages.find(p => p.id === target.id);
+      if (!page) throw new Error('This destination is no longer available. Choose another page.');
+      await editor.load(page.id); rememberPage(page);
+    }
+    if (target.block && editor.blocks.some(b => b.id === target.block)) editor.reveal(target.block);
+    else await focusPage();
+  }
+  async function navigate(target: Destination) {
+    departureAllowed(); rememberLocation(); await navigation.visit(target, loadDestination); navRevision++;
+  }
+  async function moveHistory(delta: -1 | 1) {
+    await run(async () => { departureAllowed(); rememberLocation(); await navigation.move(delta, loadDestination); });
   }
   async function select(page: Page) {
-    await run(async () => { await editor.load(page.id); rememberPage(page); await focusPage(); });
+    await run(() => navigate(destination(page)));
   }
   async function selectHit(hit: SearchHit) {
     const page = pages.find(p => p.id === hit.page_id);
     if (!page) { error = 'Matching page no longer exists; reopen the graph.'; return; }
     await run(async () => {
-      await editor.load(page.id); rememberPage(page);
-      if (hit.kind === 'block') editor.reveal(hit.id);
-      else await focusPage();
+      await navigate(destination(page, hit.kind === 'block' ? hit.id : undefined));
     });
   }
   async function followReference(reference: InlineReference) {
@@ -153,7 +251,7 @@
       await editor.flush();
       const page = await api.createPage(session!, reference.label);
       pages = [...pages.filter(p => p.id !== page.id), page];
-      await editor.load(page.id); rememberPage(page); await focusPage();
+      await navigate(destination(page));
     });
   }
   function rememberPage(page: Page) {
@@ -184,11 +282,12 @@
   }
   async function journal(date: string) {
     if (!session) return;
-    await run(() => openJournal(date), 'Opening journal…');
+    await run(() => navigate({ kind: 'journal', date }), 'Opening journal…');
   }
   async function capture(date = localDate()) {
     await run(async () => {
-      await openJournal(date, true);
+      departureAllowed(); rememberLocation();
+      await navigation.visit({ kind: 'journal', date }, () => openJournal(date, true));
       const empty = editor.blocks.find(b => !b.parent_id && !b.content && !b.task_status && !editor.blocks.some(child => child.parent_id === b.id));
       if (empty) editor.reveal(empty.id);
       else await editor.action({ kind: 'append' });
@@ -226,22 +325,26 @@
         const stamp = firstNote!.stamp;
         const end = noteView.content.length;
         await editor.load(result.page.id); firstNote!.assertStable(stamp); rememberPage(result.page);
+        await navigation.visit(destination(result.page, result.block.id), async () => {}); navRevision++;
         firstNoteDialog.close(); firstNoteDate = null; firstNote = null; noteRevision++;
         await tick(); editor.activate(result.block.id, { start: end, end }); await refreshRecovery();
       } catch (e) { noteComparison = await noteApi.state(session!, firstNote!.blockId).catch(() => null); throw e; }
     }, 'Saving first note…');
   }
   async function showTasks() {
-    await run(async () => { await editor.flush(); view = 'tasks'; await tick(); document.getElementById('tasks-heading')?.focus(); });
+    await run(() => navigate({ kind: 'tasks', status: taskStatus, page: taskPage }));
   }
   async function shortcut(event: KeyboardEvent) {
-    if (document.querySelector('dialog[open]') || event.isComposing || searchComposing || event.keyCode === 229 || editor.composing || !session || locked || !(event.ctrlKey || event.metaKey)) return;
-    const letter = shortcutLetter(event.key, event.code);
-    if (letter === 'k' && !event.shiftKey && !event.altKey) {
-      event.preventDefault(); document.getElementById('search')?.focus();
-    } else if (letter === 'j' && event.shiftKey && !event.altKey) {
-      event.preventDefault(); await capture();
-    }
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const action = appShortcut(event, { modal: !!document.querySelector('dialog[open]'), composing: searchComposing || graphComposing || editor.composing,
+      busy: locked || !prefsReady || !registryReady, editable: !!target && (target.isContentEditable || !!target.closest('input, textarea, select')), session: !!session });
+    if (!action) return;
+    event.preventDefault();
+    if (action === 'search') document.getElementById('search')?.focus();
+    else if (action === 'capture') await capture();
+    else if (action === 'pages') await goPages();
+    else if (action === 'open') await pick(false);
+    else await moveHistory(action === 'back' ? -1 : 1);
   }
   function searchKeys(event: KeyboardEvent) {
     if (event.isComposing || searchComposing || event.keyCode === 229) return;
@@ -260,13 +363,18 @@
       await editor.flush();
       const page = await api.createPage(session!, title);
       pages = [...pages, page]; title = '';
-      await editor.load(page.id); rememberPage(page); await focusPage();
+      await navigate(destination(page));
     });
   }
   onMount(() => {
     if (!isTauri()) return;
-    void preferencesApi.load().then(result => { preferences.set(result.preferences); if (result.warning) prefsError = 'Preferences could not be loaded. Safe defaults are in use.'; })
+    const prefs = preferencesApi.load().then(result => { preferences.set(result.preferences); if (result.warning) prefsError = 'Preferences could not be loaded. Safe defaults are in use.'; })
       .catch(() => { prefsError = 'Preferences could not be loaded. Safe defaults are in use.'; }).finally(() => prefsReady = true);
+    const graphs = graphApi.load().then(result => { registry = result; if (result.warning) registryError = 'Remembered graphs could not be loaded. Paths will not be remembered until you explicitly reset these settings.'; })
+      .catch(() => { registryError = 'Remembered graphs could not be loaded. Paths will not be remembered until you explicitly reset these settings.'; }).finally(() => registryReady = true);
+    void Promise.all([prefs, graphs]).then(async () => {
+      if (!disposed && registry.remember && registry.reopen && !registry.warning && registry.entries[0]) await recent(registry.entries[0], true);
+    });
     void recoveryApi.inventory().then(count => inventory = count).catch(() => { recoveryError = 'Recovery inventory unavailable. Open the original graph and retry recovery inspection.'; });
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -279,11 +387,12 @@
       finally { busy = false; }
     }).then(stop => { if (disposed) stop(); else unlisten = stop; })
       .catch(e => { error = `Close protection unavailable: ${errorMessage(e)}`; });
-    return () => { disposed = true; unlisten?.(); };
+    return () => { disposed = true; graphSwitch.invalidate(); unlisten?.(); };
   });
 </script>
 
 <svelte:window onkeydown={shortcut} />
+<PageSwitcher bind:this={quickPages} {pages} label={pageLabel} disabled={locked || !session || composing} onOpen={select} />
 
 <dialog bind:this={firstNoteDialog} aria-labelledby="first-note-heading" oncancel={event => { event.preventDefault(); cancelFirstNote(); }}>
   <h2 id="first-note-heading">{$tr('First note for {date}', { date: firstNoteDate ? presentDate(firstNoteDate) : '' })}</h2>
@@ -308,22 +417,27 @@
 
 <main>
   <header><h1>Graphdesk</h1>
-    {#if session}<p class="graph-path">{$tr('Graph:')} <bdi dir="ltr">{activePath}</bdi></p><button disabled={locked} onclick={() => switching = !switching}>{$tr(switching ? 'Cancel graph switch' : 'Switch graph')}</button>
+    {#if session}<p class="graph-path" title={activePath}>{$tr('Graph:')} <bdi dir="ltr">{activePath}</bdi></p>
+      <nav aria-label={$tr('Navigation history')}>
+        <button disabled={locked || !history.back} onclick={() => moveHistory(-1)} title="Alt+←">{$tr('Back')}</button>
+        <button disabled={locked || !history.forward} onclick={() => moveHistory(1)} title="Alt+→">{$tr('Forward')}</button>
+      </nav>
+      <button disabled={locked || composing} onclick={goPages} title="Ctrl/Cmd+P">{$tr('Go to page')}</button>
+      <button disabled={locked} onclick={() => switching = !switching}>{$tr(switching ? 'Cancel graph switch' : 'Switch graph')}</button>
     {:else}<p>{$tr('Open a local graph to begin your daily workspace.')}</p>{/if}
   </header>
   {#if !session || switching}
-  <section aria-label={$tr('Graph selection')}>
-    <label for="path">{$tr('Database path (on this computer)')}</label>
-    <input id="path" bind:value={path} dir="ltr" placeholder={$tr('Full path to notes.sqlite3')} disabled={locked || !prefsReady} />
-    <button disabled={locked || !prefsReady || !path.trim()} onclick={() => open(false)}>{$tr('Open graph')}</button>
-    <button disabled={locked || !prefsReady || !path.trim()} onclick={() => open(true)}>{$tr('Create graph')}</button>
-    <p class="hint">{$tr('The parent directory must exist. Create never overwrites an existing file.')}</p>
-  </section>
+  <GraphChooser bind:path bind:composing={graphComposing} {registry} ready={prefsReady && registryReady} disabled={locked}
+    onManual={open} onPick={pick} onRecent={recent} onSettings={registrySettings} onForget={forget} />
   {/if}
   {#if operation}<p role="status">{$tr(operation)}</p>{/if}
   {#if error}<ErrorNotice message={error} />{/if}
   {#if recoveryError}<ErrorNotice message={recoveryError} />{/if}
   {#if prefsError}<ErrorNotice message={prefsError} />{/if}
+  {#if registryError}<section aria-label={$tr('Graph registry')}><ErrorNotice message={registryError} />
+    <button disabled={locked} onclick={() => registrySettings(false, false)}>{$tr('Reset remembered paths (turn off)')}</button>
+  </section>{/if}
+  {#if landingError}<p role="alert">{$tr('Graph opened, but today could not be loaded. Retry Today or switch graphs.')} <button disabled={locked} onclick={() => run(landToday, 'Opening journal…')}>{$tr('Retry Today')}</button></p>{/if}
   {#if !session && inventory}<p role="status">{$tr('Recovery drafts found for {count} graph(s). Open the original graph to compare and recover text.', { count: inventory })}</p>{/if}
   {#if session}
     {#key session}<RecoveryPanel {session} records={recoveryRecords} disabled={locked} onChanged={refreshRecovery} onRecover={recover} />{/key}
@@ -374,7 +488,7 @@
       </aside>
       <div class="content">
       {#if view === 'tasks' && session}
-        <TasksView {session} {pages} refreshKey={acknowledgedKey} disabled={locked}
+        <TasksView {session} {pages} refreshKey={acknowledgedKey} disabled={locked} bind:status={taskStatus} bind:page={taskPage} onFilter={rememberLocation}
           onOpen={hit => selectHit({ id: hit.id, page_id: hit.page_id, kind: 'block', text: hit.content })} />
       {/if}
       <div hidden={view !== 'notes'}>
@@ -400,7 +514,7 @@
             <button disabled={locked || !renameTitle.trim()}>{$tr('Rename page')}</button>
           </form>
           </details>
-          <PageEditor {editor} {revision} {pages} references={links.references} onReference={followReference} disabled={busy} />
+          {#if !handoff}<PageEditor {editor} {revision} {pages} references={links.references} onReference={followReference} disabled={busy} />{/if}
           <section aria-label={$tr('Incoming backlinks')}>
             <h3>{$tr('Backlinks')}</h3>
             {#if linksError}<ErrorNotice message={linksError} />{/if}
@@ -425,6 +539,7 @@
     <label>{$tr('Calendar')}<select value={$preferences.calendar} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('calendar', e.currentTarget)}><option value="gregorian">{$tr('Gregorian')}</option><option value="jalali">{$tr('Jalali')}</option></select></label>
     <label>{$tr('Search mode')}<select value={$preferences.search_mode} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('search_mode', e.currentTarget)}><option value="original">{$tr('Original phrase search')}</option><option value="persian">{$tr('Persian-friendly')}</option></select></label>
   </details>
+  <details><summary>{$tr('Keyboard shortcuts')}</summary><p>{$tr('Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Alt+←/→: history outside text fields')}</p></details>
 </main>
 
 <style>
@@ -432,7 +547,7 @@
   main { max-width: 1200px; margin: auto; padding: 1rem; }
   header { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
   header h1 { font-size: 1.4rem; }
-  .graph-path { flex: 1; overflow-wrap: anywhere; min-width: 0; font-size: .85rem; }
+  .graph-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 3rem; font-size: .85rem; }
   .content { min-width: 0; }
   h1, h2 { line-height: 1.2; }
   section, aside { min-width: 0; padding: 1rem; border: 1px solid #c6d1ca; border-radius: .5rem; background: white; }
