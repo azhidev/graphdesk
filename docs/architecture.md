@@ -1,4 +1,4 @@
-# GraphDesk architecture (Milestones 1–5)
+# GraphDesk architecture (Milestones 1–6)
 
 ## Boundaries
 
@@ -81,8 +81,9 @@ behavior still requires native testing.
 The adapter owns app-local language, calendar and search-mode preferences in
 `preferences.json`, using Tauri's platform path resolver and private atomic writes.
 Private recovery storage also stays outside graphs; the core remains independent
-of desktop directories. No default graph directory or persistent graph registry
-exists. See [data locations and recovery](data.md).
+of desktop directories. The separate opt-in graph registry described below also
+belongs to the adapter. No default graph directory exists. See
+[data locations and recovery](data.md).
 
 SQLite is authoritative; Markdown will be an interchange format, not a second database.
 Disk graphs use WAL and `synchronous=FULL`. Timestamps are UTC Unix seconds;
@@ -122,11 +123,12 @@ Search is a rebuildable index, never an independent source of truth.
 Only the local main window receives core capabilities and the explicit `graph-access`
 application permission for legacy and editor graph commands. Other windows and remote origins
 are denied by the application ACL, verified using the generated context in IPC tests.
-No filesystem/shell/network
-plugins or remote pages are configured. The user supplies the graph path explicitly;
+No general filesystem/shell/network access or remote pages are configured for the
+frontend. The user supplies the graph path explicitly or opts into remembered paths;
 there is no automatic filesystem discovery. Content is rendered as text, not HTML.
 Databases are unencrypted local files and must only be opened from trusted sources;
-hostile database-file hardening is outside this milestone. No plugin execution exists.
+hostile database-file hardening is outside this milestone. Graph contents cannot
+invoke plugins.
 Only the main window can request core window destruction, needed by Tauri's normal
 close-event flow after the frontend has flushed outstanding drafts. This does not
 grant filesystem, shell, remote-origin or other-window graph access.
@@ -323,8 +325,9 @@ in an isolated authenticated Xvfb session, not a browser-only shell or mock runt
 
 ## Milestone 4 daily workspace
 
-This section records the Milestone 4 boundary; Milestone 5 below supersedes the
-pre-submit recovery and calendar limitations without changing canonical identities.
+This section records the Milestone 4 boundary; Milestones 5–6 below supersede the
+pre-submit recovery, calendar and graph-navigation limitations without changing
+canonical identities.
 
 No migration or dependency was added. `Page` now includes optional `journal_date`,
 read by joining the existing journal table rather than parsing a title. Session-guarded
@@ -420,3 +423,56 @@ variant-title pages. Raw SQLite mutation clients must register the scalar functi
 raw writes remain unsupported. Read-only inspection does not need it. Existing
 backups need the usual pre-upgrade precautions; older binaries reject graph version
 5 and recovery-store version 2 rather than discarding unknown data.
+
+## Milestone 6 graph management and navigation
+
+The desktop adapter owns native graph dialogs and the separate versioned private
+graph registry. Remembering and startup reopening default to off. Registry entries
+are bounded to ten, contain resolved absolute paths and expected graph UUIDs, and
+are ordered only by successful activation. No note/page/search/history data is
+stored. Files sharing a logical graph UUID remain separate path entries (copies
+also share recovery identity, so existing compare-before-recover guidance applies).
+Registry writes are serialized and atomic; failures are not graph-open failures.
+Corrupt/future registry data disables retention until explicit settings reset.
+There is no graph-directory scan, path relocation, file deletion or default graph
+directory. Forget/disable affects only metadata, not recovery or graph files.
+
+All frontend opening routes share `GraphSwitch`: flush and check source editor
+state; prepare a candidate without replacing the active graph; recheck composition,
+input generation and source session; detach native inputs; activate; synchronously
+install the acknowledged frontend session. Backend activation compares the expected
+source token and changes graph/recovery access under the established lock ordering.
+Prepared graphs have bounded, one-use tickets. An exact current-session activation
+receipt reconciles a lost acknowledgement without repeating activation. No graph,
+registry and recovery multi-file atomicity or rollback of candidate migrations is
+claimed. Opening failure retains the source; a subsequent Today-load failure shows
+the new active graph with an explicit retry. History resets on activation, not when
+opening the chooser. Automatic reopening requires a remembered expected UUID and
+current supported graph format; remembered identity is inspected before writable
+opening and checked again on the writable connection inside the migration
+transaction before any upgrade.
+
+Official Tauri dialog and single-instance integrations stay in Rust. Native dialogs
+hold no graph/recovery lock. Only narrow custom commands receive main-window ACL
+access; the frontend gains no general filesystem/shell permissions. Single-instance
+registration precedes other plugins and a second launch only raises the current
+window, ignoring arguments. On Linux it uses the user-session D-Bus service while
+the app runs, not a system service or network listener. It is not an exclusive
+database lock across independent applications or login sessions. GTK3 is the initial
+Linux dialog backend; native Wayland/portal and packaging claims need separate
+evidence. No global-shortcut, routing, store or window-state plugin is added.
+
+`NavigationHistory` is a small UI-independent, memory-only controller, bounded to
+100 destinations for one graph session: page UUID/optional block, ISO journal date,
+or Tasks filters. It commits after route loading, preserves branches on failure,
+replaces same-location anchors/filters, and truncates Forward only on a successful
+new departure. Journal replay uses lookup, never creation. Missing block anchors
+fall back to the heading; page-load failures leave the current position unchanged.
+It is separate from transactional block undo/redo and never stores document text.
+
+`PageSwitcher` filters the already-loaded titles/display labels, caps results at
+100, and retains native composition and focus behavior. It has no content index,
+fuzzy matcher or command execution. Application shortcuts use one small pure
+classifier; modal/composition/AltGr/default-prevented/repeat guards are centralized.
+History shortcuts are excluded from editable controls, including macOS Option+Arrow
+text movement. The editor itself, source text and graph schema remain unchanged.

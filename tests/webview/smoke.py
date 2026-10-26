@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--reliability', action='store_true', help='Exercise private recovery after forced termination')
     parser.add_argument('--daily', action='store_true', help='Daily workflow suite (the default)')
     parser.add_argument('--persian', action='store_true', help='Bilingual calendar/search and pending-note crash recovery')
+    parser.add_argument('--navigation', action='store_true', help='Native graph dialogs, registry, single instance and navigation')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     args.artifacts.mkdir(parents=True, exist_ok=True)
@@ -55,7 +56,8 @@ def main():
                     subprocess.run(['dbus-run-session', '--', sys.executable, str(Path(__file__).resolve()),
                                     '--inside', '--artifacts', str(args.artifacts.resolve()),
                                     *(['--reliability'] if args.reliability else []),
-                                    *(['--persian'] if args.persian else [])], cwd=root, env=env, check=True, timeout=300)
+                                    *(['--persian'] if args.persian else []),
+                                    *(['--navigation'] if args.navigation else [])], cwd=root, env=env, check=True, timeout=300)
                 finally:
                     os.close(display_read)
                     xvfb.terminate(); xvfb.wait(timeout=10)
@@ -154,6 +156,10 @@ def main():
         paste(text); wait_sql('SELECT content FROM blocks', [(text,)])
         block_id, page_id = sql('SELECT id,page_id FROM blocks')[0]
         shot('03-capture')
+        if args.navigation:
+            from navigation_smoke import run
+            run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, lambda: app)
+            return
         if args.persian:
             from persian_smoke import run
             run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, lambda: app)

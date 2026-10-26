@@ -22,8 +22,41 @@ uses the same intended block UUID, not another append.
 Graph opening creates today's journal even if empty. No automatic page switch occurs
 at midnight; Today/Capture calculate the local day when invoked. A date-shaped ordinary
 page is never silently converted: rename it before creating a journal for that date.
-**Switch graph** opens the path controls without a recent-graph registry. Actual
-page/date/task/graph departures flush drafts and respect unfinished composition/errors.
+**Switch graph** opens the same chooser used at startup. Native **Open graph…** and
+**Create graph…** dialogs supplement manual paths. Cancelling a picker does not
+switch graphs. Creation never overwrites a file, even if a native dialog offers
+replacement. Only trusted local graph files are supported.
+
+**Remember recent graphs** and **Reopen last graph on startup** are initially off.
+Remembering is explicit opt-in and retains at most ten successfully activated graph
+paths/UUIDs privately on this computer. Reopening requires remembering. Forgetting
+one entry, clearing the list, or turning remembering off never deletes graph or
+recovery data. Turning it off clears all stored paths. Missing graphs are not
+recreated; select their new path explicitly. Unexpected file identity blocks a
+remembered open. Automatic reopening also refuses old/unsupported graph formats;
+explicit opening retains the normal migration/backup precautions.
+
+Actual page/date/task/graph departures flush drafts and respect unfinished
+composition/errors. A pending first-note form must be submitted or explicitly
+discarded first. Failed candidate opening keeps the old graph; successful opening
+followed by a landing error shows the new graph and **Retry Today**. Registry errors
+are reported separately. A second desktop launch focuses the existing window,
+ignoring launch arguments rather than switching graphs behind an unfinished edit.
+
+**Back / Forward** follows pages, source-block jumps, canonical journal dates
+(including read-only previews), and Tasks with its filters. History is bounded to
+100 locations, belongs to the current graph session, and resets only on successful
+graph switching. A new departure after Back drops the forward branch. Same-page
+block jumps update the current anchor, not a new entry. Rename and calendar/language
+changes preserve destinations. Missing blocks fall back to the page heading; a
+missing page or failed load leaves the current history position unchanged.
+
+**Go to page** (Ctrl/Cmd+P) filters existing titles and displayed journal labels;
+it does not search content or create pages. Use arrows/Enter or Escape to cancel.
+It shows up to 100 matches. Ctrl/Cmd+O opens the native graph picker; existing
+Ctrl/Cmd+K and Ctrl/Cmd+Shift+J retain search and capture. Alt+Left/Right navigates
+history only outside editable fields, preserving native text navigation including
+macOS Option+Arrow. Visible controls remain available for every essential action.
 
 | Key | Behavior |
 | --- | --- |

@@ -45,6 +45,56 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### Milestone 6 graph management and navigation — 2026-10-26
+
+On the isolated Ubuntu 24.04 guest, both locked Rust workspace configurations
+passed **63 core + 21 desktop/ACL tests** each. The new cases cover private registry
+validation and bounded writes, opt-out, Unicode paths, identity and migration
+guards, exclusive creation, staged activation/cancellation/reconciliation, stale
+sessions, native-dialog capability denial and preserved recovery access. The
+SQLite schema migrations themselves were not changed. Frontend tests cover
+candidate handoff, failed saves/composition, bounded navigation, shortcuts and
+page filtering. Graph picker and single-instance plugins are registered only in
+the desktop adapter; no general filesystem permission was added to the WebView.
+
+**60 Node tests** and **19 actual SQLite schema fixtures** passed. Svelte/TypeScript
+reported zero errors/warnings, and the locked unbundled Tauri release build passed.
+All four WebView suites passed against that production binary:
+
+```sh
+python3 tests/webview/smoke.py --navigation --artifacts test-artifacts/webview-m6-navigation-final
+python3 tests/webview/smoke.py --daily --artifacts test-artifacts/webview-m6-daily-final
+python3 tests/webview/smoke.py --reliability --artifacts test-artifacts/webview-m6-recovery-final
+python3 tests/webview/smoke.py --persian --artifacts test-artifacts/webview-m6-persian-final
+```
+
+The navigation run used two disposable graphs, real native open/save/cancel dialogs,
+clipboard/keyboard input, SQLite inspection and private app configuration under
+authenticated Xvfb. It verified opt-in/opt-out and automatic reopening, Unicode
+file paths, page and task-source Back/Forward, read-only journal preview, graph
+isolation, blocked switching on a real writer lock followed by an explicit Retry,
+and integrity/foreign-key checks on both graphs. The daily, recovery and bilingual
+suites repeated their existing regressions; the Persian run observed first-note
+private capture after **0.80 s** under a writer lock (one observation, not a
+durability deadline). Screenshots of native switching, retained failed-save text,
+returned Tasks filters, and the opt-out startup were reviewed. Artifacts are
+ignored disposable data. This is production WebKitGTK evidence, not an
+accessibility or cross-platform test; coordinates are fixed for Linux/Xvfb.
+
+Earlier navigation attempts missed displaced buttons after a failed save and
+showed Xvfb native-dialog focus limitations; the fixture now focuses the native
+dialog explicitly and clicks the visible Retry control. No app save/composition
+guard was weakened to make the fixture pass.
+
+Second-launch focus activation is **not validated** by the window-manager-less Xvfb
+fixture: the second process exits without opening its graph argument, but the
+existing window did not regain focus from a separate test window. Check focus with
+an actual Fedora/Wayland compositor before claiming that behavior works there.
+Real Persian IME candidates, scaling/reflow, screen readers, Windows/macOS builds
+and power-loss are likewise separate unvalidated checks, not implied by these
+synthetic and Xvfb runs. No sandbox/VM networking changes or host installs were
+used.
+
 ### Milestone 5 bilingual input/calendar validation — 2026-10-25
 
 On the existing isolated Ubuntu 24.04 guest, Node 24.21.0, Python 3.12.3, WebKitGTK

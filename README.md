@@ -24,6 +24,8 @@ are published. Use disposable graphs or backed-up copies for evaluation.
 - Independent Persian/English UI, Gregorian/Jalali presentation and date entry.
 - Optional Persian-friendly FTS5 search without rewriting notes or titles.
 - Private durable first-note capture before journal submission.
+- Native graph dialogs, opt-in recent graphs and optional startup reopening.
+- Session-local Back/Forward and a lightweight keyboard page switcher.
 - Transactional migrations, SQLite constraints and atomic structural edits.
 - Native text inputs for Unicode/bidi text; Markdown stays literal source.
 
@@ -48,8 +50,9 @@ plugin runtime. SQLite is the source of truth, not a cache of Markdown files.
 | `docs/` | Architecture, usage, data safety and platform guides |
 
 See [architecture](docs/architecture.md) for security, durability, performance
-tradeoffs and known constraints. No filesystem/shell/network plugins or remote
-pages are configured. Only the local main window receives graph access.
+tradeoffs and known constraints. No general filesystem/shell/network access is
+granted to the frontend, and no remote pages are configured. Only the local main
+window receives graph access.
 
 ## Build from source
 
@@ -92,9 +95,11 @@ graph-core` needs no GTK/WebKit. See [testing](docs/testing.md) for scope and ev
 
 ## Data and limitations
 
-Enter a native full database path in an existing writable directory. Create never
-overwrites an existing file. No graph picker, default graph directory or recent-file
-registry is implemented. Language, calendar and search mode are remembered locally.
+Choose **Open graph…** / **Create graph…**, or enter a native full database path in
+an existing writable directory. Create never overwrites an existing file. Recent
+graphs and automatic reopening are independently opt-in and initially off; disabling
+remembering clears stored paths, not databases or recovery. Language, calendar and
+search mode are remembered locally. No default graph directory is imposed.
 An opened graph lands on today's journal; **Switch graph** remains accessible in the header. Browsing an
 absent day is read-only. Its first-note form creates the journal on submission,
 not while browsing or typing. Finalized form text targets private recovery capture
@@ -104,7 +109,9 @@ attempts capture but remains blocked until the form is resolved. Discard require
 **Saved** means SQLite acknowledged the write. Normal navigation/close flushes
 drafts; forced termination can lose unacknowledged text. Graphs are unencrypted
 and intended for trusted, local, single-user use. Do not open a graph in multiple
-processes or edit it on a network/file-synchronized filesystem.
+processes or edit it on a network/file-synchronized filesystem. The desktop's
+single-instance guard focuses the existing window on a second launch; it is not a
+database lock across independent applications or login sessions.
 
 **Back up before upgrades. Never copy only a live database while WAL may contain
 writes.** See [data, backup and recovery](docs/data.md).

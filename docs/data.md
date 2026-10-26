@@ -11,17 +11,27 @@ Relative paths resolve from the process working directory and are not recommende
 because launch methods differ. Non-UTF-8 filenames cannot be entered through the
 string-based UI. OS filename, path-length and permission restrictions still apply.
 
-No automatic graph discovery, graph registry or durable undo/collapse state exists.
-Only language/calendar/search-mode preferences are remembered locally. Re-enter the
-graph path after restart. Private text recovery snapshots are described below;
-they do not replace graph backups.
+No automatic graph discovery or durable undo/collapse state exists. Language,
+calendar and search-mode preferences are remembered locally. A separate versioned
+`graph-state.json` under the adapter's app-config directory stores graph paths and
+expected UUIDs **only after explicit opt-in**. Both remembering and automatic startup
+reopening default to off. The list is capped at ten successful activations and
+contains no page titles, content, searches or navigation history. Paths themselves
+can be sensitive. Forget/clear never removes a database or recovery file; disabling
+remembering clears paths and last-graph metadata. Private text recovery snapshots
+are described below; neither registry nor recovery replaces graph backups.
+The registry does not control independent OS/native-file-dialog history or OS
+backups. Clearing app metadata is not a forensic secure-erasure guarantee.
 Opening a graph now creates/opens today's journal. Browsing other absent dates does
 not write records. Their first-note form creates a journal only on explicit content
 submission; finalized pre-submit text targets private recovery capture within 700 ms.
 Normal close attempts capture but remains blocked until the form is resolved, and
 nonempty discard requires confirmation. Journal/initial-block submission is atomic
 and retries reconcile a stable intended UUID. See [workflows](workflows.md).
-There is no single-instance enforcement: use only one process per graph.
+The desktop uses application/user-session single-instance enforcement: a second
+launch focuses the existing window and does not process graph arguments. This is
+not exclusive per-file locking across other applications or independent sessions;
+continue to use only one process per graph.
 
 Tauri/the system WebView may create runtime state or caches in platform-managed
 locations. Linux uses XDG data/cache locations, Windows uses per-user AppData,
@@ -89,7 +99,8 @@ native permission behavior remains to be validated. Storage is not encrypted.
 Migration 4 assigns a stable graph UUID and monotonic block text revisions.
 Recovery follows a renamed/moved graph with the same identity; backups/copies retain
 that logical identity too, and may show the same local drafts. Always compare the
-intended copy. No graph-path registry or filesystem scanning for graphs is added.
+intended copy. Recent graphs distinguish files by path rather than merging copies
+with the same logical UUID. No filesystem scanning for graphs is performed.
 Startup inspects only the application's recovery directory, reports pending graphs,
 and asks you to open the original graph before comparing. Missing blocks/pages are
 not recreated; their recovery text remains selectable for manual copying.
