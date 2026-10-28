@@ -1,14 +1,97 @@
 # Disposable large-graph benchmark
 
-This developer-only workload is **not** an app feature. It creates two new SQLite
+This developer-only workload is **not** an app feature. It creates disposable SQLite
 files under ignored `test-artifacts/benchmark-large-graphs/` using Rust Core
 `Graph::create`, `create_page` and `create_block`. Core assigns UUIDs and append
 sibling positions; no raw SQL mutations or schema changes are used. Content and
 outline shapes are repeatable, but UUIDs/timestamps and database bytes need not
-match across runs. Each graph has 200 blocks per page (5 or 25 pages), depths
+match across runs. The original graphs have 200 blocks per page (5 or 25 pages), depths
 0–4, mixed English/Persian, ZWNJ, numbers, punctuation and short/long text.
 These files contain only synthetic notes; do not replace personal graphs or
 recovery files with them.
+
+## Single-page sibling workload (new)
+
+The `--single-page` mode creates **only** `graphdesk-1000-single-page.sqlite3`
+and `graphdesk-5000-single-page.sqlite3` in the same ignored directory. Each
+file contains exactly one page and respectively 1,000 or 5,000 top-level
+siblings at contiguous positions 0..N-1. Unlike the original nested graphs,
+all blocks can be exposed without expanding anything. Text follows the same
+repeatable mixed-script short/long distribution as the original fixture.
+UUIDs, timestamps and resulting file hashes are not reproducible across new runs.
+
+From the Ubuntu repository root (do **not** rerun if the files exist):
+
+```sh
+cargo test -p graph-core --example large_graph_fixture --locked
+cargo run -p graph-core --example large_graph_fixture --locked -- --single-page
+sha256sum test-artifacts/benchmark-large-graphs/graphdesk-{1000,5000}-single-page.sqlite3
+```
+
+Core `Graph::create` refuses existing files; the generator never changes the old
+fixtures. After closing the writer it checks SQLite integrity and foreign keys,
+counts pages/blocks, reopens through Core, and checks every root sibling's
+parent, position and content via Core's ordered `children` read. No WAL/SHM
+sidecars remain. These specific Ubuntu snapshots are:
+
+| File | Pages | Blocks | Size (bytes) | SHA-256 |
+| --- | ---: | ---: | ---: | --- |
+| `graphdesk-1000-single-page.sqlite3` | 1 | 1,000 | 1,126,400 | `23c06962bfbd9adb1731a2fffb8b08b52d7c3d83ddb13bfd0c09cf2fa34bd5e2` |
+| `graphdesk-5000-single-page.sqlite3` | 1 | 5,000 | 4,485,120 | `0999c43a82b65998e49c568a5375ed437551cd5de6171f9eb318b95cd6f1211d` |
+
+### Manual Fedora transfer — new files only
+
+Run **on Fedora** using the approved host-side Incus file pull, with GraphDesk
+closed. Replace `YOUR_VM_INSTANCE_NAME` with the actual VM instance name
+(`incus list` can identify it). The destinations must not exist, even as symlinks:
+
+```sh
+vm=YOUR_VM_INSTANCE_NAME
+dest="$HOME/Downloads/graphdesk-benchmark"
+mkdir -p "$dest"
+test ! -e "$dest/graphdesk-1000-single-page.sqlite3" && test ! -L "$dest/graphdesk-1000-single-page.sqlite3" && incus file pull "$vm/home/worker1/projects/graphdesk/test-artifacts/benchmark-large-graphs/graphdesk-1000-single-page.sqlite3" "$dest/graphdesk-1000-single-page.sqlite3"
+test ! -e "$dest/graphdesk-5000-single-page.sqlite3" && test ! -L "$dest/graphdesk-5000-single-page.sqlite3" && incus file pull "$vm/home/worker1/projects/graphdesk/test-artifacts/benchmark-large-graphs/graphdesk-5000-single-page.sqlite3" "$dest/graphdesk-5000-single-page.sqlite3"
+sha256sum "$dest/graphdesk-1000-single-page.sqlite3" "$dest/graphdesk-5000-single-page.sqlite3"
+```
+
+Compare digests with the table before opening. If using an already approved
+Fedora-side SCP pull instead, use the same guest source paths and new
+destinations with no overwrite and verify the same hashes. Do not mount Fedora
+in the guest or change either system's networking/security configuration.
+
+### Single-page Fedora measurement checklist
+
+Use the native Fedora **release** build with one instance and matching window
+size, display scale, language, theme and compositor/backend for each trial.
+Record commit, Fedora/WebKit versions, and how timings were obtained. Opening
+may create today's journal; select the *benchmark page* explicitly and distinguish
+post-open page count from the fixture's original one page.
+
+1. Record graph-open time and separately the time to display a usable benchmark
+   page, with repeated first and subsequent loads. Record whether all blocks
+   are rendered, partially loaded or virtualized (visible viewport rows alone
+   do not establish DOM virtualization).
+2. Scroll top → middle → bottom → top. Record stalls and responsiveness. Edit
+   mixed-script blocks near top, middle and bottom, timing input response and
+   **Saved** completion. Capture memory **during** interaction, noting the
+   observation method and its overhead; an idle sample misses interaction peaks.
+3. Sample 30 seconds of idle process-tree PSS/CPU and process count using
+   `python3 tests/perf/linux_process.py --pid "$app_pid" --seconds 30` from
+   the Fedora checkout. Launch `./target/release/graphdesk-desktop & app_pid=$!`
+   in the same terminal with no prior running instance. Confirm the PID and
+   `missing_pss == 0`; keep the app idle throughout the sample.
+4. Switch graphs and record memory behavior. After editing, close normally,
+   reopen and verify exact text. Once closed again, check `PRAGMA integrity_check`,
+   `PRAGMA foreign_key_check` and page/block counts (the journal may add a page).
+5. If the 1,000-block page shows severe lag, a crash, data loss or runaway memory,
+   stop and report before trying the 5,000-block page. Do not optimize yet.
+
+Use the report template below, noting single-page block count, separate graph/page
+open latencies, scroll/edit/save observations, idle and interaction memory,
+rendering mode and post-reopen integrity. The earlier 318 MiB PSS Fedora
+multi-page result is user-reported context, **not** a single-page measurement.
+
+## Original multi-page workload
 
 From the repository root in the Ubuntu guest:
 
