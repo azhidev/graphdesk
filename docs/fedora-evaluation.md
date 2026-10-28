@@ -31,7 +31,7 @@ authentication changes are needed. On Fedora, before cloning, compare `sha256sum
 
 ```sh
 checkout="$HOME/graphdesk-fedora-m7-SHORT_SHA"
-test ! -e "$checkout" && git clone --no-local "$bundle" "$checkout"
+test ! -e "$checkout" && git clone --branch main --no-local "$bundle" "$checkout"
 git -C "$checkout" bundle verify "$bundle"
 git -C "$checkout" rev-parse HEAD
 git -C "$checkout" status --porcelain
@@ -40,9 +40,10 @@ cd "$checkout"
 
 Stop if the SHA-256 or full HEAD SHA differs, the bundle is incomplete, the
 checkout already exists, or the status is not clean. Never clone over the
-separate `graphdesk-gpui-poc` project. `--no-local` makes the clone independent
-of the transferred bundle. The exact SHA/digest will be supplied alongside the
-bundle after its creation, not predicted here.
+separate `graphdesk-gpui-poc` project. The bundle names `main` but has no
+symbolic remote HEAD, so explicitly select `--branch main`; `--no-local` makes
+the clone independent of the transferred bundle. The exact SHA/digest will be
+supplied alongside the bundle after its creation, not predicted here.
 
 ## Prerequisites
 
