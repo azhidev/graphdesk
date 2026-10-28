@@ -2,9 +2,11 @@
 
 Bundling is disabled in `src-tauri/tauri.conf.json`; current builds produce an
 unbundled executable. Platform icons exist, but this is not installer validation.
-No official packages, signed artifacts, updater, file associations or single-instance
-enforcement exist. Keep packaging opt-in until native runtime/data-safety checks
-pass. Do not change IPC/CSP to make packaging work.
+No official packages, signed artifacts, updater or file associations exist.
+The desktop has a user-session single-instance plugin, but second-launch window
+activation still needs validation on a real compositor; it is not per-graph locking.
+Keep packaging opt-in until native runtime/data-safety checks pass. Do not change
+IPC/CSP to make packaging work.
 
 ## Incremental recommendations
 
