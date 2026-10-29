@@ -31,6 +31,7 @@ def main():
     parser.add_argument('--persian', action='store_true', help='Bilingual calendar/search and pending-note crash recovery')
     parser.add_argument('--navigation', action='store_true', help='Native graph dialogs, registry, single instance and navigation')
     parser.add_argument('--shell', action='store_true', help='Phase 1 shell and preference integration')
+    parser.add_argument('--review', action='store_true', help='Capture Phase 1 production visual review')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     args.artifacts.mkdir(parents=True, exist_ok=True)
@@ -42,7 +43,7 @@ def main():
             cookie = secrets.token_hex(16)
             subprocess.run(['xauth', '-f', str(auth), 'add', ':99', '.', cookie], check=True)
             display_read, display_write = os.pipe()
-            with (args.artifacts / 'xvfb.log').open('w') as log:
+            with ((work if args.review else args.artifacts) / 'xvfb.log').open('w') as log:
                 xvfb = subprocess.Popen(['Xvfb', '-displayfd', str(display_write), '-screen', '0', '1400x1100x24',
                                          '-nolisten', 'tcp', '-auth', str(auth)], pass_fds=(display_write,), stdout=log, stderr=log)
                 os.close(display_write)
@@ -54,12 +55,15 @@ def main():
                     env = {**os.environ, 'DISPLAY': f':{display}', 'XAUTHORITY': str(auth),
                            'XDG_CONFIG_HOME': str(work / 'config'), 'XDG_DATA_HOME': str(work / 'data'),
                            'XDG_CACHE_HOME': str(work / 'cache'), 'GRAPHDESK_SMOKE_WORK': str(work)}
+                    if args.review:
+                        env['GDK_BACKEND'] = 'x11'
                     subprocess.run(['dbus-run-session', '--', sys.executable, str(Path(__file__).resolve()),
                                     '--inside', '--artifacts', str(args.artifacts.resolve()),
                                     *(['--reliability'] if args.reliability else []),
                                     *(['--persian'] if args.persian else []),
                                     *(['--navigation'] if args.navigation else []),
-                                    *(['--shell'] if args.shell else [])], cwd=root, env=env, check=True, timeout=300)
+                                    *(['--shell'] if args.shell else []),
+                                    *(['--review'] if args.review else [])], cwd=root, env=env, check=True, timeout=300)
                 finally:
                     os.close(display_read)
                     xvfb.terminate(); xvfb.wait(timeout=10)
@@ -70,10 +74,10 @@ def main():
     gi.require_version('Gdk', '3.0')
     from gi.repository import Gdk, Gtk
     work = Path(os.environ['GRAPHDESK_SMOKE_WORK'])
-    graph = work / 'smoke.sqlite3'
+    graph = work / ('review-notes.sqlite3' if args.review else 'smoke.sqlite3')
     app = None
     window = None
-    log = (args.artifacts / 'app.log').open('w')
+    log = ((work if args.review else args.artifacts) / 'app.log').open('w')
 
     def pump(seconds=.3):
         end = time.monotonic() + seconds
@@ -85,10 +89,10 @@ def main():
     def xdo(*values):
         return subprocess.check_output(['xdotool', *map(str, values)], text=True).strip()
 
-    def shot(name):
+    def shot(name, width=1400, height=1100):
         pump()
         screen = Gdk.get_default_root_window()
-        Gdk.pixbuf_get_from_window(screen, 0, 0, 1400, 1100).savev(str(args.artifacts / f'{name}.png'), 'png', [], [])
+        Gdk.pixbuf_get_from_window(screen, 0, 0, width, height).savev(str(args.artifacts / f'{name}.png'), 'png', [], [])
 
     def click(x, y):
         xdo('mousemove', x, y, 'click', 1); pump()
@@ -141,18 +145,22 @@ def main():
         lib.XSendEvent(display, window, 0, 0, event); lib.XFlush(display); lib.XCloseDisplay(display); pump(.5)
 
     def reopen():
-        start(); field(220, 140, str(graph)); click(130, 200)
+        start(); field(480, 130, str(graph)); click(590, 180)
 
     def find(text):
         xdo('key', 'ctrl+k', 'ctrl+a'); paste(text); pump(.5)
 
     try:
+        if args.review:
+            from review_capture import run
+            run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, lambda: app)
+            return
         if args.shell:
             from shell_smoke import run
             run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, lambda: app)
             return
         start(); shot('01-shell')
-        field(220, 140, str(graph)); click(270, 200)
+        field(480, 130, str(graph)); click(590, 180)
         today = time.strftime('%Y-%m-%d')
         wait_sql('SELECT date FROM journals', [(today,)])
         today_id = sql('SELECT page_id FROM journals')[0][0]
@@ -196,7 +204,7 @@ def main():
                 connection.create_function('persian_normalize', 1, persian_normalize, deterministic=True)
                 connection.execute('UPDATE blocks SET content=? WHERE id=?', ('external newer', block_id))
             start(); shot('r02-startup-detection')
-            field(220, 140, str(graph)); click(130, 200)
+            field(480, 130, str(graph)); click(590, 180)
             xdo('key', 'ctrl+Home'); pump(); shot('r03-recovery-list')
             click(470, 258); shot('r04-comparison')
             xdo('key', 'Tab', 'Return'); pump(); shot('r05-discard-confirmation')
@@ -214,11 +222,11 @@ def main():
             reopen(); assert sql('SELECT content FROM blocks') == [(draft,)]
             shot('r07-reopened')
         else:
-            click(390, 198)
+            click(460, 170)
             assert sql('SELECT count(*) FROM journals') == [(1,)]
             shot('04-empty-preview')
-            click(500, 198); assert sql('SELECT page_id FROM journals') == [(today_id,)]
-            click(605, 198); assert sql('SELECT count(*) FROM journals') == [(1,)]
+            click(545, 170); assert sql('SELECT page_id FROM journals') == [(today_id,)]
+            click(610, 170); assert sql('SELECT count(*) FROM journals') == [(1,)]
             # Heading -> Previous, Today, Next, Add a note. No row before submit.
             xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Return'); pump()
             paste('cancel this form'); close(); assert app.poll() is None
@@ -353,13 +361,13 @@ def main():
             expected_graph = sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id')
             click(1180, 44)
             second = work / 'second.sqlite3'
-            field(220, 140, str(second)); click(270, 200)
+            field(480, 130, str(second)); click(590, 180)
             with sqlite3.connect(second) as connection:
                 assert connection.execute('SELECT date FROM journals').fetchall() == [(today,)]
                 assert connection.execute('SELECT count(*) FROM blocks').fetchone()[0] == 0
                 assert connection.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
             assert sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id') == expected_graph
-            click(1180, 44); field(220, 140, str(graph)); click(130, 200)
+            click(1180, 44); field(480, 130, str(graph)); click(590, 180)
             assert sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id') == expected_graph
             shot('15-graph-switched-back')
         assert sql('PRAGMA integrity_check') == [('ok',)]

@@ -71,7 +71,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
         app().kill(); assert app().wait(timeout=10) == -9
     finally:
         lock.execute('ROLLBACK'); lock.close()
-    start(); field(220, 140, str(graph)); xdo('key', 'Tab', 'Return'); pump()
+    start(); field(480, 130, str(graph)); xdo('key', 'Tab', 'Return'); pump()
     data = preference('calendar', 'jalali'); assert data['language'] == 'fa' and data['search_mode'] == 'original'
     xdo('key', 'ctrl+Home'); pump(); shot('p06-pending-recovery')
     click(1000, 222); pump(); shot('p07-restored-form')
@@ -129,7 +129,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     wait_sql('SELECT content FROM blocks WHERE id=?', [(text,)], (row[1],))
     shot('p11-normalized-hit')
     close(); assert app().wait(timeout=10) == 0
-    start(); field(220, 140, str(graph)); xdo('key', 'Tab', 'Return'); pump()
+    start(); field(480, 130, str(graph)); xdo('key', 'Tab', 'Return'); pump()
     assert preference('search_mode', 'persian')['language'] == 'fa'
     assert sql('SELECT content FROM blocks WHERE id=?', (row[1],)) == [(text,)]
     assert sql('PRAGMA integrity_check') == [('ok',)] and sql('PRAGMA foreign_key_check') == []
