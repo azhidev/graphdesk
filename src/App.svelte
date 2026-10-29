@@ -24,6 +24,7 @@
   import TasksView from './lib/TasksView.svelte';
   import { SearchController, type SearchHit } from './lib/search';
   import type { InlineReference, Links } from './lib/references';
+  import { statusText } from './lib/i18n';
 
   let path = $state('');
   let pages = $state<Page[]>([]);
@@ -43,6 +44,8 @@
   const history = $derived.by(() => { navRevision; return { back: navigation.canBack, forward: navigation.canForward }; });
   let taskStatus = $state<TaskFilter>('active'), taskPage = $state('');
   let view = $state<'notes' | 'tasks'>('notes');
+  let searchOpen = $state(false), sidebarCollapsed = $state(false), sidebarOverlay = $state(false), narrow = $state(false);
+  let settingsOpen = $state(false);
   let previewDate = $state<string | null>(null);
   let firstNoteDialog: HTMLDialogElement;
   let firstNoteReturn: HTMLElement | null = null;
@@ -141,6 +144,28 @@
   }
   const locked = $derived.by(() => { revision; return busy || editor.working; });
   const composing = $derived.by(() => { revision; return editor.composing; });
+  const saveView = $derived.by(() => { revision; return { status: editor.status, error: !!editor.error, dirty: editor.dirty }; });
+  const graphName = $derived(activePath.split(/[\\/]/).at(-1) || activePath);
+  function toggleSidebar() {
+    if (searchComposing) return;
+    if (narrow) sidebarOverlay = !sidebarOverlay;
+    else sidebarCollapsed = !sidebarCollapsed;
+  }
+  async function openSearch() {
+    if (!session || locked) return;
+    searchOpen = true; sidebarCollapsed = false;
+    if (narrow) sidebarOverlay = true;
+    await tick(); document.getElementById('search')?.focus();
+  }
+  async function closeSearch() {
+    if (searchComposing) return;
+    searchOpen = false; await tick(); document.getElementById('search-entry')?.focus();
+  }
+  async function revealSettings() {
+    settingsOpen = true; await tick();
+    const summary = document.querySelector<HTMLElement>('#settings summary');
+    summary?.scrollIntoView({ block: 'nearest' }); summary?.focus();
+  }
   async function goPages() {
     if (locked) return;
     try { departureAllowed(); await quickPages.show(); } catch (e) { error = errorMessage(e); }
@@ -170,6 +195,7 @@
         install: result => {
           editor.reset(result.token); session = result.token; pages = result.pages; selected = null;
           activePath = result.path; path = result.path; switching = false; previewDate = null; view = 'notes';
+          searchOpen = false; sidebarOverlay = false;
           journalDate = localDate();
           taskStatus = 'active'; taskPage = ''; title = ''; renameTitle = '';
           search.reset(); query = ''; searchComposing = false;
@@ -238,6 +264,7 @@
   }
   async function navigate(target: Destination) {
     departureAllowed(); rememberLocation(); await navigation.visit(target, loadDestination); navRevision++;
+    if (narrow) sidebarOverlay = false;
   }
   async function moveHistory(delta: -1 | 1) {
     await run(async () => { departureAllowed(); rememberLocation(); await navigation.move(delta, loadDestination); });
@@ -349,7 +376,7 @@
       busy: locked || !prefsReady || !registryReady, editable: !!target && (target.isContentEditable || !!target.closest('input, textarea, select')), session: !!session });
     if (!action) return;
     event.preventDefault();
-    if (action === 'search') document.getElementById('search')?.focus();
+    if (action === 'search') await openSearch();
     else if (action === 'capture') await capture();
     else if (action === 'pages') await goPages();
     else if (action === 'open') await pick(false);
@@ -363,7 +390,7 @@
       document.getElementById(`search-hit-${resultIndex}`)?.scrollIntoView({ block: 'nearest' });
     } else if (event.key === 'Enter' && results.hits[resultIndex]) {
       event.preventDefault(); void selectHit(results.hits[resultIndex]);
-    } else if (event.key === 'Escape') { query = ''; void focusPage(); }
+    } else if (event.key === 'Escape') { event.preventDefault(); query = ''; searchOpen = false; if (narrow) sidebarOverlay = false; void focusPage(); }
   }
   async function addPage(event: SubmitEvent) {
     event.preventDefault();
@@ -376,7 +403,10 @@
     });
   }
   onMount(() => {
-    if (!isTauri()) return;
+    const media = window.matchMedia('(max-width: 760px)');
+    const updateWidth = () => { narrow = media.matches; sidebarOverlay = false; };
+    updateWidth(); media.addEventListener('change', updateWidth);
+    if (!isTauri()) return () => media.removeEventListener('change', updateWidth);
     const prefs = preferencesApi.load().then(result => { preferences.set(result.preferences); if (result.warning) prefsError = 'Preferences could not be loaded. Safe defaults are in use.'; })
       .catch(() => { prefsError = 'Preferences could not be loaded. Safe defaults are in use.'; }).finally(() => prefsReady = true);
     const graphs = graphApi.load().then(result => { registry = result; if (result.warning) registryError = 'Remembered graphs could not be loaded. Paths will not be remembered until you explicitly reset these settings.'; })
@@ -396,11 +426,23 @@
       finally { busy = false; }
     }).then(stop => { if (disposed) stop(); else unlisten = stop; })
       .catch(e => { error = `Close protection unavailable: ${errorMessage(e)}`; });
-    return () => { disposed = true; graphSwitch.invalidate(); unlisten?.(); };
+    return () => { disposed = true; graphSwitch.invalidate(); unlisten?.(); media.removeEventListener('change', updateWidth); };
   });
 </script>
 
 <svelte:window onkeydown={shortcut} />
+<svg class="icon-defs" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="shell-panel" viewBox="0 0 20 20"><rect x="2.5" y="3" width="15" height="14" rx="2"/><path d="M7.5 3v14"/></symbol>
+  <symbol id="shell-journal" viewBox="0 0 20 20"><rect x="3.25" y="3.25" width="13.5" height="13.5" rx="2"/><path d="M3.5 7.5h13M7 2v3M13 2v3M7 11h2.5"/></symbol>
+  <symbol id="shell-tasks" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="m6.5 10 2.3 2.2 4.7-4.7"/></symbol>
+  <symbol id="shell-search" viewBox="0 0 20 20"><circle cx="8.7" cy="8.7" r="5.2"/><path d="m12.6 12.6 4 4"/></symbol>
+  <symbol id="shell-page" viewBox="0 0 20 20"><path d="M5 2.75h7l3 3V17H5zM12 2.75V6h3M7.5 9h5M7.5 12h5"/></symbol>
+  <symbol id="shell-plus" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+  <symbol id="shell-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M8.8 2.5h2.4l.45 1.7 1.55.65 1.55-.9 1.7 1.7-.9 1.55.65 1.55 1.7.45v2.4l-1.7.45-.65 1.55.9 1.55-1.7 1.7-1.55-.9-1.55.65-.45 1.7H8.8l-.45-1.7-1.55-.65-1.55.9-1.7-1.7.9-1.55-.65-1.55-1.7-.45V8.8l1.7-.45.65-1.55-.9-1.55 1.7-1.7 1.55.9 1.55-.65-.45-1.7z"/></symbol>
+  <symbol id="shell-left" viewBox="0 0 20 20"><path d="m11.8 4.8-5.2 5.2 5.2 5.2M7 10h10"/></symbol>
+  <symbol id="shell-right" viewBox="0 0 20 20"><path d="m8.2 4.8 5.2 5.2-5.2 5.2M13 10H3"/></symbol>
+  <symbol id="shell-chevron" viewBox="0 0 20 20"><path d="m5.5 7.5 4.5 4.5 4.5-4.5"/></symbol>
+</svg>
 <PageSwitcher bind:this={quickPages} {pages} label={pageLabel} disabled={locked || !session || composing} onOpen={select} />
 
 <dialog bind:this={firstNoteDialog} aria-labelledby="first-note-heading" oncancel={event => { event.preventDefault(); cancelFirstNote(); }}>
@@ -424,21 +466,31 @@
   </form>
 </dialog>
 
-<main>
-  <header><h1>Graphdesk</h1>
-    {#if session}<p class="graph-path" title={activePath}>{$tr('Graph:')} <bdi dir="ltr">{activePath}</bdi></p>
-      <nav aria-label={$tr('Navigation history')}>
-        <button disabled={locked || !history.back} onclick={() => moveHistory(-1)} title="Alt+←">{$tr('Back')}</button>
-        <button disabled={locked || !history.forward} onclick={() => moveHistory(1)} title="Alt+→">{$tr('Forward')}</button>
+<main class="app-shell">
+  <header class="app-header">
+    <div class="header-start">
+      {#if session}<button class="icon-button sidebar-toggle" aria-label={$tr('Workspace')} aria-expanded={narrow ? sidebarOverlay : !sidebarCollapsed} aria-controls="workspace-sidebar" onclick={toggleSidebar}><svg class="icon" aria-hidden="true"><use href="#shell-panel" /></svg></button>{/if}
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand">GraphDesk</span>
+      {#if session}<span class="header-divider" aria-hidden="true"></span>
+        <button class="graph-switch" disabled={locked} aria-expanded={switching} title={activePath} onclick={() => switching = !switching}><span class="graph-avatar" aria-hidden="true">{graphName.charAt(0).toUpperCase()}</span><bdi dir="auto" class="graph-name">{graphName}</bdi><svg class="icon chevron" aria-hidden="true"><use href="#shell-chevron" /></svg><span class="sr-only">{$tr(switching ? 'Cancel graph switch' : 'Switch graph')}</span></button>
+      {/if}
+    </div>
+    {#if session}<div class="header-end">
+      {#if selected}<span class:problem={saveView.error} class:pending={saveView.dirty} class="header-status" role="status"><span class="status-dot" aria-hidden="true"></span>{saveView.error ? $tr('Error — save failed') : statusText($preferences.language, saveView.status)}</span>{/if}
+      <span class="header-divider" aria-hidden="true"></span>
+      <nav class="history-nav" aria-label={$tr('Navigation history')}>
+        <button class="icon-button" aria-label={$tr('Back')} disabled={locked || !history.back} onclick={() => moveHistory(-1)} title="Alt+←"><svg class="icon direction-icon" aria-hidden="true"><use href="#shell-left" /></svg></button>
+        <button class="icon-button" aria-label={$tr('Forward')} disabled={locked || !history.forward} onclick={() => moveHistory(1)} title="Alt+→"><svg class="icon direction-icon" aria-hidden="true"><use href="#shell-right" /></svg></button>
       </nav>
-      <button disabled={locked || composing} onclick={goPages} title="Ctrl/Cmd+P">{$tr('Go to page')}</button>
-      <button disabled={locked} onclick={() => switching = !switching}>{$tr(switching ? 'Cancel graph switch' : 'Switch graph')}</button>
-    {:else}<p>{$tr('Open a local graph to begin your daily workspace.')}</p>{/if}
+      <button class="page-jump" disabled={locked || composing} onclick={goPages} title="Ctrl/Cmd+P">{$tr('Go to page')} <kbd dir="ltr">Ctrl/Cmd P</kbd></button>
+    </div>{/if}
   </header>
   {#if !session || switching}
-  <GraphChooser bind:path bind:composing={graphComposing} {registry} ready={prefsReady && registryReady} disabled={locked}
+  <div class="graph-chooser-surface"><GraphChooser bind:path bind:composing={graphComposing} {registry} ready={prefsReady && registryReady} disabled={locked}
     onManual={open} onPick={pick} onRecent={recent} onSettings={registrySettings} onForget={forget} />
+  </div>
   {/if}
+  <div class="shell-notices">
   {#if operation}<p role="status">{$tr(operation)}</p>{/if}
   {#if error}<ErrorNotice message={error} />{/if}
   {#if recoveryError}<ErrorNotice message={recoveryError} />{/if}
@@ -459,54 +511,70 @@
       {/each}
     </section>
   {/if}
+  </div>
   {#if session}
-    <div class="workspace">
-      <aside>
-        <nav aria-label={$tr('Workspace')}>
-          <button disabled={locked} onclick={() => journal(localDate())}>{$tr('Today')}</button>
-          <button disabled={locked} onclick={showTasks} aria-current={view === 'tasks' ? 'page' : undefined}>{$tr('Tasks')}</button>
-          <button disabled={locked} onclick={() => capture()} title="Ctrl/Cmd+Shift+J">{$tr('Capture today')}</button>
-        </nav>
-        <label for="search">{$tr('Search pages and blocks')}</label>
-        <input id="search" type="search" dir="auto" bind:value={query} placeholder={$tr('Search · Ctrl/Cmd+K')} onkeydown={searchKeys}
+    <div class="workspace" class:sidebar-collapsed={sidebarCollapsed} class:sidebar-overlay={sidebarOverlay}>
+      <aside class="app-sidebar" id="workspace-sidebar" aria-label={$tr('Workspace')}>
+        {#if searchOpen}
+        <div class="search-sidebar shell-scroll">
+          <button class="back-to-workspace" onclick={closeSearch} disabled={searchComposing}><svg class="icon direction-icon" aria-hidden="true"><use href="#shell-left" /></svg>{$tr('Workspace')}</button>
+          <h2>{$tr('Search')}</h2>
+          <label for="search" class="sr-only">{$tr('Search pages and blocks')}</label>
+          <input id="search" type="search" dir="auto" bind:value={query} placeholder={$tr('Search · Ctrl/Cmd+K')} onkeydown={searchKeys}
           oncompositionstart={() => searchComposing = true} oncompositionend={() => searchComposing = false}
           aria-describedby="search-help" />
-        <p id="search-help" class="hint">{$tr('Phrase search · ↑/↓ choose · Enter opens · Esc clears')}</p>
-        {#if results.pending}<p role="status">{$tr('Searching…')}</p>{/if}
-        {#if results.error}<ErrorNotice message={results.error} />{/if}
-        {#if query.trim() && !results.pending && !results.error && !results.hits.length}<p>{$tr('No matches.')}</p>{/if}
-        <ul aria-label={$tr('Search results')} class="results">{#each results.hits as hit, index (`${hit.kind}:${hit.id}`)}
-          <li><button id={`search-hit-${index}`} class:chosen={index === resultIndex} aria-current={index === resultIndex ? 'true' : undefined} disabled={locked} onclick={() => selectHit(hit)} dir="auto">
-            <strong>{$tr(hit.kind === 'page' ? 'Page' : 'Block')} · <bdi>{contextLabel(hit.page_id)}</bdi></strong>
-            <span dir="auto">{hit.text.slice(0, 180)}</span>
-          </button></li>
-        {/each}</ul>
-        {#if results.hits.filter(h => h.kind === 'page').length === 100 || results.hits.filter(h => h.kind === 'block').length === 100}<p class="hint">{$tr('Up to 100 results per kind. Refine your phrase to find more.')}</p>{/if}
-        <details><summary>{$tr('Journal date')}</summary>
-          <CalendarPicker day={journalDate} calendar={$preferences.calendar} disabled={locked} onOpen={journal} />
-        </details>
-        <h2>{$tr('Pages')}</h2>
-        <details><summary>{$tr('New page')}</summary>
-        <form onsubmit={addPage}>
-          <label for="title">{$tr('New page title')}</label>
-          <input id="title" bind:value={title} dir="auto" disabled={locked} />
-          <button disabled={locked || !title.trim()}>{$tr('Create page')}</button>
-        </form>
-        </details>
-        <ul class="page-list">{#each pages as page (page.id)}<li><button disabled={locked} aria-current={view === 'notes' && selected?.id === page.id ? 'page' : undefined} onclick={() => select(page)} dir="auto"><bdi>{pageLabel(page)}</bdi></button></li>{/each}</ul>
+          <p id="search-help" class="hint">{$tr('Phrase search · ↑/↓ choose · Enter opens · Esc clears')}</p>
+          {#if results.pending}<p role="status">{$tr('Searching…')}</p>{/if}
+          {#if results.error}<ErrorNotice message={results.error} />{/if}
+          {#if query.trim() && !results.pending && !results.error && !results.hits.length}<p>{$tr('No matches.')}</p>{/if}
+          <ul aria-label={$tr('Search results')} class="results">{#each results.hits as hit, index (`${hit.kind}:${hit.id}`)}
+            <li><button id={`search-hit-${index}`} class:chosen={index === resultIndex} aria-current={index === resultIndex ? 'true' : undefined} disabled={locked} onclick={() => selectHit(hit)} dir="auto">
+              <strong>{$tr(hit.kind === 'page' ? 'Page' : 'Block')} · <bdi>{contextLabel(hit.page_id)}</bdi></strong>
+              <span dir="auto">{hit.text.slice(0, 180)}</span>
+            </button></li>
+          {/each}</ul>
+          {#if results.hits.filter(h => h.kind === 'page').length === 100 || results.hits.filter(h => h.kind === 'block').length === 100}<p class="hint">{$tr('Up to 100 results per kind. Refine your phrase to find more.')}</p>{/if}
+        </div>
+        {:else}
+        <div class="sidebar-top shell-scroll">
+          <p class="sidebar-heading">{$tr('Workspace')}</p>
+          <nav class="primary-nav" aria-label={$tr('Workspace')}>
+            <button disabled={locked} aria-current={view === 'notes' && !!(selected?.journal_date || previewDate) ? 'page' : undefined} onclick={() => journal(localDate())}><svg class="icon" aria-hidden="true"><use href="#shell-journal" /></svg>{$tr('Journal')}<span class="nav-hint">{$tr('Today')}</span></button>
+            <button disabled={locked} onclick={() => capture()} title="Ctrl/Cmd+Shift+J"><svg class="icon" aria-hidden="true"><use href="#shell-plus" /></svg>{$tr('Capture today')}</button>
+            <button disabled={locked} onclick={showTasks} aria-current={view === 'tasks' ? 'page' : undefined}><svg class="icon" aria-hidden="true"><use href="#shell-tasks" /></svg>{$tr('Tasks')}</button>
+            <button id="search-entry" disabled={locked} onclick={openSearch}><svg class="icon" aria-hidden="true"><use href="#shell-search" /></svg>{$tr('Search')}<bdi dir="ltr" class="nav-hint">Ctrl/Cmd K</bdi></button>
+          </nav>
+          <div class="sidebar-divider"></div>
+          <p class="sidebar-heading">{$tr('Journal date')}</p>
+          <details class="date-disclosure"><summary><svg class="icon" aria-hidden="true"><use href="#shell-journal" /></svg><bdi>{presentDate(journalDate)}</bdi></summary>
+            <CalendarPicker day={journalDate} calendar={$preferences.calendar} disabled={locked} onOpen={journal} />
+          </details>
+        </div>
+        <div class="pages-area"><div class="pages-heading"><h2>{$tr('Pages')}</h2>
+          <details class="create-page"><summary aria-label={$tr('New page')} title={$tr('New page')}><svg class="icon" aria-hidden="true"><use href="#shell-plus" /></svg></summary>
+            <form onsubmit={addPage}>
+              <label for="title">{$tr('New page title')}</label>
+              <input id="title" bind:value={title} dir="auto" disabled={locked} />
+              <button disabled={locked || !title.trim()}>{$tr('Create page')}</button>
+            </form>
+          </details></div>
+          <ul class="page-list shell-scroll">{#each pages as page (page.id)}<li><button disabled={locked} aria-current={view === 'notes' && selected?.id === page.id ? 'page' : undefined} onclick={() => select(page)} dir="auto"><svg class="icon" aria-hidden="true"><use href="#shell-page" /></svg><bdi>{pageLabel(page)}</bdi></button></li>{/each}</ul>
+        </div>
+        {/if}
+        <div class="sidebar-bottom"><button onclick={revealSettings}><svg class="icon" aria-hidden="true"><use href="#shell-settings" /></svg>{$tr('Settings')}</button></div>
       </aside>
-      <div class="content">
+      <div class="content shell-scroll">
       {#if view === 'tasks' && session}
         <TasksView {session} {pages} refreshKey={acknowledgedBlocks} disabled={locked} bind:status={taskStatus} bind:page={taskPage} onFilter={rememberLocation}
           onOpen={hit => selectHit({ id: hit.id, page_id: hit.page_id, kind: 'block', text: hit.content })} />
       {/if}
-      <div hidden={view !== 'notes'}>
-      <section aria-label={$tr('Page content')}>
+      <div hidden={view !== 'notes'} class="notes-view">
+      <section class="page-document" aria-label={$tr('Page content')}>
         {#if selected || previewDate}
           <h2 id="page-heading" tabindex="-1" dir="auto">{selected ? pageLabel(selected) : presentDate(previewDate!)}</h2>
           {#if selected?.journal_date || previewDate}
             {@const day = selected?.journal_date ?? previewDate!}
-            <nav aria-label={$tr('Journal navigation')}>
+            <nav class="journal-nav" aria-label={$tr('Journal navigation')}>
               <button disabled={locked || day === '0000-01-01'} onclick={() => journal(adjacentDay(day, -1))}>{$tr('Previous day')}</button>
               <button disabled={locked} onclick={() => journal(localDate())}>{$tr('Today')}</button>
               <button disabled={locked || day === '9999-12-31'} onclick={() => journal(adjacentDay(day, 1))}>{$tr('Next day')}</button>
@@ -524,7 +592,7 @@
           </form>
           </details>
           {#if !handoff}<PageEditor {editor} {revision} {rowsRevision} {pages} references={links.references} onReference={followReference} disabled={busy} />{/if}
-          <section aria-label={$tr('Incoming backlinks')}>
+          <section class="backlinks" aria-label={$tr('Incoming backlinks')}>
             <h3>{$tr('Backlinks')}</h3>
             {#if linksError}<ErrorNotice message={linksError} />{/if}
             {#if !links.backlinks.length}<p>{$tr('No incoming links.')}</p>{/if}
@@ -541,44 +609,101 @@
       </div>
     </div>
   {/if}
-  <footer>{$tr('Plain-text block editor · Undo and collapse state are session-local. Acknowledged saves survive restart.')}</footer>
+  <div class="shell-utilities"><footer>{$tr('Plain-text block editor · Undo and collapse state are session-local. Acknowledged saves survive restart.')}</footer>
   {#if session}<button id="review-recovery" disabled={locked} onclick={refreshRecovery}>{$tr('Review local recovery drafts')}</button>{/if}
-  <details id="settings"><summary>{$tr('Settings')}</summary>
+  <details id="settings" bind:open={settingsOpen}><summary>{$tr('Settings')}</summary>
     <label>{$tr('Theme')}<select value={$preferences.theme} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('theme', e.currentTarget)}><option value="system">{$tr('System')}</option><option value="light">{$tr('Light')}</option><option value="dark">{$tr('Dark')}</option></select></label>
     <label>{$tr('Language')}<select value={$preferences.language} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('language', e.currentTarget)}><option value="en">English</option><option value="fa">فارسی</option></select></label>
     <label>{$tr('Calendar')}<select value={$preferences.calendar} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('calendar', e.currentTarget)}><option value="gregorian">{$tr('Gregorian')}</option><option value="jalali">{$tr('Jalali')}</option></select></label>
     <label>{$tr('Search mode')}<select value={$preferences.search_mode} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('search_mode', e.currentTarget)}><option value="original">{$tr('Original phrase search')}</option><option value="persian">{$tr('Persian-friendly')}</option></select></label>
   </details>
   <details><summary>{$tr('Keyboard shortcuts')}</summary><p>{$tr('Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Alt+←/→: history outside text fields')}</p></details>
+  </div>
 </main>
 
 <style>
-  :global(body) { margin: 0; background: #f6f7f4; color: #202b27; font: 16px/1.5 system-ui, sans-serif; }
-  main { max-width: 1200px; margin: auto; padding: 1rem; }
-  header { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
-  header h1 { font-size: 1.4rem; }
-  .graph-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 3rem; font-size: .85rem; }
-  .content { min-width: 0; }
-  h1, h2 { line-height: 1.2; }
-  section, aside { min-width: 0; padding: 1rem; border: 1px solid #c6d1ca; border-radius: .5rem; background: white; }
-  label { display: block; font-weight: 600; }
-  input { box-sizing: border-box; width: 100%; padding: .6rem; margin: .3rem 0 .6rem; font: inherit; }
-  button { padding: .5rem .8rem; margin: .2rem; cursor: pointer; font: inherit; }
-  button[aria-current='page'] { font-weight: bold; }
-  ul { padding: 0; list-style: none; }
-  aside button { max-width: 100%; overflow-wrap: anywhere; text-align: start; }
-  .page-list, .results { max-height: 34vh; overflow-y: auto; }
-  .page-list button, .results button { width: calc(100% - .4rem); }
-  .results span { display: block; font-size: .85rem; white-space: pre-wrap; }
-  .chosen { border-color: #275d50; background: #eaf1ed; }
-  details { margin-block: .7rem; }
-  dialog { max-width: min(36rem, 85vw); border: 1px solid #71958b; border-radius: .5rem; }
-  dialog textarea { box-sizing: border-box; width: 100%; font: inherit; }
-  summary { cursor: pointer; }
-  :global(:focus-visible) { outline: 2px solid #275d50; outline-offset: 2px; }
-  .workspace { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 1rem; margin-top: 1rem; }
-  .hint, footer { font-size: .85rem; color: #4b5d52; }
-  footer { margin-top: 2rem; }
-  [role='alert'] { color: #a01818; white-space: pre-wrap; }
-  @media (max-width: 700px) { .workspace { grid-template-columns: 1fr; } }
+  .icon-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+  .icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .app-shell { height: 100vh; min-height: 480px; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
+  .app-header { display: flex; flex: 0 0 54px; align-items: center; justify-content: space-between; gap: var(--space-4); padding-inline: var(--space-4) var(--space-6); border-block-end: 1px solid var(--line); min-width: 0; }
+  .header-start, .header-end, .history-nav { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+  .header-end { margin-inline-start: auto; }
+  .brand-mark { width: 16px; height: 16px; flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; transform: rotate(-9deg); }
+  .brand-mark i { background: var(--accent); border-radius: 2px; }.brand-mark i:nth-child(2) { opacity: .47; }.brand-mark i:nth-child(3) { opacity: .7; }.brand-mark i:nth-child(4) { opacity: .32; }
+  .brand { font-size: 13px; font-weight: 700; white-space: nowrap; }
+  .header-divider { width: 1px; height: 18px; background: var(--line); margin-inline: var(--space-2); flex: none; }
+  .icon-button, .graph-switch, .page-jump { border: 0; background: transparent; }
+  .icon-button { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; }
+  .graph-switch { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: 5px 8px; font-size: 13px; font-weight: 610; }
+  .graph-avatar { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 5px; background: var(--selected); color: var(--accent-ink); font-size: 11px; }
+  .graph-name { max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chevron { width: 14px; height: 14px; color: var(--soft); }
+  .header-status { display: flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 12px; color: var(--muted); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+  .header-status.pending .status-dot { background: var(--warning); }.header-status.problem { color: var(--danger); }.header-status.problem .status-dot { background: var(--danger); }
+  .page-jump { white-space: nowrap; padding: 6px 9px; color: var(--muted); font-size: 12px; }
+  kbd { font: 10px system-ui, sans-serif; color: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; margin-inline-start: 8px; }
+  :global([dir='rtl']) .direction-icon { transform: scaleX(-1); }
+  .graph-chooser-surface { width: min(36rem, calc(100% - 32px)); max-height: 36vh; overflow-y: auto; margin: var(--space-4) auto; flex: none; }
+  .shell-notices { max-height: 28vh; overflow-y: auto; padding-inline: var(--space-4); }
+  .shell-notices > :global(*) { margin-block: var(--space-2); }
+  .workspace { position: relative; display: grid; grid-template-columns: 254px minmax(0, 1fr); flex: 1; min-height: 0; }
+  .workspace.sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .workspace.sidebar-collapsed .app-sidebar { display: none; }
+  .app-sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-inline-end: 1px solid var(--line); background: var(--sidebar); }
+  .sidebar-top { flex: none; max-height: 65%; overflow-y: auto; padding: var(--space-6) var(--space-3) 0; }
+  .sidebar-heading { margin: 0 var(--space-3) var(--space-3); color: var(--soft); font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+  .primary-nav { display: grid; gap: 2px; }
+  .primary-nav button, .page-list button, .sidebar-bottom button { display: flex; align-items: center; width: 100%; min-height: 34px; gap: 10px; text-align: start; padding: 6px 11px; background: transparent; border: 0; color: var(--muted); font-size: 13px; }
+  .primary-nav button:hover:not(:disabled), .page-list button:hover:not(:disabled), .sidebar-bottom button:hover { background: var(--hover); }
+  .primary-nav button[aria-current='page'], .page-list button[aria-current='page'] { background: var(--selected); color: var(--accent-ink); font-weight: 630; }
+  .nav-hint { margin-inline-start: auto; color: var(--soft); font-size: 11px; font-weight: 450; white-space: nowrap; }
+  .sidebar-divider { height: 1px; background: var(--line); margin: 19px 11px 22px; }
+  .date-disclosure { margin: 0; }.date-disclosure summary { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 6px 11px; border-radius: var(--radius-control); cursor: pointer; font-size: 13px; list-style: none; }
+  .date-disclosure summary::-webkit-details-marker, .create-page summary::-webkit-details-marker { display: none; }
+  .date-disclosure summary:hover { background: var(--hover); }
+  .pages-area { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 27px var(--space-3) 0; }
+  .pages-heading { display: flex; align-items: center; justify-content: space-between; padding-inline: 11px; }
+  .pages-heading h2 { margin: 0; color: var(--soft); font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+  .create-page { position: relative; }.create-page summary { display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--radius-control); color: var(--muted); cursor: pointer; list-style: none; }
+  .create-page summary:hover { background: var(--hover); }
+  .create-page form { position: absolute; z-index: 2; inset-inline-end: 0; top: 28px; width: 225px; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface); box-shadow: 0 6px 20px #14251b20; }
+  .create-page input { width: 100%; padding: 6px; margin-block: 6px; }.create-page form button { padding: 6px 8px; }
+  .page-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 0 var(--space-4); margin: var(--space-2) 0 0; list-style: none; }
+  .page-list button { overflow: hidden; }.page-list bdi { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar-bottom { flex: none; border-block-start: 1px solid var(--line); padding: var(--space-2) var(--space-3); }
+  .search-sidebar { min-height: 0; flex: 1; overflow-y: auto; padding: 21px 15px; }
+  .search-sidebar h2 { font-size: 19px; margin: 24px 5px 15px; }.back-to-workspace { display: flex; align-items: center; gap: 9px; padding: 4px 5px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
+  .search-sidebar input { width: 100%; padding: 8px; }
+  .hint { color: var(--muted); font-size: 11px; }.search-sidebar .hint { margin-block: var(--space-2) var(--space-4); }
+  .results { max-height: 55vh; overflow-y: auto; padding: 0; list-style: none; }
+  .results button { width: 100%; text-align: start; padding: 8px; margin-block: 2px; background: transparent; border: 0; overflow-wrap: anywhere; }
+  .results button.chosen { background: var(--selected); color: var(--accent-ink); }
+  .results span { display: block; font-size: 12px; white-space: pre-wrap; }.results strong { font-size: 11px; font-weight: 620; }
+  .content { min-width: 0; min-height: 0; overflow-y: auto; }
+  .notes-view { min-width: 0; }.page-document { max-width: 812px; margin-inline: auto; padding: 52px 52px 88px; }
+  #page-heading { font-size: 28px; line-height: 1.25; font-weight: 650; margin: 0 0 var(--space-4); }
+  .journal-nav { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding-block-end: 27px; margin-block-end: var(--space-6); border-block-end: 1px solid var(--line); }
+  .journal-nav button { border: 0; background: transparent; padding: 5px 8px; color: var(--muted); font-size: 12px; }.journal-nav button:hover:not(:disabled) { background: var(--hover); }
+  .journal-nav bdi { font-size: 12px; color: var(--soft); margin-inline-start: auto; }
+  .page-document > details { margin-block: var(--space-4); color: var(--muted); font-size: 12px; }.page-document > details input { width: min(24rem, 100%); padding: 8px; margin: var(--space-2); }
+  .backlinks { border-block-start: 1px solid var(--line); margin-block-start: var(--space-8); padding-block-start: var(--space-3); color: var(--muted); font-size: 13px; }
+  .backlinks h3 { font-size: 13px; }.backlinks ul { padding: 0; list-style: none; }.backlinks button { text-align: start; max-width: 100%; overflow-wrap: anywhere; }
+  .shell-utilities { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 7px 16px; max-height: 35vh; overflow-y: auto; border-block-start: 1px solid var(--line); padding: 5px var(--space-4); background: var(--surface); }
+  footer { flex: 1; min-width: 12rem; font-size: 11px; color: var(--muted); }
+  .shell-utilities > details { font-size: 12px; color: var(--muted); }.shell-utilities summary { cursor: pointer; }.shell-utilities label { display: inline-grid; gap: 5px; margin: 8px; }.shell-utilities select { padding: 5px; }
+  .shell-utilities button { padding: 5px 8px; font-size: 12px; }
+  [role='alert'] { color: var(--danger); white-space: pre-wrap; }
+  @media (max-width: 760px) {
+    .workspace, .workspace.sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
+    .workspace .app-sidebar { display: none; }
+    .workspace.sidebar-overlay .app-sidebar { display: flex; position: absolute; z-index: 4; inset-block: 0; inset-inline-start: 0; width: min(254px, 80vw); box-shadow: 8px 0 28px #14251b25; }
+    .page-document { padding: 38px 32px 60px; }.page-jump { display: none; }
+  }
+  @media (max-width: 540px) {
+    .app-header { gap: 4px; padding-inline: 10px; }.header-start, .header-end { gap: 2px; }
+    .brand, .header-divider { display: none; }.graph-name { max-width: 106px; }
+    .page-document { padding: 32px 20px 60px; } #page-heading { font-size: 24px; }
+  }
 </style>

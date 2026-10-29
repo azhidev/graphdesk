@@ -110,6 +110,6 @@
   #editor-toolbar { display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; }
   button { font: inherit; padding: .3rem .5rem; cursor: pointer; }
   [role='status'] { margin-inline-start: auto; font-size: .85rem; }
-  .help { color: #4b5d52; font-size: .8rem; }
-  [role='alert'] { color: #a01818; border: 1px solid; padding: .5rem; margin-block: .5rem; }
+  .help { color: var(--muted); font-size: .8rem; }
+  [role='alert'] { color: var(--danger); border: 1px solid; padding: .5rem; margin-block: .5rem; }
 </style>

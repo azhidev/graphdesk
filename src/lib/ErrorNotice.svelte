@@ -8,4 +8,4 @@
     <details><summary>{$tr('Technical details')}</summary><pre dir="ltr">{message}</pre></details>
   {/if}
 </div>
-<style>div { color: #a01818; overflow-wrap: anywhere; } pre { white-space: pre-wrap; }</style>
+<style>div { color: var(--danger); overflow-wrap: anywhere; } pre { white-space: pre-wrap; }</style>

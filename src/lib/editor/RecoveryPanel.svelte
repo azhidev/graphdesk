@@ -75,7 +75,7 @@
 </dialog>
 
 <style>
-  section { border: 1px solid #8d9f96; padding: .7rem; margin-block: .7rem; }
+  section { border: 1px solid var(--line); padding: .7rem; margin-block: .7rem; }
   label { display: block; font-weight: bold; }
   textarea { display: block; box-sizing: border-box; width: 100%; min-height: 5rem; font: inherit; }
   button { font: inherit; margin: .25rem; padding: .3rem; }

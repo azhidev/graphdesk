@@ -29,5 +29,5 @@
 <style>
   .fields { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .3rem; }
   label { min-width: 0; font-size: .85rem; } input { width: 100%; box-sizing: border-box; font: inherit; padding: .4rem; }
-  button { font: inherit; padding: .5rem; margin-block: .4rem; } [role='alert'] { color: #a01818; }
+  button { font: inherit; padding: .5rem; margin-block: .4rem; } [role='alert'] { color: var(--danger); }
 </style>

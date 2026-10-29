@@ -46,12 +46,12 @@
 </dialog>
 
 <style>
-  dialog { width: min(32rem, 85vw); max-height: 85vh; border: 1px solid #71958b; border-radius: .5rem; }
+  dialog { width: min(32rem, 85vw); max-height: 85vh; border: 1px solid var(--line); border-radius: var(--radius-panel); }
   input { width: 100%; box-sizing: border-box; padding: .6rem; font: inherit; }
   label { display: block; font-weight: 600; }
   p { font-size: .85rem; }
   ul { list-style: none; padding: 0; max-height: 45vh; overflow: auto; }
   button { padding: .5rem; font: inherit; cursor: pointer; }
   li button { width: 100%; text-align: start; overflow-wrap: anywhere; margin-block: .1rem; }
-  .chosen { border-color: #275d50; background: #eaf1ed; }
+  .chosen { border-color: var(--focus); background: var(--selected); }
 </style>

@@ -33,7 +33,7 @@ export const messages = {
   'Finish or cancel the first-note form before switching graphs.': 'پیش از تغییر گراف، فرم نخستین یادداشت را کامل کنید یا انصراف دهید.',
   'Keyboard shortcuts': 'میان‌برهای صفحه‌کلید',
   'Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Alt+←/→: history outside text fields': 'Ctrl/Cmd+K: جست‌وجو · Ctrl/Cmd+P: صفحه‌ها · Ctrl/Cmd+O: باز کردن گراف · Ctrl/Cmd+Shift+J: یادداشت · Alt+←/→: تاریخچه بیرون از فیلدهای متن',
-  'Today': 'امروز', 'Tasks': 'کارها', 'Capture today': 'یادداشت امروز',
+  'Today': 'امروز', 'Journal': 'روزانه', 'Tasks': 'کارها', 'Search': 'جست‌وجو', 'Capture today': 'یادداشت امروز',
   'Previous day': 'روز قبل', 'Next day': 'روز بعد', 'Journal navigation': 'پیمایش روزانه',
   'Settings': 'تنظیمات', 'Theme': 'پوسته', 'System': 'سیستم', 'Light': 'روشن', 'Dark': 'تیره', 'Language': 'زبان', 'Calendar': 'گاه‌شماری',
   'Gregorian': 'میلادی', 'Jalali': 'جلالی', 'Search mode': 'حالت جست‌وجو',

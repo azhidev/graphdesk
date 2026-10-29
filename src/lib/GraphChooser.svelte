@@ -39,13 +39,13 @@
 </section>
 
 <style>
-  section { padding: 1rem; border: 1px solid #c6d1ca; border-radius: .5rem; background: white; }
+  section { padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface); }
   label { display: block; font-weight: 600; }
   input:not([type='checkbox']) { box-sizing: border-box; width: 100%; padding: .6rem; margin: .3rem 0 .6rem; font: inherit; }
   .check { font-weight: normal; margin-block: .5rem; }
   .check input { margin-inline-end: .5rem; }
   button { padding: .5rem .8rem; margin: .2rem; cursor: pointer; font: inherit; max-width: 100%; }
-  .hint { font-size: .85rem; color: #4b5d52; }
+  .hint { font-size: .85rem; color: var(--muted); }
   ul { list-style: none; padding: 0; max-height: 36vh; overflow: auto; }
   li { display: flex; align-items: center; flex-wrap: wrap; }
   .recent { flex: 1; min-width: 12rem; text-align: start; }
