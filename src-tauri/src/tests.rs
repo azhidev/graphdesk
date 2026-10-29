@@ -121,9 +121,12 @@ fn m5_notes_search_preferences_and_stale_sessions_ipc() {
     app.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(directory.path().join("recovery"));
     app.state::<crate::preferences::PreferencesState>().0.lock().unwrap().replace(directory.path().join("config"));
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
-    let defaults = json!({"language":"en","calendar":"gregorian","search_mode":"original"});
+    let defaults = json!({"language":"en","calendar":"gregorian","search_mode":"original","theme":"system"});
     assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap(), json!({"preferences":defaults,"warning":false}));
-    let prefs = json!({"language":"fa","calendar":"jalali","search_mode":"persian"});
+    let legacy = json!({"language":"fa","calendar":"jalali","search_mode":"persian"});
+    invoke(&window,"preferences_save",json!({"preferences":legacy})).unwrap();
+    assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap()["preferences"],json!({"language":"fa","calendar":"jalali","search_mode":"persian","theme":"system"}));
+    let prefs = json!({"language":"fa","calendar":"jalali","search_mode":"persian","theme":"dark"});
     invoke(&window,"preferences_save",json!({"preferences":prefs})).unwrap();
     assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap(), json!({"preferences":prefs,"warning":false}));
     assert!(invoke(&window,"preferences_save",json!({"preferences":{"language":"unknown","calendar":"gregorian","search_mode":"original"}})).is_err());

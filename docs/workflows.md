@@ -132,8 +132,10 @@ concurrent external writers remain unsupported. CANCELLED is readable in the sou
 editor but excluded from these filters.
 
 Gregorian ISO civil days remain storage identity. Settings independently selects
-English/Persian, Gregorian/Jalali and original/Persian-friendly search and remembers
-each choice locally. Language changes never change the other choices. Year/month/day
+English/Persian, Gregorian/Jalali, original/Persian-friendly search, and System/Light/Dark
+appearance and remembers each choice locally. System follows OS appearance. Existing saved
+language, calendar and search mode remain unchanged when upgrading from preferences without a theme.
+Language changes never change the other choices. Year/month/day
 entry accepts ASCII, Persian and Arabic digits and validates before navigation.
 Jalali labels and selection use one conversion implementation. Unsupported attempts
 show a localized message and retain the calendar/date; existing journals remain

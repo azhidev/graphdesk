@@ -77,7 +77,11 @@
       resultIndex = 0;
     });
   });
-  $effect(() => { document.documentElement.lang = $preferences.language; document.documentElement.dir = $preferences.language === 'fa' ? 'rtl' : 'ltr'; });
+  $effect(() => {
+    document.documentElement.lang = $preferences.language;
+    document.documentElement.dir = $preferences.language === 'fa' ? 'rtl' : 'ltr';
+    document.documentElement.dataset.theme = $preferences.theme;
+  });
   function presentDate(day: string) {
     try { return dateLabel(day, $preferences.calendar, $preferences.language); } catch { return day; }
   }
@@ -540,6 +544,7 @@
   <footer>{$tr('Plain-text block editor · Undo and collapse state are session-local. Acknowledged saves survive restart.')}</footer>
   {#if session}<button id="review-recovery" disabled={locked} onclick={refreshRecovery}>{$tr('Review local recovery drafts')}</button>{/if}
   <details id="settings"><summary>{$tr('Settings')}</summary>
+    <label>{$tr('Theme')}<select value={$preferences.theme} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('theme', e.currentTarget)}><option value="system">{$tr('System')}</option><option value="light">{$tr('Light')}</option><option value="dark">{$tr('Dark')}</option></select></label>
     <label>{$tr('Language')}<select value={$preferences.language} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('language', e.currentTarget)}><option value="en">English</option><option value="fa">فارسی</option></select></label>
     <label>{$tr('Calendar')}<select value={$preferences.calendar} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('calendar', e.currentTarget)}><option value="gregorian">{$tr('Gregorian')}</option><option value="jalali">{$tr('Jalali')}</option></select></label>
     <label>{$tr('Search mode')}<select value={$preferences.search_mode} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('search_mode', e.currentTarget)}><option value="original">{$tr('Original phrase search')}</option><option value="persian">{$tr('Persian-friendly')}</option></select></label>

@@ -115,7 +115,7 @@
   .bullet, .disclosure { flex: 0 0 1.5rem; text-align: center; margin: .2rem 0; padding: 0; }
   .disclosure { background: transparent; border: 1px solid transparent; cursor: pointer; font-size: 1rem; }
   textarea, .block-content { box-sizing: border-box; min-width: 0; flex: 1; font: inherit; line-height: 1.5; padding: .3rem .45rem; margin: 0; }
-  textarea { resize: none; overflow: hidden; border: 1px solid #71958b; border-radius: .2rem; background: white; }
-  .block-content { white-space: pre-wrap; overflow-wrap: anywhere; text-align: start; background: transparent; border: 1px solid transparent; cursor: text; }
-  :focus-visible { outline: 2px solid #275d50; outline-offset: 2px; }
+  textarea { resize: none; overflow: hidden; border: 1px solid var(--focus); border-radius: .2rem; background: var(--surface); color: var(--ink); }
+  .block-content { white-space: pre-wrap; overflow-wrap: anywhere; text-align: start; background: transparent; border: 1px solid transparent; cursor: text; color: var(--ink); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 </style>

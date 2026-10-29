@@ -13,9 +13,12 @@ pub(crate) enum Calendar { #[default] Gregorian, Jalali }
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SearchMode { #[default] Original, Persian }
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Theme { #[default] System, Light, Dark }
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Preferences { pub language: Language, pub calendar: Calendar, pub search_mode: SearchMode }
+pub(crate) struct Preferences { pub language: Language, pub calendar: Calendar, pub search_mode: SearchMode, #[serde(default)] pub theme: Theme }
 #[derive(Serialize)]
 pub(crate) struct Loaded { preferences: Preferences, warning: bool }
 #[derive(Default, Clone)]
@@ -150,7 +153,11 @@ mod tests {
         let root = dir.path().join("config");
         assert_eq!(load(&root).unwrap(), Preferences::default());
         assert!(!root.exists());
-        let preferences = Preferences { language: Language::Fa, calendar: Calendar::Jalali, search_mode: SearchMode::Persian };
+        // Files written before theme existed retain their independent preferences.
+        save(&root, &Preferences::default()).unwrap();
+        fs::write(root.join("preferences.json"),r#"{"language":"fa","calendar":"jalali","search_mode":"persian"}"#).unwrap();
+        assert_eq!(load(&root).unwrap(), Preferences { language: Language::Fa, calendar: Calendar::Jalali, search_mode: SearchMode::Persian, theme: Theme::System });
+        let preferences = Preferences { language: Language::Fa, calendar: Calendar::Jalali, search_mode: SearchMode::Persian, theme: Theme::Dark };
         save(&root, &preferences).unwrap();
         assert_eq!(load(&root).unwrap(),preferences);
         #[cfg(unix)] {

@@ -35,7 +35,7 @@ export const messages = {
   'Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Alt+←/→: history outside text fields': 'Ctrl/Cmd+K: جست‌وجو · Ctrl/Cmd+P: صفحه‌ها · Ctrl/Cmd+O: باز کردن گراف · Ctrl/Cmd+Shift+J: یادداشت · Alt+←/→: تاریخچه بیرون از فیلدهای متن',
   'Today': 'امروز', 'Tasks': 'کارها', 'Capture today': 'یادداشت امروز',
   'Previous day': 'روز قبل', 'Next day': 'روز بعد', 'Journal navigation': 'پیمایش روزانه',
-  'Settings': 'تنظیمات', 'Language': 'زبان', 'Calendar': 'گاه‌شماری',
+  'Settings': 'تنظیمات', 'Theme': 'پوسته', 'System': 'سیستم', 'Light': 'روشن', 'Dark': 'تیره', 'Language': 'زبان', 'Calendar': 'گاه‌شماری',
   'Gregorian': 'میلادی', 'Jalali': 'جلالی', 'Search mode': 'حالت جست‌وجو',
   'Original phrase search': 'جست‌وجوی عبارتی اصلی', 'Persian-friendly': 'سازگار با فارسی',
   'Preferences could not be loaded. Safe defaults are in use.': 'تنظیمات خوانده نشد. پیش‌فرض‌های امن فعال هستند.',
