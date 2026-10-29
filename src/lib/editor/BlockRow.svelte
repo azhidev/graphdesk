@@ -75,13 +75,7 @@
   });
 </script>
 
-<div class="block-row" style:margin-inline-start={`${Math.min(row.depth, 20) * 1.3}rem`} data-block-id={row.block.id}>
-  <select aria-label={$tr('Task status')} value={row.block.task_status ?? ''} disabled={busy}
-    onchange={setTask}>
-    <option value="">{$tr('No task')}</option><option value="todo">{$tr('TODO')}</option>
-    <option value="doing">{$tr('DOING')}</option><option value="done">{$tr('DONE')}</option>
-    {#if row.block.task_status === 'cancelled'}<option value="cancelled">{$tr('CANCELLED')}</option>{/if}
-  </select>
+<div class="block-row" class:editing={active} style:margin-inline-start={`${Math.min(row.depth, 20) * 25}px`} data-block-id={row.block.id}>
   {#if row.hasChildren}
     <button class="disclosure" aria-label={$tr(collapsed ? 'Expand children' : 'Collapse children')} aria-expanded={!collapsed}
       disabled={busy} onclick={() => void editor.toggle(row.block.id).catch(report)}>{collapsed ? '▸' : '▾'}</button>
@@ -101,6 +95,14 @@
   {:else}
     <button class="block-content" dir="auto" disabled={busy} onclick={() => editor.activate(row.block.id)}>{localText || $tr('Empty block — click to edit')}</button>
   {/if}
+  {#if active || row.block.task_status}
+    <select class="task-status" class:has-task={!!row.block.task_status} aria-label={$tr('Task status')} value={row.block.task_status ?? ''} disabled={busy}
+      onchange={setTask}>
+      <option value="">{$tr('No task')}</option><option value="todo">{$tr('TODO')}</option>
+      <option value="doing">{$tr('DOING')}</option><option value="done">{$tr('DONE')}</option>
+      {#if row.block.task_status === 'cancelled'}<option value="cancelled">{$tr('CANCELLED')}</option>{/if}
+    </select>
+  {/if}
 </div>
 {#if match && choices.length}
   <div role="group" aria-label={$tr('Page suggestions')}>
@@ -111,11 +113,18 @@
 {/if}
 
 <style>
-  .block-row { display: flex; align-items: flex-start; gap: .35rem; padding-block: .2rem; }
-  .bullet, .disclosure { flex: 0 0 1.5rem; text-align: center; margin: .2rem 0; padding: 0; }
-  .disclosure { background: transparent; border: 1px solid transparent; cursor: pointer; font-size: 1rem; }
-  textarea, .block-content { box-sizing: border-box; min-width: 0; flex: 1; font: inherit; line-height: 1.5; padding: .3rem .45rem; margin: 0; }
-  textarea { resize: none; overflow: hidden; border: 1px solid var(--focus); border-radius: .2rem; background: var(--surface); color: var(--ink); }
-  .block-content { white-space: pre-wrap; overflow-wrap: anywhere; text-align: start; background: transparent; border: 1px solid transparent; cursor: text; color: var(--ink); }
+  .block-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; margin-block: 4px; padding: 3px 8px 3px 2px; border-radius: var(--radius-control); }
+  .block-row:hover:not(.editing) { background: var(--hover); }
+  .block-row.editing { background: var(--active-row); border-inline-start: 2px solid var(--accent); padding-inline-start: 0; }
+  .block-row.editing:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .bullet, .disclosure { flex: 0 0 12px; width: 12px; text-align: center; line-height: 1.68; color: var(--soft); padding: 0; margin: 0; user-select: none; }
+  .editing .bullet { color: var(--accent); }
+  .disclosure { background: transparent; border: 0; cursor: pointer; font-size: 13px; }
+  :global([dir='rtl']) .disclosure[aria-expanded='false'] { transform: scaleX(-1); }
+  textarea, .block-content { min-width: 0; flex: 1; font: inherit; line-height: inherit; padding: 0; margin: 0; }
+  textarea { resize: none; overflow: hidden; border: 0; outline: 0; background: transparent; color: var(--ink); }
+  .block-content { white-space: pre-wrap; overflow-wrap: anywhere; text-align: start; background: transparent; border: 0; cursor: text; color: var(--ink); }
+  .task-status { flex: none; max-width: 105px; min-height: 27px; padding: 2px 4px; font-size: 11px; color: var(--muted); }
+  .task-status.has-task { background: var(--selected); color: var(--accent-ink); }
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 </style>

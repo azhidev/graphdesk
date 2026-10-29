@@ -70,6 +70,7 @@ export const messages = {
   'Recovery pending': 'ثبت بازیابی در انتظار', 'Recovery stored': 'بازیابی محلی ثبت شد', 'Recovery failed': 'ثبت بازیابی ناموفق بود',
   'Retry recovery snapshot': 'تلاش دوباره برای ثبت بازیابی',
   'Block editor actions': 'ابزارهای ویرایش بلوک', 'Undo': 'واگرد', 'Redo': 'ازنو', 'Indent': 'افزایش تورفتگی', 'Outdent': 'کاهش تورفتگی',
+  'More block actions': 'ابزارهای بیشتر بلوک', 'More': 'بیشتر',
   'Move up': 'انتقال به بالا', 'Move down': 'انتقال به پایین', 'Delete…': 'حذف…', 'Delete block and descendants': 'حذف بلوک و زیرشاخه‌ها',
   'Text save conflict': 'تعارض ذخیرهٔ متن', 'Persisted text changed. Replacing it requires your explicit choice.': 'متن ذخیره‌شده تغییر کرده است. جایگزینی آن به انتخاب صریح شما نیاز دارد.',
   'Persisted version': 'نسخهٔ ذخیره‌شده', 'Your unsaved version': 'نسخهٔ ذخیره‌نشدهٔ شما',
