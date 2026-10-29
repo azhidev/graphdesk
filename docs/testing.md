@@ -45,6 +45,24 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### UI Foundation Phase 1 — 2026-10-29 (Ubuntu guest, not native Fedora)
+
+Svelte check (zero errors/warnings), frontend build, 62 Node editor/navigation
+tests and a locked unbundled Tauri release build passed. The production WebView
+shell fixture runs on authenticated Ubuntu/Xvfb via `python3 tests/webview/smoke.py
+--shell --artifacts test-artifacts/webview-phase1-shell`; it exercises a disposable
+graph, capture, search-source focus, Tasks/Back, saved theme and independent
+Persian/Jalali preferences, narrow RTL overlay, close and reopen. Screenshots
+were inspected for English LTR and Persian RTL/dark presentation. This is not a
+real Persian IME, screen-reader, Fedora/Wayland, hardware graphics or 5,000-block
+performance measurement. The legacy `--daily` fixed-coordinate WebView fixture
+was attempted but its initial path click missed the newly centered chooser;
+remaining old coordinate suites need rebaselining before they can provide fresh
+coverage for this shell. Existing editor/controller tests still cover draft,
+composition and navigation guards; Rust persistence/IPC tests for the theme
+preference passed in the preceding theme commit. No native Fedora validation
+has been performed for this phase.
+
 ### Milestone 6 graph management and navigation — 2026-10-26
 
 On the isolated Ubuntu 24.04 guest, both locked Rust workspace configurations

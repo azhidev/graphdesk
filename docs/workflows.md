@@ -5,6 +5,16 @@ Create/open a graph to land on today's local-date journal. Choose **Capture toda
 other pages through the sidebar; empty pages offer **Add first block**.
 Click a block to edit. Markdown is literal source; multiline paste stays in one block.
 
+The compact header contains the current graph's short name (hover for its full
+path), save status, Back/Forward and Go to page. The graph name opens the existing
+chooser; the sidebar toggle collapses navigation on desktop and opens an overlay
+at 760px or narrower. Journal, Capture, Tasks and Search share the sidebar; Search
+temporarily replaces its navigation list without unloading the selected editor.
+The pinned Settings entry opens the existing preferences disclosure; Phase 1 does
+not provide a Settings modal. Save failures and recovery actions still appear in
+their existing editor and recovery surfaces. Choose System/Light/Dark independently
+of language, calendar and search preferences; System follows the desktop scheme.
+
 **Previous day / Today / Next day** follow journal identity, including renamed
 journals. The sidebar's **Journal date** uses the calendar selected in Settings. Browsing
 an absent day shows an empty preview without creating a page, block or reference.
@@ -114,7 +124,7 @@ Optional Persian-friendly mode folds Arabic Yeh/Kaf and Persian/Arabic digits in
 queries and derived indexes only. ZWNJ and spaces are boundaries; joined words
 still differ from separated words. Title uniqueness and link resolution are unchanged.
 
-Ctrl/Cmd+K focuses search. Input is debounced 200 ms and paused during composition;
+Ctrl/Cmd+K opens the sidebar search and focuses its input. Input is debounced 200 ms and paused during composition;
 query/graph changes immediately invalidate earlier results. Up/Down choose a result,
 Enter opens it, and Escape clears search. Results remain ordinary keyboard-focusable
 buttons, show the owning page and bounded previews, and refresh after acknowledged

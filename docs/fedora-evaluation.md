@@ -45,6 +45,60 @@ symbolic remote HEAD, so explicitly select `--branch main`; `--no-local` makes
 the clone independent of the transferred bundle. The exact SHA/digest will be
 supplied alongside the bundle after its creation, not predicted here.
 
+## Updating an existing evaluation checkout for UI Foundation Phase 1
+
+After Phase 1 is committed in the Ubuntu guest, create a **new** full bundle from
+the reviewed `main` branch (do not include untracked prototypes or notes):
+
+```sh
+revision=$(git rev-parse HEAD)
+mkdir -p test-artifacts/fedora-phase1
+bundle="test-artifacts/fedora-phase1/graphdesk-ui-phase1-$revision.bundle"
+test ! -e "$bundle" && git bundle create "$bundle" main
+git bundle verify "$bundle"
+git bundle list-heads "$bundle"
+sha256sum "$bundle"
+```
+
+Transfer that single bundle using the existing approved Fedora-side mechanism
+above, substituting the displayed bundle path and name. Verify its SHA-256 and
+full commit against the Ubuntu output **before** using it. For an existing clean
+Fedora evaluation checkout (do not overwrite work or another project):
+
+```sh
+checkout="$HOME/graphdesk-fedora-m7-SHORT_SHA"  # your existing evaluation checkout
+bundle="$HOME/Downloads/graphdesk-ui-phase1-FULL_SHA.bundle"
+test -z "$(git -C "$checkout" status --porcelain)"
+sha256sum "$bundle"  # must match the Ubuntu digest
+git -C "$checkout" bundle verify "$bundle"
+git -C "$checkout" fetch "$bundle" main
+git -C "$checkout" switch --detach FETCH_HEAD
+git -C "$checkout" rev-parse HEAD  # must equal FULL_SHA
+cd "$checkout"
+node --version
+rustc --version
+pkg-config --modversion gtk+-3.0 webkit2gtk-4.1
+npm ci --ignore-scripts
+npm run check
+npm run test:editor
+npm run tauri -- build --no-bundle -- --locked
+file target/release/graphdesk-desktop
+ldd target/release/graphdesk-desktop  # no 'not found' entries
+```
+
+Use the actual checkout path, bundle name, full SHA and digest reported from
+the guest; stop if any guard fails. Rebuild on Fedora, not from the Ubuntu ELF.
+From separate Wayland and X11-backed launches of this newly built binary (as
+available), create a disposable graph; compare English LTR/System and forced
+Light/Dark, switch to Persian RTL/Jalali and back, and verify independent saved
+preferences after restart. Exercise narrow sidebar/search, Tasks and journal
+dates, page creation/graph switching, editor focus and keyboard navigation,
+autosave/error/recovery with disposable data, mixed-direction text and a real
+Persian IME candidate/preedit cycle. Compare a representative 5,000-block page
+for typing and scroll responsiveness against the prior release. Record actual
+backend, WebKit/GTK versions, scale, pass/fail/not-tested and sanitized results;
+the Ubuntu/Xvfb screenshots are not Fedora evidence.
+
 ## Prerequisites
 
 On conventional dnf-based Fedora, an administrator can review these packages

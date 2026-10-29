@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--daily', action='store_true', help='Daily workflow suite (the default)')
     parser.add_argument('--persian', action='store_true', help='Bilingual calendar/search and pending-note crash recovery')
     parser.add_argument('--navigation', action='store_true', help='Native graph dialogs, registry, single instance and navigation')
+    parser.add_argument('--shell', action='store_true', help='Phase 1 shell and preference integration')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     args.artifacts.mkdir(parents=True, exist_ok=True)
@@ -57,7 +58,8 @@ def main():
                                     '--inside', '--artifacts', str(args.artifacts.resolve()),
                                     *(['--reliability'] if args.reliability else []),
                                     *(['--persian'] if args.persian else []),
-                                    *(['--navigation'] if args.navigation else [])], cwd=root, env=env, check=True, timeout=300)
+                                    *(['--navigation'] if args.navigation else []),
+                                    *(['--shell'] if args.shell else [])], cwd=root, env=env, check=True, timeout=300)
                 finally:
                     os.close(display_read)
                     xvfb.terminate(); xvfb.wait(timeout=10)
@@ -145,6 +147,10 @@ def main():
         xdo('key', 'ctrl+k', 'ctrl+a'); paste(text); pump(.5)
 
     try:
+        if args.shell:
+            from shell_smoke import run
+            run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, lambda: app)
+            return
         start(); shot('01-shell')
         field(220, 140, str(graph)); click(270, 200)
         today = time.strftime('%Y-%m-%d')
