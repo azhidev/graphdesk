@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calendarDate, calendarFields, adjacentDay, dateLabel, dateNumber, asciiDigits, localDate, displayPageTitle } from '../../src/lib/dates.ts';
+import { calendarDate, calendarFields, adjacentDay, dateLabel, dateHeading, dateNumber, asciiDigits, localDate, displayPageTitle } from '../../src/lib/dates.ts';
 import { messages, translate, errorText } from '../../src/lib/i18n.ts';
 import { keyIntent, shortcutLetter } from '../../src/lib/editor/keyboard.ts';
 import { FirstNoteController } from '../../src/lib/firstNote.ts';
@@ -42,6 +42,17 @@ test('calendar range boundaries and date-only round trips never change the store
   assert.equal(displayPageTitle(page,'gregorian','en'),'2024-03-20');
   assert.deepEqual(page,{id:'stable-id',title:'2024-03-20',journal_date:'2024-03-20'});
   assert.equal(displayPageTitle({title:'1700-01-01',journal_date:'1700-01-01'},'jalali','fa'),'1700-01-01');
+});
+
+test('journal headings format the chosen calendar without changing date identity or page titles', () => {
+  assert.equal(dateHeading('2024-03-20', 'gregorian', 'en'), 'March 20, 2024');
+  assert.match(dateHeading('2024-03-20', 'gregorian', 'fa'), /۲۰۲۴/);
+  assert.match(dateHeading('2024-03-20', 'jalali', 'en'), /1403/);
+  assert.match(dateHeading('2024-03-20', 'jalali', 'fa'), /۱۴۰۳/);
+  assert.notEqual(dateHeading('2024-03-20', 'jalali', 'en'), dateHeading('2024-03-20', 'gregorian', 'en'));
+  assert.equal(dateHeading('2025-03-20', 'jalali', 'en'), 'Esfand 30, 1403');
+  assert.throws(() => dateHeading('1700-01-01', 'jalali', 'fa'), { name: 'unsupported' });
+  assert.equal(displayPageTitle({title:'Renamed فارسی',journal_date:'2024-03-20'}, 'jalali', 'en'), 'Renamed فارسی');
 });
 
 test('translations cover every declared key, preserve content interpolation and have a safe fallback', () => {

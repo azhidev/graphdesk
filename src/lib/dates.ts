@@ -79,6 +79,26 @@ export function dateLabel(day: CivilDate, calendar: Calendar, language: 'en' | '
   return language === 'fa' ? label.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]) : label;
 }
 
+/** Long-form journal heading; the stored ISO day and calendar choice are unchanged. */
+export function dateHeading(day: CivilDate, calendar: Calendar, language: 'en' | 'fa'): string {
+  const fields = calendarFields(day, calendar); // Same conversion authority and range as the picker.
+  if (calendar === 'jalali') {
+    const months = language === 'fa'
+      ? ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند']
+      : ['Farvardin', 'Ordibehesht', 'Khordad', 'Tir', 'Mordad', 'Shahrivar', 'Mehr', 'Aban', 'Azar', 'Dey', 'Bahman', 'Esfand'];
+    const digits = new Intl.NumberFormat(language === 'fa' ? 'fa-IR' : 'en-US', { useGrouping: false });
+    return language === 'fa' ? `${digits.format(fields.day)} ${months[fields.month - 1]} ${digits.format(fields.year)}`
+      : `${months[fields.month - 1]} ${digits.format(fields.day)}, ${digits.format(fields.year)}`;
+  }
+  const [year, month, date] = day.split('-').map(Number);
+  const instant = new Date(0);
+  instant.setUTCHours(12, 0, 0, 0);
+  instant.setUTCFullYear(year, month - 1, date);
+  return new Intl.DateTimeFormat(`${language === 'fa' ? 'fa-IR' : 'en-US'}-u-ca-gregory`, {
+    timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric',
+  }).format(instant);
+}
+
 /** A presentation label, never a rename or a reference-resolution key. */
 export function displayPageTitle(page: { title: string; journal_date?: string | null }, calendar: Calendar, language: 'en' | 'fa'): string {
   if (page.journal_date && page.title === page.journal_date) {

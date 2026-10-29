@@ -7,7 +7,7 @@
   import PageEditor from './lib/editor/PageEditor.svelte';
   import RecoveryPanel from './lib/editor/RecoveryPanel.svelte';
   import type { RecoveryDraft, Block } from './lib/editor/types';
-  import { localDate, adjacentDay, dateLabel, calendarFields, displayPageTitle } from './lib/dates';
+  import { localDate, adjacentDay, dateLabel, dateHeading, calendarFields, displayPageTitle } from './lib/dates';
   import CalendarPicker from './lib/CalendarPicker.svelte';
   import { preferences, tr } from './lib/preferences';
   import { get } from 'svelte/store';
@@ -90,6 +90,9 @@
   });
   function presentDate(day: string) {
     try { return dateLabel(day, $preferences.calendar, $preferences.language); } catch { return day; }
+  }
+  function headingDate(day: string) {
+    try { return dateHeading(day, $preferences.calendar, $preferences.language); } catch { return presentDate(day); }
   }
   function unsupportedDate(day: string) { try { calendarFields(day, $preferences.calendar); return false; } catch { return true; } }
   function pageLabel(page: Page) { return displayPageTitle(page, $preferences.calendar, $preferences.language); }
@@ -618,14 +621,13 @@
       <div hidden={view !== 'notes'} class="notes-view">
       <section class="page-document" aria-label={$tr('Page content')}>
         {#if selected || previewDate}
-          <h2 id="page-heading" tabindex="-1" dir="auto">{selected ? pageLabel(selected) : presentDate(previewDate!)}</h2>
+          <h2 id="page-heading" tabindex="-1" dir="auto">{selected?.journal_date && selected.title === selected.journal_date ? headingDate(selected.journal_date) : selected ? pageLabel(selected) : headingDate(previewDate!)}</h2>
           {#if selected?.journal_date || previewDate}
             {@const day = selected?.journal_date ?? previewDate!}
             <nav class="journal-nav" aria-label={$tr('Journal navigation')}>
               <button disabled={locked || day === '0000-01-01'} onclick={() => journal(adjacentDay(day, -1))}>{$tr('Previous day')}</button>
               <button disabled={locked} onclick={() => journal(localDate())}>{$tr('Today')}</button>
               <button disabled={locked || day === '9999-12-31'} onclick={() => journal(adjacentDay(day, 1))}>{$tr('Next day')}</button>
-              <bdi>{presentDate(day)}</bdi>
             </nav>
             {#if unsupportedDate(day)}<p role="alert">{$tr('This date cannot be used in Jalali. Its Gregorian identity is unchanged.')}</p>{/if}
           {/if}
@@ -722,10 +724,9 @@
   .results span { display: block; font-size: 12px; white-space: pre-wrap; }.results strong { font-size: 11px; font-weight: 620; }
   .content { min-width: 0; min-height: 0; overflow-y: auto; }
   .notes-view { min-width: 0; }.page-document { max-width: 812px; margin-inline: auto; padding: 52px 52px 88px; }
-  #page-heading { font-size: 28px; line-height: 1.25; font-weight: 650; margin: 0 0 var(--space-4); }
+  #page-heading { font-size: 28px; line-height: 1.25; letter-spacing: -.025em; font-weight: 650; margin: 0 0 var(--space-4); }
   .journal-nav { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding-block-end: 27px; margin-block-end: var(--space-6); border-block-end: 1px solid var(--line); }
   .journal-nav button { border: 0; background: transparent; padding: 5px 8px; color: var(--muted); font-size: 12px; }.journal-nav button:hover:not(:disabled) { background: var(--hover); }
-  .journal-nav bdi { font-size: 12px; color: var(--soft); margin-inline-start: auto; }
   .page-document > details { margin-block: var(--space-4); color: var(--muted); font-size: 12px; }.page-document > details input { width: min(24rem, 100%); padding: 8px; margin: var(--space-2); }
   .backlinks { border-block-start: 1px solid var(--line); margin-block-start: var(--space-8); padding-block-start: var(--space-3); color: var(--muted); font-size: 13px; }
   .backlinks h3 { font-size: 13px; }.backlinks ul { padding: 0; list-style: none; }.backlinks button { text-align: start; max-width: 100%; overflow-wrap: anywhere; }
