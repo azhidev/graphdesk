@@ -36,6 +36,7 @@ export const messages = {
   'Today': 'امروز', 'Journal': 'روزانه', 'Tasks': 'کارها', 'Search': 'جست‌وجو', 'Capture today': 'یادداشت امروز',
   'Previous day': 'روز قبل', 'Next day': 'روز بعد', 'Journal navigation': 'پیمایش روزانه',
   'Settings': 'تنظیمات', 'Theme': 'پوسته', 'System': 'سیستم', 'Light': 'روشن', 'Dark': 'تیره', 'Language': 'زبان', 'Calendar': 'گاه‌شماری',
+  'Close settings': 'بستن تنظیمات', 'Done': 'تمام', 'Close workspace navigation': 'بستن پیمایش فضای کار',
   'Gregorian': 'میلادی', 'Jalali': 'جلالی', 'Search mode': 'حالت جست‌وجو',
   'Original phrase search': 'جست‌وجوی عبارتی اصلی', 'Persian-friendly': 'سازگار با فارسی',
   'Preferences could not be loaded. Safe defaults are in use.': 'تنظیمات خوانده نشد. پیش‌فرض‌های امن فعال هستند.',

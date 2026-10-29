@@ -45,6 +45,27 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### UI Foundation Phase 2 — 2026-10-29 (Ubuntu/Xvfb, not Fedora)
+
+Settings is a native modal with four independently persisted preferences, a
+keyboard-accessible close control, Escape and focus return. The narrow workspace
+sidebar has a scrim, Escape/outside-click dismissal, contained keyboard focus
+and a mounted editor; the content is inert only while the overlay is open.
+Recovery and save failures remain in the visible notices/editor controls, while
+routine footer copy has been removed. No schema, Core, block-input or routing
+changes were made.
+
+Run the production capture fixture with `python3 tests/webview/smoke.py --review
+--artifacts test-artifacts/webview-phase2-review` after an unbundled release
+build. Its nine screenshots include light/dark English Journal, Persian RTL
+Journal, Settings, Search, and the narrow sidebar closed/open. The `--shell`
+fixture additionally checks persisted preferences after restart, source focus,
+Tasks/history and narrow search. These runs use an authenticated isolated Xvfb
+display, a disposable graph, and native WebKitGTK IPC; they are **not** native
+Fedora/Wayland, real Persian IME or assistive-technology evidence. Legacy
+fixed-coordinate daily/reliability/Persian/navigation smoke suites still require
+individual rebaselining for the Phase 1 shell before claiming coverage.
+
 ### UI Foundation Phase 1 — 2026-10-29 (Ubuntu guest, not native Fedora)
 
 Svelte check (zero errors/warnings), frontend build, 62 Node editor/navigation

@@ -45,7 +45,18 @@ symbolic remote HEAD, so explicitly select `--branch main`; `--no-local` makes
 the clone independent of the transferred bundle. The exact SHA/digest will be
 supplied alongside the bundle after its creation, not predicted here.
 
-## Updating an existing evaluation checkout for UI Foundation Phase 1
+## Updating an existing evaluation checkout for UI Foundation
+
+For Phase 2, use the same guarded bundle/update procedure below but substitute
+`phase2` in the artifact name and use the **Phase 2 committed revision**. On the
+clean Fedora checkout verify the full SHA and digest, run `npm ci --ignore-scripts`,
+`npm run check`, `npm run test:editor`, `npm run test:schema`, and
+`npm run tauri -- build --no-bundle -- --locked`. Launch the newly built
+`target/release/graphdesk-desktop` there, not the Ubuntu binary. In addition to
+the checklist below, inspect Settings focus/Escape/return, persisted independent
+preferences across restart, narrow overlay focus/outside click in both directions,
+search/source focus, active drafts and recovery during navigation. Do not report
+Ubuntu/Xvfb captures as Fedora validation.
 
 After Phase 1 is committed in the Ubuntu guest, create a **new** full bundle from
 the reviewed `main` branch (do not include untracked prototypes or notes):

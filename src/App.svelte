@@ -46,6 +46,9 @@
   let view = $state<'notes' | 'tasks'>('notes');
   let searchOpen = $state(false), sidebarCollapsed = $state(false), sidebarOverlay = $state(false), narrow = $state(false);
   let settingsOpen = $state(false);
+  let settingsDialog: HTMLDialogElement;
+  let settingsReturn: HTMLElement | null = null;
+  let sidebarToggle = $state<HTMLButtonElement>();
   let previewDate = $state<string | null>(null);
   let firstNoteDialog: HTMLDialogElement;
   let firstNoteReturn: HTMLElement | null = null;
@@ -146,10 +149,18 @@
   const composing = $derived.by(() => { revision; return editor.composing; });
   const saveView = $derived.by(() => { revision; return { status: editor.status, error: !!editor.error, dirty: editor.dirty }; });
   const graphName = $derived(activePath.split(/[\\/]/).at(-1) || activePath);
-  function toggleSidebar() {
-    if (searchComposing) return;
-    if (narrow) sidebarOverlay = !sidebarOverlay;
-    else sidebarCollapsed = !sidebarCollapsed;
+  async function closeOverlay(restore = true) {
+    if (!sidebarOverlay || searchComposing || editor.composing) return;
+    sidebarOverlay = false;
+    if (restore) { await tick(); sidebarToggle?.focus(); }
+  }
+  async function toggleSidebar() {
+    if (searchComposing || editor.composing) return;
+    if (narrow) {
+      if (sidebarOverlay) await closeOverlay();
+      else { sidebarOverlay = true; await tick();
+        (document.querySelector<HTMLElement>('#workspace-sidebar button:not(:disabled)'))?.focus(); }
+    } else sidebarCollapsed = !sidebarCollapsed;
   }
   async function openSearch() {
     if (!session || locked) return;
@@ -162,9 +173,15 @@
     searchOpen = false; await tick(); document.getElementById('search-entry')?.focus();
   }
   async function revealSettings() {
-    settingsOpen = true; await tick();
-    const summary = document.querySelector<HTMLElement>('#settings summary');
-    summary?.scrollIntoView({ block: 'nearest' }); summary?.focus();
+    if (settingsDialog.open || editor.composing || searchComposing) return;
+    settingsReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    settingsDialog.showModal(); settingsOpen = true;
+    await tick(); document.getElementById('settings-theme')?.focus();
+  }
+  function closeSettings() {
+    settingsDialog.close(); settingsOpen = false;
+    if (settingsReturn?.isConnected) settingsReturn.focus();
+    else sidebarToggle?.focus();
   }
   async function goPages() {
     if (locked) return;
@@ -263,8 +280,11 @@
     else await focusPage();
   }
   async function navigate(target: Destination) {
-    departureAllowed(); rememberLocation(); await navigation.visit(target, loadDestination); navRevision++;
-    if (narrow) sidebarOverlay = false;
+    departureAllowed(); rememberLocation();
+    const wasOverlay = narrow && sidebarOverlay;
+    if (wasOverlay) { sidebarOverlay = false; await tick(); }
+    try { await navigation.visit(target, loadDestination); navRevision++; }
+    catch (e) { if (wasOverlay) sidebarOverlay = true; throw e; }
   }
   async function moveHistory(delta: -1 | 1) {
     await run(async () => { departureAllowed(); rememberLocation(); await navigation.move(delta, loadDestination); });
@@ -323,6 +343,7 @@
   async function capture(date = localDate()) {
     await run(async () => {
       departureAllowed(); rememberLocation();
+      if (narrow && sidebarOverlay) { sidebarOverlay = false; await tick(); }
       await navigation.visit({ kind: 'journal', date }, () => openJournal(date, true));
       const empty = editor.blocks.find(b => !b.parent_id && !b.content && !b.task_status && !editor.blocks.some(child => child.parent_id === b.id));
       if (empty) editor.reveal(empty.id);
@@ -392,6 +413,19 @@
       event.preventDefault(); void selectHit(results.hits[resultIndex]);
     } else if (event.key === 'Escape') { event.preventDefault(); query = ''; searchOpen = false; if (narrow) sidebarOverlay = false; void focusPage(); }
   }
+  function overlayKeys(event: KeyboardEvent) {
+    if (event.key === 'Tab' && sidebarOverlay && !document.querySelector('dialog[open]')) {
+      const controls = [...document.querySelectorAll<HTMLElement>('#workspace-sidebar button:not(:disabled), #workspace-sidebar input:not(:disabled), #workspace-sidebar select:not(:disabled), #workspace-sidebar summary')].filter(el => el.getClientRects().length);
+      if (controls.length) {
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    }
+    if (event.key === 'Escape' && sidebarOverlay && !document.querySelector('dialog[open]') && !event.isComposing && event.keyCode !== 229 && !searchComposing && !editor.composing) {
+      event.preventDefault(); event.stopPropagation(); void closeOverlay();
+    }
+  }
   async function addPage(event: SubmitEvent) {
     event.preventDefault();
     if (!session) return;
@@ -430,7 +464,7 @@
   });
 </script>
 
-<svelte:window onkeydown={shortcut} />
+<svelte:window onkeydown={shortcut} onkeydowncapture={overlayKeys} />
 <svg class="icon-defs" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
   <symbol id="shell-panel" viewBox="0 0 20 20"><rect x="2.5" y="3" width="15" height="14" rx="2"/><path d="M7.5 3v14"/></symbol>
   <symbol id="shell-journal" viewBox="0 0 20 20"><rect x="3.25" y="3.25" width="13.5" height="13.5" rx="2"/><path d="M3.5 7.5h13M7 2v3M13 2v3M7 11h2.5"/></symbol>
@@ -444,6 +478,18 @@
   <symbol id="shell-chevron" viewBox="0 0 20 20"><path d="m5.5 7.5 4.5 4.5 4.5-4.5"/></symbol>
 </svg>
 <PageSwitcher bind:this={quickPages} {pages} label={pageLabel} disabled={locked || !session || composing} onOpen={select} />
+
+<dialog bind:this={settingsDialog} class="settings-dialog" aria-labelledby="settings-heading" oncancel={e => { e.preventDefault(); closeSettings(); }}>
+  <div class="settings-header"><h2 id="settings-heading">{$tr('Settings')}</h2><button class="icon-button" aria-label={$tr('Close settings')} onclick={closeSettings}>×</button></div>
+  <div class="settings-fields">
+    <label>{$tr('Theme')}<select id="settings-theme" value={$preferences.theme} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('theme', e.currentTarget)}><option value="system">{$tr('System')}</option><option value="light">{$tr('Light')}</option><option value="dark">{$tr('Dark')}</option></select></label>
+    <label>{$tr('Language')}<select value={$preferences.language} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('language', e.currentTarget)}><option value="en">English</option><option value="fa">فارسی</option></select></label>
+    <label>{$tr('Calendar')}<select value={$preferences.calendar} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('calendar', e.currentTarget)}><option value="gregorian">{$tr('Gregorian')}</option><option value="jalali">{$tr('Jalali')}</option></select></label>
+    <label>{$tr('Search mode')}<select value={$preferences.search_mode} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('search_mode', e.currentTarget)}><option value="original">{$tr('Original phrase search')}</option><option value="persian">{$tr('Persian-friendly')}</option></select></label>
+  </div>
+  {#if prefsError}<ErrorNotice message={prefsError} />{/if}
+  <div class="settings-footer"><details><summary>{$tr('Keyboard shortcuts')}</summary><p>{$tr('Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Alt+←/→: history outside text fields')}</p></details><button class="settings-done" onclick={closeSettings}>{$tr('Done')}</button></div>
+</dialog>
 
 <dialog bind:this={firstNoteDialog} aria-labelledby="first-note-heading" oncancel={event => { event.preventDefault(); cancelFirstNote(); }}>
   <h2 id="first-note-heading">{$tr('First note for {date}', { date: firstNoteDate ? presentDate(firstNoteDate) : '' })}</h2>
@@ -469,7 +515,7 @@
 <main class="app-shell">
   <header class="app-header">
     <div class="header-start">
-      {#if session}<button class="icon-button sidebar-toggle" aria-label={$tr('Workspace')} aria-expanded={narrow ? sidebarOverlay : !sidebarCollapsed} aria-controls="workspace-sidebar" onclick={toggleSidebar}><svg class="icon" aria-hidden="true"><use href="#shell-panel" /></svg></button>{/if}
+      {#if session}<button bind:this={sidebarToggle} class="icon-button sidebar-toggle" aria-label={$tr('Workspace')} aria-expanded={narrow ? sidebarOverlay : !sidebarCollapsed} aria-controls="workspace-sidebar" onclick={toggleSidebar}><svg class="icon" aria-hidden="true"><use href="#shell-panel" /></svg></button>{/if}
       <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand">GraphDesk</span>
       {#if session}<span class="header-divider" aria-hidden="true"></span>
         <button class="graph-switch" disabled={locked} aria-expanded={switching} title={activePath} onclick={() => switching = !switching}><span class="graph-avatar" aria-hidden="true">{graphName.charAt(0).toUpperCase()}</span><bdi dir="auto" class="graph-name">{graphName}</bdi><svg class="icon chevron" aria-hidden="true"><use href="#shell-chevron" /></svg><span class="sr-only">{$tr(switching ? 'Cancel graph switch' : 'Switch graph')}</span></button>
@@ -483,7 +529,7 @@
         <button class="icon-button" aria-label={$tr('Forward')} disabled={locked || !history.forward} onclick={() => moveHistory(1)} title="Alt+→"><svg class="icon direction-icon" aria-hidden="true"><use href="#shell-right" /></svg></button>
       </nav>
       <button class="page-jump" disabled={locked || composing} onclick={goPages} title="Ctrl/Cmd+P">{$tr('Go to page')} <kbd dir="ltr">Ctrl/Cmd P</kbd></button>
-    </div>{/if}
+    </div>{:else}<button class="icon-button" aria-label={$tr('Settings')} onclick={revealSettings}><svg class="icon" aria-hidden="true"><use href="#shell-settings" /></svg></button>{/if}
   </header>
   {#if !session || switching}
   <div class="graph-chooser-surface"><GraphChooser bind:path bind:composing={graphComposing} {registry} ready={prefsReady && registryReady} disabled={locked}
@@ -514,6 +560,7 @@
   </div>
   {#if session}
     <div class="workspace" class:sidebar-collapsed={sidebarCollapsed} class:sidebar-overlay={sidebarOverlay}>
+      {#if narrow && sidebarOverlay}<button class="sidebar-scrim" tabindex="-1" aria-label={$tr('Close workspace navigation')} onclick={() => closeOverlay()}></button>{/if}
       <aside class="app-sidebar" id="workspace-sidebar" aria-label={$tr('Workspace')}>
         {#if searchOpen}
         <div class="search-sidebar shell-scroll">
@@ -563,7 +610,7 @@
         {/if}
         <div class="sidebar-bottom"><button onclick={revealSettings}><svg class="icon" aria-hidden="true"><use href="#shell-settings" /></svg>{$tr('Settings')}</button></div>
       </aside>
-      <div class="content shell-scroll">
+      <div class="content shell-scroll" inert={narrow && sidebarOverlay}>
       {#if view === 'tasks' && session}
         <TasksView {session} {pages} refreshKey={acknowledgedBlocks} disabled={locked} bind:status={taskStatus} bind:page={taskPage} onFilter={rememberLocation}
           onOpen={hit => selectHit({ id: hit.id, page_id: hit.page_id, kind: 'block', text: hit.content })} />
@@ -609,16 +656,7 @@
       </div>
     </div>
   {/if}
-  <div class="shell-utilities"><footer>{$tr('Plain-text block editor · Undo and collapse state are session-local. Acknowledged saves survive restart.')}</footer>
-  {#if session}<button id="review-recovery" disabled={locked} onclick={refreshRecovery}>{$tr('Review local recovery drafts')}</button>{/if}
-  <details id="settings" bind:open={settingsOpen}><summary>{$tr('Settings')}</summary>
-    <label>{$tr('Theme')}<select value={$preferences.theme} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('theme', e.currentTarget)}><option value="system">{$tr('System')}</option><option value="light">{$tr('Light')}</option><option value="dark">{$tr('Dark')}</option></select></label>
-    <label>{$tr('Language')}<select value={$preferences.language} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('language', e.currentTarget)}><option value="en">English</option><option value="fa">فارسی</option></select></label>
-    <label>{$tr('Calendar')}<select value={$preferences.calendar} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('calendar', e.currentTarget)}><option value="gregorian">{$tr('Gregorian')}</option><option value="jalali">{$tr('Jalali')}</option></select></label>
-    <label>{$tr('Search mode')}<select value={$preferences.search_mode} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('search_mode', e.currentTarget)}><option value="original">{$tr('Original phrase search')}</option><option value="persian">{$tr('Persian-friendly')}</option></select></label>
-  </details>
-  <details><summary>{$tr('Keyboard shortcuts')}</summary><p>{$tr('Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Alt+←/→: history outside text fields')}</p></details>
-  </div>
+  {#if session && (recoveryRecords.length || recoveryError)}<div class="shell-utilities"><button id="review-recovery" disabled={locked} onclick={refreshRecovery}>{$tr('Review local recovery drafts')}</button></div>{/if}
 </main>
 
 <style>
@@ -633,7 +671,8 @@
   .brand-mark i { background: var(--accent); border-radius: 2px; }.brand-mark i:nth-child(2) { opacity: .47; }.brand-mark i:nth-child(3) { opacity: .7; }.brand-mark i:nth-child(4) { opacity: .32; }
   .brand { font-size: 13px; font-weight: 700; white-space: nowrap; }
   .header-divider { width: 1px; height: 18px; background: var(--line); margin-inline: var(--space-2); flex: none; }
-  .icon-button, .graph-switch, .page-jump { border: 0; background: transparent; }
+  .icon-button, .graph-switch, .page-jump { border: 0; background: transparent; border-radius: var(--radius-control); }
+  .icon-button:hover:not(:disabled), .graph-switch:hover:not(:disabled), .page-jump:hover:not(:disabled) { background: var(--hover); }
   .icon-button { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; }
   .graph-switch { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: 5px 8px; font-size: 13px; font-weight: 610; }
   .graph-avatar { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 5px; background: var(--selected); color: var(--accent-ink); font-size: 11px; }
@@ -655,7 +694,7 @@
   .sidebar-top { flex: none; max-height: 65%; overflow-y: auto; padding: var(--space-6) var(--space-3) 0; }
   .sidebar-heading { margin: 0 var(--space-3) var(--space-3); color: var(--soft); font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
   .primary-nav { display: grid; gap: 2px; }
-  .primary-nav button, .page-list button, .sidebar-bottom button { display: flex; align-items: center; width: 100%; min-height: 34px; gap: 10px; text-align: start; padding: 6px 11px; background: transparent; border: 0; color: var(--muted); font-size: 13px; }
+  .primary-nav button, .page-list button, .sidebar-bottom button { display: flex; align-items: center; width: 100%; min-height: 34px; gap: 10px; text-align: start; padding: 6px 11px; background: transparent; border: 0; border-radius: var(--radius-control); color: var(--muted); font-size: 13px; }
   .primary-nav button:hover:not(:disabled), .page-list button:hover:not(:disabled), .sidebar-bottom button:hover { background: var(--hover); }
   .primary-nav button[aria-current='page'], .page-list button[aria-current='page'] { background: var(--selected); color: var(--accent-ink); font-weight: 630; }
   .nav-hint { margin-inline-start: auto; color: var(--soft); font-size: 11px; font-weight: 450; white-space: nowrap; }
@@ -690,15 +729,24 @@
   .page-document > details { margin-block: var(--space-4); color: var(--muted); font-size: 12px; }.page-document > details input { width: min(24rem, 100%); padding: 8px; margin: var(--space-2); }
   .backlinks { border-block-start: 1px solid var(--line); margin-block-start: var(--space-8); padding-block-start: var(--space-3); color: var(--muted); font-size: 13px; }
   .backlinks h3 { font-size: 13px; }.backlinks ul { padding: 0; list-style: none; }.backlinks button { text-align: start; max-width: 100%; overflow-wrap: anywhere; }
-  .shell-utilities { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 7px 16px; max-height: 35vh; overflow-y: auto; border-block-start: 1px solid var(--line); padding: 5px var(--space-4); background: var(--surface); }
-  footer { flex: 1; min-width: 12rem; font-size: 11px; color: var(--muted); }
-  .shell-utilities > details { font-size: 12px; color: var(--muted); }.shell-utilities summary { cursor: pointer; }.shell-utilities label { display: inline-grid; gap: 5px; margin: 8px; }.shell-utilities select { padding: 5px; }
+  .shell-utilities { display: flex; flex: none; align-items: center; border-block-start: 1px solid var(--line); padding: 5px var(--space-4); background: var(--surface); }
   .shell-utilities button { padding: 5px 8px; font-size: 12px; }
+  .settings-dialog { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: 24px; box-shadow: 0 18px 55px #101a1438; }
+  .settings-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-block-end: 24px; }
+  .settings-header h2 { margin: 0; font-size: 21px; line-height: 1.25; }
+  .settings-header button { font-size: 23px; color: var(--muted); }
+  .settings-fields { display: grid; gap: 20px; }
+  .settings-fields label { display: grid; gap: 7px; font-size: 13px; font-weight: 620; }
+  .settings-fields select { min-height: 36px; width: 100%; padding: 6px 10px; font-weight: 400; }
+  .settings-footer { display: flex; justify-content: space-between; align-items: start; gap: 14px; border-block-start: 1px solid var(--line); margin-block-start: 28px; padding-block-start: 16px; }
+  .settings-footer details { font-size: 12px; color: var(--muted); }.settings-footer summary { cursor: pointer; }
+  .settings-done { padding: 7px 14px; background: var(--selected); color: var(--accent-ink); font-weight: 650; }
   [role='alert'] { color: var(--danger); white-space: pre-wrap; }
   @media (max-width: 760px) {
     .workspace, .workspace.sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
     .workspace .app-sidebar { display: none; }
-    .workspace.sidebar-overlay .app-sidebar { display: flex; position: absolute; z-index: 4; inset-block: 0; inset-inline-start: 0; width: min(254px, 80vw); box-shadow: 8px 0 28px #14251b25; }
+    .workspace .sidebar-scrim { position: absolute; z-index: 3; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; background: #0c161391; }
+    .workspace.sidebar-overlay .app-sidebar { display: flex; position: absolute; z-index: 4; inset-block: 0; inset-inline-start: 0; width: min(254px, 80vw); box-shadow: 0 8px 28px #14251b45; }
     .page-document { padding: 38px 32px 60px; }.page-jump { display: none; }
   }
   @media (max-width: 540px) {
