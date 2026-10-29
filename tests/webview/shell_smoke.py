@@ -51,7 +51,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     shot('10-narrow-collapsed')
     click(650, 26); pump(.5); shot('11-narrow-overlay')
     xdo('key', 'Escape'); pump(); shot('11a-rtl-escape-closed')
-    click(650, 26); pump(); click(30, 430); shot('11b-rtl-outside-closed')
+    click(650, 26); pump(); click(30, 430); pump(.8); shot('11b-rtl-outside-closed')
     click(650, 26); pump()
     xdo('key', 'ctrl+k', 'ctrl+a'); paste('فارسی'); pump(.5)
     shot('12-narrow-search')
