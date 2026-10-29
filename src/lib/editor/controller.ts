@@ -46,9 +46,9 @@ export class EditorController {
   private blocksById = new Map<string, Block>();
 
   private transport: EditorTransport;
-  private changed: () => void;
+  private changed: (scope?: 'draft') => void;
   private timing: { debounce: number; maxWait: number; groupGap: number; ackTimeout?: number };
-  constructor(transport: EditorTransport, changed: () => void = () => {},
+  constructor(transport: EditorTransport, changed: (scope?: 'draft') => void = () => {},
     timing: { debounce: number; maxWait: number; groupGap: number; ackTimeout?: number } = { debounce: 300, maxWait: 1000, groupGap: 1000 }, recovery?: RecoveryTransport) {
     this.transport = transport; this.changed = changed; this.timing = timing;
     this.recovery = recovery;
@@ -150,7 +150,7 @@ export class EditorController {
     if (!group || now - group.at > this.timing.groupGap) group = { id: crypto.randomUUID(), at: now };
     group.at = now; this.groups.set(id, group);
     this.drafts.set(id, { content, generation: ++this.generation, firstAt: this.drafts.get(id)?.firstAt ?? now, group: group.id });
-    this.schedule(id); this.scheduleCapture(); this.changed();
+    this.schedule(id); this.scheduleCapture(); this.changed('draft');
   }
 
   composition(active: boolean): void {

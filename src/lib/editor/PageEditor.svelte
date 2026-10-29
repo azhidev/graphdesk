@@ -7,23 +7,26 @@
   import { preferences, tr } from '../preferences';
   import { statusText } from '../i18n';
   import ErrorNotice from '../ErrorNotice.svelte';
-  let { editor, revision, disabled = false, pages, references, onReference }: {
-    editor: EditorController; revision: number; disabled?: boolean; pages: Page[];
+  let { editor, revision, rowsRevision, disabled = false, pages, references, onReference }: {
+    editor: EditorController; revision: number; rowsRevision: number; disabled?: boolean; pages: Page[];
     references: InlineReference[]; onReference: (reference: InlineReference) => void;
   } = $props();
   const view = $derived.by(() => { revision; return {
-    rows: editor.rows(), active: editor.activeId, focus: editor.focus,
     busy: editor.working || disabled, status: editor.status, error: editor.error,
     canUndo: editor.canUndo || editor.dirty, canRedo: editor.canRedo,
     protection: editor.protection, protectionError: editor.protectionError, conflicts: editor.conflicts,
     dirty: editor.dirty,
     composing: editor.composing,
   }; });
+  const rowsView = $derived.by(() => { rowsRevision; return {
+    rows: editor.rows(), active: editor.activeId, focus: editor.focus,
+    busy: editor.working || disabled,
+  }; });
   let previousActive: string | null = null;
   $effect(() => {
     if (view.busy) return;
-    if (previousActive && !view.active) document.getElementById('editor-toolbar')?.focus();
-    previousActive = view.active;
+    if (previousActive && !rowsView.active) document.getElementById('editor-toolbar')?.focus();
+    previousActive = rowsView.active;
   });
   function run(operation: Promise<void>) { void operation.catch(() => {}); }
   let confirmation: { count: number; resolve: (accepted: boolean) => void } | null = $state(null);
@@ -39,24 +42,24 @@
     dialog.close(); confirmation = null; pending?.resolve(accepted);
   }
   async function remove() {
-    const id = view.active;
+    const id = rowsView.active;
     if (!id) return;
     await editor.deleteSubtree(id, confirmDeletion);
     if (!editor.activeId) document.getElementById('editor-toolbar')?.focus();
   }
   function operate(kind: 'indent' | 'outdent' | 'reorder', direction = 0) {
-    if (view.active) run(editor.action(kind === 'reorder' ? { kind, id: view.active, direction } : { kind, id: view.active }, editor.selection(view.active)));
+    if (rowsView.active) run(editor.action(kind === 'reorder' ? { kind, id: rowsView.active, direction } : { kind, id: rowsView.active }, editor.selection(rowsView.active)));
   }
 </script>
 
 <div id="editor-toolbar" tabindex="-1" role="group" aria-label={$tr('Block editor actions')}>
   <button disabled={view.busy || !view.canUndo} onclick={() => run(editor.action({ kind: 'undo' }))}>{$tr('Undo')}</button>
   <button disabled={view.busy || !view.canRedo} onclick={() => run(editor.action({ kind: 'redo' }))}>{$tr('Redo')}</button>
-  <button disabled={view.busy || !view.active} onclick={() => operate('indent')}>{$tr('Indent')}</button>
-  <button disabled={view.busy || !view.active} onclick={() => operate('outdent')}>{$tr('Outdent')}</button>
-  <button disabled={view.busy || !view.active} onclick={() => operate('reorder', -1)}>{$tr('Move up')}</button>
-  <button disabled={view.busy || !view.active} onclick={() => operate('reorder', 1)}>{$tr('Move down')}</button>
-  <button aria-label={$tr('Delete block and descendants')} title={$tr('Delete block and descendants')} disabled={view.busy || !view.active} onclick={() => run(remove())}>{$tr('Delete…')}</button>
+  <button disabled={view.busy || !rowsView.active} onclick={() => operate('indent')}>{$tr('Indent')}</button>
+  <button disabled={view.busy || !rowsView.active} onclick={() => operate('outdent')}>{$tr('Outdent')}</button>
+  <button disabled={view.busy || !rowsView.active} onclick={() => operate('reorder', -1)}>{$tr('Move up')}</button>
+  <button disabled={view.busy || !rowsView.active} onclick={() => operate('reorder', 1)}>{$tr('Move down')}</button>
+  <button aria-label={$tr('Delete block and descendants')} title={$tr('Delete block and descendants')} disabled={view.busy || !rowsView.active} onclick={() => run(remove())}>{$tr('Delete…')}</button>
   <span role="status">{view.error ? $tr('Error — save failed') : statusText($preferences.language, view.status)}{view.dirty && !view.composing ? ` · ${$tr(view.protectionError ? 'Recovery failed' : view.protection.includes('stored locally') ? 'Recovery stored' : 'Recovery pending')}` : ''}</span>
 </div>
 {#if view.protectionError}
@@ -86,13 +89,13 @@
   </div>
 {/if}
 <p class="help">{$tr('Enter: split · Shift+Enter: newline · Tab / Shift+Tab: nest · Alt+Shift+↑/↓: reorder · Escape: leave text editor. Changes autosave.')}</p>
-{#if !view.rows.length}
+{#if !rowsView.rows.length}
   <button disabled={view.busy} onclick={() => run(editor.action({ kind: 'append' }))}>{$tr('Add first block')}</button>
 {:else}
   <div role="group" aria-label={$tr('Page blocks')}>
-    {#each view.rows as row (row.block.id)}
-      <BlockRow {row} {editor} {pages} text={editor.text(row.block.id)} active={view.active === row.block.id}
-        busy={view.busy} collapsed={editor.collapsed.has(row.block.id)} focus={view.focus} />
+    {#each rowsView.rows as row (row.block.id)}
+      <BlockRow {row} {editor} {pages} text={editor.text(row.block.id)} active={rowsView.active === row.block.id}
+        busy={rowsView.busy} collapsed={editor.collapsed.has(row.block.id)} focus={rowsView.focus} />
       <div style:margin-inline-start={`${Math.min(row.depth, 20) * 1.3 + 2}rem`}>
         {#each references.filter(r => r.source_block_id === row.block.id) as reference (reference.title_key)}
           <button disabled={view.busy || editor.dirty} onclick={() => onReference(reference)}

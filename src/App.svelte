@@ -109,7 +109,11 @@
     return () => { cancelled = true; };
   });
   let revision = $state(0);
-  const editor = new EditorController(editorApi, () => { revision += 1; }, undefined, recoveryApi);
+  let rowsRevision = $state(0);
+  const editor = new EditorController(editorApi, scope => {
+    revision += 1; // Toolbar, recovery and navigation state update for every draft.
+    if (scope !== 'draft') rowsRevision += 1; // Row props update only for acknowledged/structural changes.
+  }, undefined, recoveryApi);
   let recoveryRecords = $state<RecoveryDraft[]>([]);
   let recoveryError = $state('');
   let inventory = $state(0);
@@ -515,7 +519,7 @@
             <button disabled={locked || !renameTitle.trim()}>{$tr('Rename page')}</button>
           </form>
           </details>
-          {#if !handoff}<PageEditor {editor} {revision} {pages} references={links.references} onReference={followReference} disabled={busy} />{/if}
+          {#if !handoff}<PageEditor {editor} {revision} {rowsRevision} {pages} references={links.references} onReference={followReference} disabled={busy} />{/if}
           <section aria-label={$tr('Incoming backlinks')}>
             <h3>{$tr('Backlinks')}</h3>
             {#if linksError}<ErrorNotice message={linksError} />{/if}

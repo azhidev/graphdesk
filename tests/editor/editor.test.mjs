@@ -47,7 +47,7 @@ test('journal date uses local civil fields rather than UTC serialization', () =>
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const block = (id, content = '', parent_id = null, position = 0) => ({ id, content, parent_id, position, page_id: 'page', task_status: null });
 const result = (changed = [], focus_id = null, removed = []) => ({ changed, removed, focus_id, can_undo: true, can_redo: false });
-function fixture(blocks = [block('a', 'old')], timing = { debounce: 10_000, maxWait: 20_000, groupGap: 1000 }) {
+function fixture(blocks = [block('a', 'old')], timing = { debounce: 10_000, maxWait: 20_000, groupGap: 1000 }, changed = () => {}) {
   const calls = [];
   let stored = structuredClone(blocks);
   const transport = {
@@ -62,7 +62,7 @@ function fixture(blocks = [block('a', 'old')], timing = { debounce: 10_000, maxW
     },
     async history(session, pageId, redo) { calls.push(['history', session, pageId, redo]); return result(); },
   };
-  const editor = new EditorController(transport, () => {}, timing);
+  const editor = new EditorController(transport, changed, timing);
   editor.reset('session');
   return { editor, calls, transport, stored };
 }
@@ -87,6 +87,32 @@ test('acknowledged block identity changes on save/reload, not on drafts or compo
   assert.equal(editor.text('a'), 'سلام‌دنیا ۲');
   editor.reset('next');
   assert.equal(editor.text('a'), '', 'index must not retain blocks from a previous graph');
+});
+
+test('rapid drafts notify only the active row; late save cannot replace newer text', async () => {
+  const updates = [];
+  const { editor, transport } = fixture([block('a', 'old'), block('b', 'untouched', null, 1)], undefined,
+    scope => updates.push(scope ?? 'rows'));
+  await editor.load('page'); updates.length = 0;
+  editor.composition(true);
+  for (const text of ['س', 'سل', 'سلام‌دنیا']) editor.setDraft('a', text);
+  assert.deepEqual(updates, ['rows', 'draft', 'draft', 'draft']);
+  editor.composition(false);
+  let release;
+  const original = transport.apply;
+  transport.apply = (...args) => {
+    transport.apply = original;
+    return new Promise(resolve => { release = () => original(...args).then(resolve); });
+  };
+  const pending = editor.flush();
+  await sleep(0);
+  editor.setDraft('a', 'سلام‌دنیا!');
+  assert.equal(updates.at(-1), 'draft');
+  release(); await pending;
+  assert.equal(editor.text('a'), 'سلام‌دنیا!');
+  assert.equal(editor.text('b'), 'untouched');
+  assert.equal(editor.blocks.find(b => b.id === 'a').content, 'سلام‌دنیا!');
+  assert.ok(updates.includes('rows'), 'acknowledgement must refresh row props');
 });
 
 test('presentation traversal uses sibling positions, hides descendants, handles a deep outline iteratively', () => {

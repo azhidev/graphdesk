@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import type { Row } from './outline';
   import { keyIntent } from './keyboard';
   import type { EditorController, Focus } from './controller';
@@ -14,12 +14,17 @@
   let input: HTMLTextAreaElement | undefined = $state();
   let appliedFocus = 0;
   let caret = $state(0);
-  const match = $derived(active && !editor.composing ? completion(text, caret) : null);
+  let localText = $state(untrack(() => text));
+  // A draft is local to its native input; acknowledged changes and activation
+  // still reconcile against the controller's latest draft (including late saves).
+  $effect(() => { text; active; localText = editor.text(row.block.id); });
+  const match = $derived(active && !editor.composing ? completion(localText, caret) : null);
   const choices = $derived(match ? suggestions(pages, match.query) : []);
   function complete(title: string) {
     if (!input || editor.composing) return;
     const result = insertReference(input.value, caret, title);
     editor.setDraft(row.block.id, result.content);
+    localText = result.content;
     editor.activate(row.block.id, { start: result.caret, end: result.caret });
   }
   function resize() { if (input) { input.style.height = 'auto'; input.style.height = `${input.scrollHeight}px`; } }
@@ -82,19 +87,19 @@
       disabled={busy} onclick={() => void editor.toggle(row.block.id).catch(report)}>{collapsed ? '▸' : '▾'}</button>
   {:else}<span class="bullet" aria-hidden="true">•</span>{/if}
   {#if active}
-    <textarea bind:this={input} value={text} dir="auto" aria-label={$tr('Block text')} readonly={busy} rows="1"
-      oninput={() => { if (input) { editor.setDraft(row.block.id, input.value); remember(); resize(); } }}
+    <textarea bind:this={input} value={localText} dir="auto" aria-label={$tr('Block text')} readonly={busy} rows="1"
+      oninput={() => { if (input) { editor.setDraft(row.block.id, input.value); localText = input.value; remember(); resize(); } }}
       onkeydown={keydown} onselect={remember} onclick={remember} onkeyup={remember}
       onblur={() => { remember(); editor.leave(row.block.id); }}
       oncompositionstart={() => editor.composition(true)}
-      oncompositionend={() => { if (input) editor.setDraft(row.block.id, input.value); editor.composition(false); }}
+      oncompositionend={() => { if (input) { editor.setDraft(row.block.id, input.value); localText = input.value; } editor.composition(false); }}
       onbeforeinput={(event) => {
         if (!event.isComposing && !editor.composing && ['historyUndo', 'historyRedo'].includes(event.inputType)) {
           event.preventDefault(); void editor.action({ kind: event.inputType === 'historyUndo' ? 'undo' : 'redo' }).catch(report);
         }
       }}></textarea>
   {:else}
-    <button class="block-content" dir="auto" disabled={busy} onclick={() => editor.activate(row.block.id)}>{text || $tr('Empty block — click to edit')}</button>
+    <button class="block-content" dir="auto" disabled={busy} onclick={() => editor.activate(row.block.id)}>{localText || $tr('Empty block — click to edit')}</button>
   {/if}
 </div>
 {#if match && choices.length}
