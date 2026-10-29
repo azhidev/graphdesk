@@ -67,6 +67,28 @@ function fixture(blocks = [block('a', 'old')], timing = { debounce: 10_000, maxW
   return { editor, calls, transport, stored };
 }
 
+test('acknowledged block identity changes on save/reload, not on drafts or composition', async () => {
+  const { editor } = fixture([block('a', 'old'), block('b', 'other', null, 1)]);
+  await editor.load('page');
+  const initial = editor.blocks;
+  editor.activate('a'); editor.setDraft('a', 'سلام‌دنیا');
+  assert.equal(editor.blocks, initial, 'a draft must not refresh acknowledged search/links/tasks');
+  assert.equal(editor.text('a'), 'سلام‌دنیا');
+  assert.equal(editor.text('b'), 'other');
+  editor.composition(true); editor.setDraft('a', 'سلام‌دنیا ۲'); editor.composition(false);
+  assert.equal(editor.blocks, initial);
+  await editor.flush();
+  assert.notEqual(editor.blocks, initial, 'acknowledged changes must refresh dependents');
+  assert.equal(editor.text('a'), 'سلام‌دنیا ۲');
+  assert.equal(editor.text('b'), 'other');
+  const saved = editor.blocks;
+  await editor.load('page');
+  assert.notEqual(editor.blocks, saved, 'a new page read must refresh dependents');
+  assert.equal(editor.text('a'), 'سلام‌دنیا ۲');
+  editor.reset('next');
+  assert.equal(editor.text('a'), '', 'index must not retain blocks from a previous graph');
+});
+
 test('presentation traversal uses sibling positions, hides descendants, handles a deep outline iteratively', () => {
   const blocks = [block('b', '', null, 1), block('child', '', 'a'), block('a'), block('grandchild', '', 'child')];
   assert.deepEqual(visibleRows(blocks, new Set()).map(r => [r.block.id, r.depth]), [['a',0],['child',1],['grandchild',2],['b',0]]);

@@ -64,9 +64,11 @@
   let searchRevision = $state(0);
   const search = new SearchController((session, text) => api.search(session, text, get(preferences).search_mode === 'persian'), () => { searchRevision += 1; });
   const results = $derived.by(() => { searchRevision; return { hits: search.hits, error: search.error, pending: search.pending }; });
-  const acknowledgedKey = $derived.by(() => { revision; return JSON.stringify([pages, editor.blocks]); });
+  // The controller replaces this array on acknowledged changes, never for a draft.
+  // Keep search, tasks and links fresh without serializing every block per keystroke.
+  const acknowledgedBlocks = $derived.by(() => { revision; return editor.blocks; });
   $effect(() => {
-    acknowledgedKey;
+    acknowledgedBlocks; pages;
     $preferences.search_mode;
     const token = session, text = query, composing = searchComposing;
     untrack(() => {
@@ -96,15 +98,14 @@
   }
   let links = $state<Links>({ references: [], backlinks: [] });
   let linksError = $state('');
-  const linksKey = $derived.by(() => { revision; return JSON.stringify([session, selected?.id, pages, editor.blocks]); });
   $effect(() => {
-    const key = linksKey;
+    acknowledgedBlocks; pages;
     const token = session, page = selected?.id;
     let cancelled = false;
     links = { references: [], backlinks: [] }; linksError = '';
     if (token && page) void api.links(token, page).then(value => {
-      if (!cancelled && key === linksKey) links = value;
-    }).catch(e => { if (!cancelled && key === linksKey) linksError = errorMessage(e); });
+      if (!cancelled) links = value;
+    }).catch(e => { if (!cancelled) linksError = errorMessage(e); });
     return () => { cancelled = true; };
   });
   let revision = $state(0);
@@ -488,7 +489,7 @@
       </aside>
       <div class="content">
       {#if view === 'tasks' && session}
-        <TasksView {session} {pages} refreshKey={acknowledgedKey} disabled={locked} bind:status={taskStatus} bind:page={taskPage} onFilter={rememberLocation}
+        <TasksView {session} {pages} refreshKey={acknowledgedBlocks} disabled={locked} bind:status={taskStatus} bind:page={taskPage} onFilter={rememberLocation}
           onOpen={hit => selectHit({ id: hit.id, page_id: hit.page_id, kind: 'block', text: hit.content })} />
       {/if}
       <div hidden={view !== 'notes'}>

@@ -42,6 +42,8 @@ export class EditorController {
   private generation = 0;
   private focusSerial = 0;
   private cachedRows: Row[] | null = null;
+  private indexedBlocks: Block[] | null = null;
+  private blocksById = new Map<string, Block>();
 
   private transport: EditorTransport;
   private changed: () => void;
@@ -67,7 +69,15 @@ export class EditorController {
     return [...this.drafts].every(([id, d]) => this.captured.get(id) === d.generation) ? 'Draft recovery snapshot stored locally' : 'Recovery snapshot pending';
   }
   rows(): Row[] { return this.cachedRows ??= visibleRows(this.blocks, this.collapsed); }
-  text(id: string): string { return this.drafts.get(id)?.content ?? this.blocks.find(b => b.id === id)?.content ?? ''; }
+  /** All acknowledged block changes replace the array; drafts never invalidate this index. */
+  private block(id: string): Block | undefined {
+    if (this.indexedBlocks !== this.blocks) {
+      this.blocksById = new Map(this.blocks.map(block => [block.id, block]));
+      this.indexedBlocks = this.blocks;
+    }
+    return this.blocksById.get(id);
+  }
+  text(id: string): string { return this.drafts.get(id)?.content ?? this.block(id)?.content ?? ''; }
   selection(id: string): Selection { return this.selections.get(id) ?? { start: this.text(id).length, end: this.text(id).length }; }
   remember(id: string, selection: Selection): void { this.selections.set(id, selection); }
   activate(id: string, selection = this.selection(id)): void {
@@ -134,7 +144,7 @@ export class EditorController {
   }
 
   setDraft(id: string, content: string): void {
-    if ((this.working && !this.composing) || !this.blocks.some(b => b.id === id)) return;
+    if ((this.working && !this.composing) || !this.block(id)) return;
     const now = Date.now();
     let group = this.groups.get(id);
     if (!group || now - group.at > this.timing.groupGap) group = { id: crypto.randomUUID(), at: now };
@@ -175,7 +185,7 @@ export class EditorController {
       if (this.composing) return;
       for (const [id, draft] of [...this.drafts]) {
         if (this.captured.get(id) === draft.generation) continue;
-        const block = this.blocks.find(b => b.id === id);
+        const block = this.block(id);
         if (!block) continue;
         if (block.content === draft.content && !this.uncertain.has(id)) { this.captured.set(id, draft.generation); continue; }
         try {
@@ -229,7 +239,7 @@ export class EditorController {
       if (this.composing) return;
       const draft = this.drafts.get(id);
       if (!draft) return;
-      const block = this.blocks.find(b => b.id === id);
+      const block = this.block(id);
       if (!block) throw new Error('Draft block is missing; reload explicitly to discard');
       if (block.content === draft.content) { this.drafts.delete(id); this.uncertain.delete(id); this.clearRecovery(id, draft.content); this.changed(); return; }
       this.saving = true; this.changed();

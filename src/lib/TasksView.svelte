@@ -1,20 +1,20 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { api, type Page } from './api';
+  import { api, type Block, type Page } from './api';
   import { TaskController, type TaskFilter, type TaskHit } from './tasks';
   import { preferences, tr } from './preferences';
   import { displayPageTitle } from './dates';
   import { statusText } from './i18n';
   import ErrorNotice from './ErrorNotice.svelte';
   let { session, pages, refreshKey, disabled, onOpen, status = $bindable('active'), page = $bindable(''), onFilter }: {
-    session: string; pages: Page[]; refreshKey: string; disabled: boolean; onOpen: (hit: TaskHit) => void;
+    session: string; pages: Page[]; refreshKey: Block[]; disabled: boolean; onOpen: (hit: TaskHit) => void;
     status: TaskFilter; page: string; onFilter: () => void;
   } = $props();
   let revision = $state(0);
   const tasks = new TaskController(api.tasks, () => revision++);
   const view = $derived.by(() => { revision; return { hits: tasks.hits, pending: tasks.pending, error: tasks.error, more: tasks.more }; });
   $effect(() => {
-    refreshKey;
+    refreshKey; pages;
     const token = session, filter = status, source = page || null;
     untrack(() => { void tasks.load(token, filter, source); });
   });
