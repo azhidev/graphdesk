@@ -123,6 +123,7 @@
   :global([dir='rtl']) .disclosure[aria-expanded='false'] { transform: scaleX(-1); }
   textarea, .block-content { min-width: 0; flex: 1; font: inherit; line-height: inherit; padding: 0; margin: 0; }
   textarea { resize: none; overflow: hidden; border: 0; outline: 0; background: transparent; color: var(--ink); }
+  textarea:focus-visible { outline: none; }
   .block-content { white-space: pre-wrap; overflow-wrap: anywhere; text-align: start; background: transparent; border: 0; cursor: text; color: var(--ink); }
   .task-status { flex: none; max-width: 105px; min-height: 27px; padding: 2px 4px; font-size: 11px; color: var(--muted); }
   .task-status.has-task { background: var(--selected); color: var(--accent-ink); }

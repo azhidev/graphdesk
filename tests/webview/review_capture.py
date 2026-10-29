@@ -1,4 +1,4 @@
-"""Capture the production Phase 2 UI, using only disposable graph/config data.
+"""Capture the production UI Foundation and test its nested editor on disposable data.
 
 Driven by smoke.py on authenticated Xvfb. This is a screenshot fixture, not a
 substitute for native Fedora, IME, accessibility or performance validation.
@@ -66,7 +66,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
 
         block(journal, 0, 'Start with a quiet review of the day.')
         task = block(journal, 1, 'Plan the UI foundation review and share clear screenshots.', 'todo')
-        block(journal, 0, 'Check light, dark, and RTL surfaces before handing off.', parent=task)
+        nested = block(journal, 0, 'Check light, dark, and RTL surfaces before handing off.', parent=task)
         block(journal, 2, 'Keep the editor responsive while navigating between pages.')
         block(journal, 3, 'بررسی روزانه — متن فارسی با English و عدد ۱۲۳.')
         block(journal, 4, 'Capture finalized text; keep draft recovery visible.', 'doing')
@@ -125,6 +125,17 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     xdo('windowsize', window, 1300, 1000); pump(1)
     click(620, 410); pump(.6)
     desktop('09-focused-editor-and-actions')
+    original = 'Check light, dark, and RTL surfaces before handing off.'
+    edited = original + ' سلام English ۱۲'
+    xdo('key', 'End'); paste(' سلام English ۱۲')
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(edited,)], (nested,))
+    select('ctrl+z')
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(original,)], (nested,))
+    select('ctrl+y')
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(edited,)], (nested,))
+    close(); assert app().wait(timeout=10) == 0
+    start(); field(480, 130, str(graph)); select('Tab', 'Return')
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(edited,)], (nested,))
     close(); assert app().wait(timeout=10) == 0
     assert sql('SELECT count(*) FROM blocks') == [(12,)]
-    print('PASS: nine Phase 2 production visual captures from one isolated disposable graph', flush=True)
+    print('PASS: nine production visual captures, nested mixed-script edit/undo/redo and restart from one disposable graph', flush=True)

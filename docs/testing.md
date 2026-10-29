@@ -45,6 +45,35 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### UI Foundation Phase 3A — 2026-10-29 (Ubuntu/Xvfb, Fedora pending)
+
+The Journal heading now presents the selected calendar as a localized long-form
+date, without changing the stored civil-day key or the compact sidebar date.
+Renamed journals retain their actual titles. The duplicate date beside the day
+controls was removed. Undo/Redo remain visible; indentation, movement, deletion
+and editing-shortcut help are in the keyboard-reachable More menu. The editor
+keeps native textareas and the same controller/row-revision contract; ordinary
+inactive blocks no longer each display a task selector. Activate a block to
+change its task status; assigned tasks keep a compact selector visible.
+
+Build the production binary and run `python3 tests/webview/smoke.py --review
+--artifacts test-artifacts/webview-phase3a-review-final` for English Light/Dark,
+Persian RTL/Jalali and focused nested-row captures. The fixture also edits a
+nested mixed-script block, checks undo/redo, and confirms exact text after a
+normal close/reopen. `--shell --artifacts test-artifacts/webview-phase3a-shell`
+checks search-source focus, task status/undo/redo, the contextual action menu,
+history and saved preferences. Editor tests cover rapid drafts, delayed saves,
+caret/selection, composition, nested structure, task edits and recovery. Run
+`node tests/perf/editor_revision.mjs` and `node tests/perf/editor_input.mjs` for
+the 5,000-row synthetic notification/lookup models; neither measures WebView
+mount, rendering or typing latency.
+
+These are Ubuntu/Xvfb production WebKitGTK tests, **not** native Fedora/Wayland,
+screen-reader, real Persian IME candidate/preedit or 5,000-block interactive
+responsiveness evidence. The pre-Phase-1 fixed-coordinate daily smoke still
+requires rebasing at its old task-selector position; do not report it as passing.
+
+
 ### UI Foundation Phase 2 — 2026-10-29 (Ubuntu/Xvfb, not Fedora)
 
 Settings is a native modal with four independently persisted preferences, a

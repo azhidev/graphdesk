@@ -31,7 +31,7 @@ def main():
     parser.add_argument('--persian', action='store_true', help='Bilingual calendar/search and pending-note crash recovery')
     parser.add_argument('--navigation', action='store_true', help='Native graph dialogs, registry, single instance and navigation')
     parser.add_argument('--shell', action='store_true', help='Phase 1 shell and preference integration')
-    parser.add_argument('--review', action='store_true', help='Capture Phase 1 production visual review')
+    parser.add_argument('--review', action='store_true', help='Capture production UI Foundation visual review and nested editing')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     args.artifacts.mkdir(parents=True, exist_ok=True)

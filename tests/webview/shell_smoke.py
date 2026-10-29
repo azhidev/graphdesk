@@ -33,6 +33,17 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     xdo('key', 'Return'); pump(); paste(' edited')
     wait_sql('SELECT content FROM blocks WHERE id=?', [(' editedshell workflow فارسی 😀',)], (block_id,))
     shot('04-search-source-focus')
+    # The native textarea stays focused after source navigation. Task controls
+    # are contextual, but remain reachable without hover; history stays intact.
+    click(1080, 335); xdo('key', 'Home', 'Down', 'Return'); pump()
+    wait_sql('SELECT task_status FROM blocks WHERE id=?', [('todo',)], (block_id,))
+    click(570, 335); xdo('key', 'ctrl+z'); pump()
+    wait_sql('SELECT task_status FROM blocks WHERE id=?', [(None,)], (block_id,))
+    xdo('key', 'ctrl+y'); pump()
+    wait_sql('SELECT task_status FROM blocks WHERE id=?', [('todo',)], (block_id,))
+    shot('04a-task-undo-redo')
+    click(555, 284); pump(.8); shot('04b-context-actions')
+    click(555, 284)
     click(70, 85); click(86, 195); pump(); shot('05-tasks')
     xdo('key', 'alt+Left'); pump(); shot('06-history-source')
     click(100, 968); pump(); shot('07-settings-open')
