@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { calendarDate, calendarFields, adjacentDay, dateLabel, dateHeading, dateNumber, asciiDigits, localDate, displayPageTitle } from '../../src/lib/dates.ts';
 import { messages, translate, errorText } from '../../src/lib/i18n.ts';
 import { keyIntent, shortcutLetter } from '../../src/lib/editor/keyboard.ts';
+import { blockDirection } from '../../src/lib/editor/outline.ts';
 import { FirstNoteController } from '../../src/lib/firstNote.ts';
 
 test('Jalali Nowruz, Esfand leap days, month ends and digit input share one conversion authority', () => {
@@ -77,6 +78,12 @@ test('Persian layout shortcut fallback does not reinterpret native movement or I
   const key = {key:'ظ',code:'KeyZ',ctrlKey:true,metaKey:false,altKey:false,shiftKey:false,isComposing:false,start:0,end:0,length:4,nested:false};
   assert.equal(keyIntent(key), 'undo'); assert.equal(keyIntent({...key,isComposing:true}), null);
   assert.equal(keyIntent({...key,keyCode:229}), null); assert.equal(keyIntent({...key,altKey:true}), null);
+});
+
+test('multilingual outline chooses a stable first-strong edge without changing text', () => {
+  const values = ['سلام English ۱۲۳', 'English سلام ۱۲۳', '۱۲۳ [[فارسی]]', '۱۲۳ Project فارسی', '۱۲۳'];
+  assert.deepEqual(values.map(blockDirection), ['rtl', 'ltr', 'rtl', 'ltr', undefined]);
+  assert.equal(values[0], 'سلام English ۱۲۳');
 });
 
 function fixture(options = {}) {

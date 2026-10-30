@@ -72,11 +72,13 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
                        (id, page, parent, pos, content, task))
             return id
 
-        block(journal, 0, 'Start with a quiet review of the day.')
+        english = block(journal, 0, 'Start with a quiet review of the day.')
         task = block(journal, 1, 'Plan the UI foundation review and share clear screenshots.', 'todo')
         nested = block(journal, 0, 'Check light, dark, and RTL surfaces before handing off.', parent=task)
+        block(journal, 1, 'بررسی زیرشاخهٔ فارسی with English ۱۲۳', parent=task)
         block(journal, 2, 'Keep the editor responsive while navigating between pages.')
-        block(journal, 3, 'بررسی روزانه — متن فارسی با English و عدد ۱۲۳.')
+        persian = block(journal, 3, 'بررسی روزانه — متن فارسی با English و عدد ۱۲۳.')
+        block(journal, 0, 'English nested under Persian — متن کوتاه', parent=persian)
         block(journal, 4, 'Capture finalized text; keep draft recovery visible.', 'doing')
         block(journal, 5, 'Summarize open questions from the Project Atlas notes.')
         block(pages[0][0], 0, 'Plan the next small iteration without redesigning the editor.', 'todo')
@@ -89,7 +91,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
 
     start(); field(480, 130, str(graph)); select('Tab', 'Return')
     pump(.7)
-    assert sql('SELECT count(*) FROM blocks') == [(12,)]
+    assert sql('SELECT count(*) FROM blocks') == [(14,)]
     # Explicit Light, independent of the display's color-scheme preference.
     settings(); choose('theme', 'light', 370, 'Home', 'Down', 'Return')
     assert prefs()['theme'] == 'light'
@@ -110,6 +112,13 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
                (('theme', 'light'), ('language', 'fa'), ('calendar', 'jalali'))), prefs()
     dismiss_settings()
     desktop('03-persian-rtl-jalali-journal')
+    click(350, 333); select('End'); paste(' سلام ۱۲')
+    english_edited = 'Start with a quiet review of the day. سلام ۱۲'
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(english_edited,)], (english,))
+    click(690, 518); select('End'); paste(' English ۱۲')
+    persian_edited = 'بررسی روزانه — متن فارسی با English و عدد ۱۲۳. English ۱۲'
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(persian_edited,)], (persian,))
+    desktop('03a-persian-rtl-editing-mixed-block')
     discovery('12-persian-rtl', rtl=True)
 
     settings(1210); choose('language', 'en', 456, 'Home', 'Return')
@@ -164,6 +173,8 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     start(); field(480, 130, str(graph)); select('Tab', 'Return')
     wait_sql('SELECT content FROM blocks WHERE id=?', [(edited,)], (nested,))
     wait_sql('SELECT content FROM blocks WHERE id=?', [(task_text,)], (task,))
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(english_edited,)], (english,))
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(persian_edited,)], (persian,))
     close(); assert app().wait(timeout=10) == 0
-    assert sql('SELECT count(*) FROM blocks') == [(12,)]
-    print('PASS: twenty production captures, filtered task/source return, Tasks/Search empty/clear, nested mixed-script edit/undo/redo and restart', flush=True)
+    assert sql('SELECT count(*) FROM blocks') == [(14,)]
+    print('PASS: twenty-one production captures, RTL mixed-script edits, filtered task/source return, Tasks/Search empty/clear, nested undo/redo and exact restart', flush=True)
