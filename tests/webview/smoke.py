@@ -197,6 +197,8 @@ def main():
                 assert captured, 'private snapshot must succeed while graph writer is locked'
                 assert sql('SELECT content FROM blocks') == [(text,)]
                 shot('r01-protected-draft')
+                pump(6)
+                shot('r01a-save-warning')
                 app.kill(); assert app.wait(timeout=10) == -9
             finally:
                 lock.execute('ROLLBACK'); lock.close()
@@ -204,14 +206,25 @@ def main():
                 connection.create_function('persian_normalize', 1, persian_normalize, deterministic=True)
                 connection.execute('UPDATE blocks SET content=? WHERE id=?', ('external newer', block_id))
             start(); shot('r02-startup-detection')
-            field(480, 130, str(graph)); click(590, 180)
+            field(480, 130, str(graph)); xdo('key', 'Tab', 'Return'); pump()
             xdo('key', 'ctrl+Home'); pump(); shot('r03-recovery-list')
-            click(470, 258); shot('r04-comparison')
-            xdo('key', 'Tab', 'Return'); pump(); shot('r05-discard-confirmation')
+            click(85, 975); click(600, 370); xdo('key', 'End', 'Return', 'Escape'); pump(); shot('r03-dark-notice')
+            click(85, 975); click(600, 456); xdo('key', 'End', 'Return', 'Escape'); pump(); shot('r03-rtl-notice')
+            click(1210, 975); click(600, 370); xdo('key', 'Home', 'Down', 'Return'); pump()
+            click(600, 456); xdo('key', 'Home', 'Return', 'Escape'); pump(); shot('r03-light-restored')
+            click(1027, 85); shot('r03a-notice-dismissed')
+            with sqlite3.connect(stores[0]) as recovery:
+                assert recovery.execute('SELECT content FROM recovery_drafts').fetchall() == [(draft,)]
+            click(100, 925); shot('r03b-review-open')
+            click(790, 162); shot('r04-comparison')
+            xdo('key', 'Escape'); pump(); shot('r04a-review-closed')
+            click(100, 940); click(790, 162); shot('r04b-comparison-reopened')
+            click(635, 542); shot('r04c-comparison-cancelled')
+            click(510, 200); shot('r05-discard-confirmation')
             xdo('key', 'Escape'); pump()
             with sqlite3.connect(stores[0]) as recovery:
                 assert recovery.execute('SELECT content FROM recovery_drafts').fetchall() == [(draft,)]
-            xdo('key', 'Tab', 'Tab', 'Tab', 'Return'); pump()
+            click(790, 162); click(492, 542); pump()
             wait_sql('SELECT content FROM blocks', [(draft,)])
             with sqlite3.connect(stores[0]) as recovery:
                 assert recovery.execute('SELECT count(*) FROM recovery_drafts').fetchone()[0] == 0

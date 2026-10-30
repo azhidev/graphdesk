@@ -129,6 +129,7 @@
     if (scope !== 'draft') rowsRevision += 1; // Row props update only for acknowledged/structural changes.
   }, undefined, recoveryApi);
   let recoveryRecords = $state<RecoveryDraft[]>([]);
+  let recoveryPanel = $state<{ show: () => Promise<void> }>();
   let recoveryError = $state('');
   let inventory = $state(0);
   async function refreshRecovery() {
@@ -556,7 +557,7 @@
   {#if landingError}<p role="alert">{$tr('Graph opened, but today could not be loaded. Retry Today or switch graphs.')} <button disabled={locked} onclick={() => run(landToday, 'Opening journal…')}>{$tr('Retry Today')}</button></p>{/if}
   {#if !session && inventory}<p role="status">{$tr('Recovery drafts found for {count} graph(s). Open the original graph to compare and recover text.', { count: inventory })}</p>{/if}
   {#if session}
-    {#key session}<RecoveryPanel {session} records={recoveryRecords} disabled={locked} onChanged={refreshRecovery} onRecover={recover} />{/key}
+    {#key session}<RecoveryPanel bind:this={recoveryPanel} {session} records={recoveryRecords} disabled={locked} onChanged={refreshRecovery} onRecover={recover} />{/key}
   {/if}
   {#if session && pendingNotes.length}
     <section aria-label={$tr('Pending journal notes')}>
@@ -619,7 +620,10 @@
           <ul class="page-list shell-scroll">{#each pages as page (page.id)}<li><button disabled={locked} aria-current={view === 'notes' && selected?.id === page.id ? 'page' : undefined} onclick={() => select(page)} dir="auto"><svg class="icon" aria-hidden="true"><use href="#shell-page" /></svg><bdi>{pageLabel(page)}</bdi></button></li>{/each}</ul>
         </div>
         {/if}
-        <div class="sidebar-bottom"><button onclick={revealSettings}><svg class="icon" aria-hidden="true"><use href="#shell-settings" /></svg>{$tr('Settings')}</button></div>
+        <div class="sidebar-bottom">
+          {#if recoveryRecords.length || recoveryError}<button id="review-recovery" disabled={locked} onclick={() => recoveryRecords.length ? recoveryPanel?.show() : refreshRecovery()}>{$tr('Review recovery drafts')} {#if recoveryRecords.length}<bdi>({recoveryRecords.length})</bdi>{/if}</button>{/if}
+          <button onclick={revealSettings}><svg class="icon" aria-hidden="true"><use href="#shell-settings" /></svg>{$tr('Settings')}</button>
+        </div>
       </aside>
       <div class="content shell-scroll" inert={narrow && sidebarOverlay}>
       {#if view === 'tasks' && session}
@@ -666,7 +670,6 @@
       </div>
     </div>
   {/if}
-  {#if session && (recoveryRecords.length || recoveryError)}<div class="shell-utilities"><button id="review-recovery" disabled={locked} onclick={refreshRecovery}>{$tr('Review local recovery drafts')}</button></div>{/if}
 </main>
 
 <style>
@@ -751,8 +754,6 @@
   .page-document > details { margin-block: var(--space-4); color: var(--muted); font-size: 12px; }.page-document > details input { width: min(24rem, 100%); padding: 8px; margin: var(--space-2); }
   .backlinks { border-block-start: 1px solid var(--line); margin-block-start: var(--space-8); padding-block-start: var(--space-3); color: var(--muted); font-size: 13px; }
   .backlinks h3 { font-size: 13px; }.backlinks ul { padding: 0; list-style: none; }.backlinks button { text-align: start; max-width: 100%; overflow-wrap: anywhere; }
-  .shell-utilities { display: flex; flex: none; align-items: center; border-block-start: 1px solid var(--line); padding: 5px var(--space-4); background: var(--surface); }
-  .shell-utilities button { padding: 5px 8px; font-size: 12px; }
   .settings-dialog { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: 24px; box-shadow: 0 18px 55px #101a1438; }
   .settings-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-block-end: 24px; }
   .settings-header h2 { margin: 0; font-size: 21px; line-height: 1.25; }
