@@ -88,6 +88,7 @@ export const messages = {
   'Status': 'وضعیت', 'Active (TODO + DOING)': 'فعال (برای انجام + در حال انجام)', 'All pages and journals': 'همهٔ صفحه‌ها و روزانه‌ها',
   'Refresh tasks': 'تازه‌سازی کارها', 'Loading tasks…': 'در حال بارگذاری کارها…', 'Use Refresh tasks to retry.': 'برای تلاش دوباره، کارها را تازه‌سازی کنید.',
   'No tasks match these filters. Set a block to TODO or DOING in a page or journal.': 'کاری با این فیلترها یافت نشد. وضعیت بلوکی را به «برای انجام» یا «در حال انجام» تغییر دهید.',
+  'No tasks match these filters.': 'کاری با این فیلترها یافت نشد.',
   'Empty task': 'کار خالی', 'Load more tasks': 'کارهای بیشتر',
   'Recoverable text drafts': 'پیش‌نویس‌های قابل بازیابی',
   'Stored only on this computer, outside your graph. Unresolved snapshots expire after 14 days. Compare before recovering; no structure is replayed.': 'فقط در این رایانه و خارج از گراف نگهداری می‌شود. نسخه‌های حل‌نشده پس از ۱۴ روز منقضی می‌شوند. پیش از بازیابی مقایسه کنید؛ ساختار بازپخش نمی‌شود.',

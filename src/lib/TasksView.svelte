@@ -36,7 +36,7 @@
   </div>
   {#if view.pending}<p role="status">{$tr('Loading tasks…')}</p>{/if}
   {#if view.error}<ErrorNotice message={view.error} /><p>{$tr('Use Refresh tasks to retry.')}</p>{/if}
-  {#if !view.pending && !view.error && !view.hits.length}<p class="empty-state">{$tr('No tasks match these filters. Set a block to TODO or DOING in a page or journal.')}</p>{/if}
+  {#if !view.pending && !view.error && !view.hits.length}<p class="empty-state">{$tr(status === 'active' ? 'No tasks match these filters. Set a block to TODO or DOING in a page or journal.' : 'No tasks match these filters.')}</p>{/if}
   <ul class="task-list">{#each view.hits as hit (hit.id)}
     <li><button class="task-result" disabled={disabled} onclick={() => onOpen(hit)}>
       <span class="task-marker" aria-hidden="true"></span><span class="task-copy">
