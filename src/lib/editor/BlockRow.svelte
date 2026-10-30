@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import { blockDirection, type Row } from './outline';
+  import type { Row } from './outline';
   import { keyIntent } from './keyboard';
   import type { EditorController, Focus } from './controller';
   import type { Page, TaskState } from './types';
@@ -15,9 +15,6 @@
   let appliedFocus = 0;
   let caret = $state(0);
   let localText = $state(untrack(() => text));
-  // Resolve the row's outline edge from acknowledged text only. Native inputs
-  // still use dir=auto; draft keystrokes never recalculate row geometry.
-  const rowDirection = $derived(blockDirection(row.block.content));
   // A draft is local to its native input; acknowledged changes and activation
   // still reconcile against the controller's latest draft (including late saves).
   $effect(() => { text; active; localText = editor.text(row.block.id); });
@@ -78,11 +75,19 @@
   });
 </script>
 
-<div class="block-row" class:editing={active} dir={rowDirection} style:margin-inline-start={`${Math.min(row.depth, 20) * 25}px`} data-block-id={row.block.id}>
+<div class="block-row" class:editing={active} style:margin-inline-start={`${Math.min(row.depth, 20) * 25}px`} data-block-id={row.block.id}>
   {#if row.hasChildren}
     <button class="disclosure" aria-label={$tr(collapsed ? 'Expand children' : 'Collapse children')} aria-expanded={!collapsed}
       disabled={busy} onclick={() => void editor.toggle(row.block.id).catch(report)}>{collapsed ? '▸' : '▾'}</button>
   {:else}<span class="bullet" aria-hidden="true">•</span>{/if}
+  {#if active || row.block.task_status}
+    <select class="task-status" class:has-task={!!row.block.task_status} aria-label={$tr('Task status')} value={row.block.task_status ?? ''} disabled={busy}
+      onchange={setTask}>
+      <option value="">{$tr('No task')}</option><option value="todo">{$tr('TODO')}</option>
+      <option value="doing">{$tr('DOING')}</option><option value="done">{$tr('DONE')}</option>
+      {#if row.block.task_status === 'cancelled'}<option value="cancelled">{$tr('CANCELLED')}</option>{/if}
+    </select>
+  {/if}
   {#if active}
     <textarea bind:this={input} value={localText} dir="auto" aria-label={$tr('Block text')} readonly={busy} rows="1"
       oninput={() => { if (input) { editor.setDraft(row.block.id, input.value); localText = input.value; remember(); resize(); } }}
@@ -97,14 +102,6 @@
       }}></textarea>
   {:else}
     <button class="block-content" dir="auto" disabled={busy} onclick={() => editor.activate(row.block.id)}>{localText || $tr('Empty block — click to edit')}</button>
-  {/if}
-  {#if active || row.block.task_status}
-    <select class="task-status" class:has-task={!!row.block.task_status} aria-label={$tr('Task status')} value={row.block.task_status ?? ''} disabled={busy}
-      onchange={setTask}>
-      <option value="">{$tr('No task')}</option><option value="todo">{$tr('TODO')}</option>
-      <option value="doing">{$tr('DOING')}</option><option value="done">{$tr('DONE')}</option>
-      {#if row.block.task_status === 'cancelled'}<option value="cancelled">{$tr('CANCELLED')}</option>{/if}
-    </select>
   {/if}
 </div>
 {#if match && choices.length}
@@ -123,11 +120,14 @@
   .bullet, .disclosure { flex: 0 0 12px; width: 12px; text-align: center; line-height: 1.68; color: var(--soft); padding: 0; margin: 0; user-select: none; }
   .editing .bullet { color: var(--accent); }
   .disclosure { background: transparent; border: 0; cursor: pointer; font-size: 13px; }
-  :global([dir='rtl']) .block-row:not([dir='ltr']) .disclosure[aria-expanded='false'], .block-row[dir='rtl'] .disclosure[aria-expanded='false'] { transform: scaleX(-1); }
+  :global(html[dir='rtl']) .disclosure[aria-expanded='false'] { transform: scaleX(-1); }
   textarea, .block-content { min-width: 0; flex: 1; font: inherit; line-height: inherit; padding: 0; margin: 0; }
+  /* Text direction remains native auto; alignment follows the shared outline edge. */
+  textarea, .block-content { text-align: left; }
+  :global(html[dir='rtl']) textarea, :global(html[dir='rtl']) .block-content { text-align: right; }
   textarea { resize: none; overflow: hidden; border: 0; outline: 0; background: transparent; color: var(--ink); }
   textarea:focus-visible { outline: none; }
-  .block-content { flex: 0 1 auto; width: max-content; max-width: calc(100% - 24px); white-space: pre-wrap; overflow-wrap: anywhere; text-align: start; background: transparent; border: 0; cursor: text; color: var(--ink); }
+  .block-content { flex: 0 1 auto; width: max-content; max-width: calc(100% - 24px); white-space: pre-wrap; overflow-wrap: anywhere; background: transparent; border: 0; cursor: text; color: var(--ink); }
   .task-status { flex: none; max-width: 105px; min-height: 27px; padding: 2px 4px; font-size: 11px; color: var(--muted); }
   .task-status.has-task { background: var(--selected); color: var(--accent-ink); }
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

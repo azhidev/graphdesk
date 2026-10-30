@@ -1,12 +1,6 @@
 import type { Block } from './types.ts';
 export interface Row { block: Block; depth: number; hasChildren: boolean }
 
-/** Presentation only; resolve the outline edge from acknowledged text, not drafts. */
-export function blockDirection(content: string): 'ltr' | 'rtl' | undefined {
-  const letter = content.match(/\p{Letter}/u)?.[0];
-  return letter ? (/\p{Script=Arabic}|\p{Script=Hebrew}/u.test(letter) ? 'rtl' : 'ltr') : undefined;
-}
-
 /** Presentation only: mutations/ordering decisions are validated and applied in Rust. */
 export function visibleRows(blocks: Block[], collapsed: Set<string>): Row[] {
   const children = new Map<string | null, Block[]>();

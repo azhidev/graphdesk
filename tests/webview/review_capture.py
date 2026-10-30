@@ -78,7 +78,11 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
         block(journal, 1, 'بررسی زیرشاخهٔ فارسی with English ۱۲۳', parent=task)
         block(journal, 2, 'Keep the editor responsive while navigating between pages.')
         persian = block(journal, 3, 'بررسی روزانه — متن فارسی با English و عدد ۱۲۳.')
-        block(journal, 0, 'English nested under Persian — متن کوتاه', parent=persian)
+        english_child = block(journal, 0, 'English nested under Persian — متن کوتاه', parent=persian)
+        three_level = ('سطح سوم — متن بلند فارسی با English و عدد ۱۲۳ که باید در عرض صفحه بشکند و همچنان کنار نشانه و زیر والد بماند. '
+                       'متن ادامه دارد تا سطر بعدی نیز قابل دیدن باشد.\n'
+                       'Third line in English with فارسی and ۱۲۳; another long sentence checks native textarea wrapping and exact save across restarts.')
+        third = block(journal, 0, three_level, parent=english_child)
         block(journal, 4, 'Capture finalized text; keep draft recovery visible.', 'doing')
         block(journal, 5, 'Summarize open questions from the Project Atlas notes.')
         block(pages[0][0], 0, 'Plan the next small iteration without redesigning the editor.', 'todo')
@@ -91,7 +95,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
 
     start(); field(480, 130, str(graph)); select('Tab', 'Return')
     pump(.7)
-    assert sql('SELECT count(*) FROM blocks') == [(14,)]
+    assert sql('SELECT count(*) FROM blocks') == [(15,)]
     # Explicit Light, independent of the display's color-scheme preference.
     settings(); choose('theme', 'light', 370, 'Home', 'Down', 'Return')
     assert prefs()['theme'] == 'light'
@@ -112,12 +116,22 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
                (('theme', 'light'), ('language', 'fa'), ('calendar', 'jalali'))), prefs()
     dismiss_settings()
     desktop('03-persian-rtl-jalali-journal')
-    click(350, 333); select('End'); paste(' سلام ۱۲')
-    english_edited = 'Start with a quiet review of the day. سلام ۱۲'
+    click(680, 333); select('End'); paste(' سلام ۱۲')
+    xdo('type', '--clearmodifiers', '--delay', '1', ' rapid123'); pump()
+    english_edited = 'Start with a quiet review of the day. سلام ۱۲ rapid123'
     wait_sql('SELECT content FROM blocks WHERE id=?', [(english_edited,)], (english,))
+    select('ctrl+Home', 'shift+Right', 'shift+Right')
+    assert sql('SELECT content FROM blocks WHERE id=?', (english,)) == [(english_edited,)]
     click(690, 518); select('End'); paste(' English ۱۲')
     persian_edited = 'بررسی روزانه — متن فارسی با English و عدد ۱۲۳. English ۱۲'
     wait_sql('SELECT content FROM blocks WHERE id=?', [(persian_edited,)], (persian,))
+    click(700, 590); select('ctrl+End'); paste(' پایان English ۱۲')
+    third_edited = three_level + ' پایان English ۱۲'
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(third_edited,)], (third,))
+    select('ctrl+z')
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(three_level,)], (third,))
+    select('ctrl+y')
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(third_edited,)], (third,))
     desktop('03a-persian-rtl-editing-mixed-block')
     discovery('12-persian-rtl', rtl=True)
 
@@ -175,6 +189,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     wait_sql('SELECT content FROM blocks WHERE id=?', [(task_text,)], (task,))
     wait_sql('SELECT content FROM blocks WHERE id=?', [(english_edited,)], (english,))
     wait_sql('SELECT content FROM blocks WHERE id=?', [(persian_edited,)], (persian,))
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(third_edited,)], (third,))
     close(); assert app().wait(timeout=10) == 0
-    assert sql('SELECT count(*) FROM blocks') == [(14,)]
+    assert sql('SELECT count(*) FROM blocks') == [(15,)]
     print('PASS: twenty-one production captures, RTL mixed-script edits, filtered task/source return, Tasks/Search empty/clear, nested undo/redo and exact restart', flush=True)

@@ -35,7 +35,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     shot('04-search-source-focus')
     # The native textarea stays focused after source navigation. Task controls
     # are contextual, but remain reachable without hover; history stays intact.
-    click(1080, 335); xdo('key', 'Home', 'Down', 'Return'); pump()
+    click(488, 335); xdo('key', 'Home', 'Down', 'Return'); pump()
     wait_sql('SELECT task_status FROM blocks WHERE id=?', [('todo',)], (block_id,))
     click(570, 335); xdo('key', 'ctrl+z'); pump()
     wait_sql('SELECT task_status FROM blocks WHERE id=?', [(None,)], (block_id,))

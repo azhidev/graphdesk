@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { calendarDate, calendarFields, adjacentDay, dateLabel, dateHeading, dateNumber, asciiDigits, localDate, displayPageTitle } from '../../src/lib/dates.ts';
 import { messages, translate, errorText } from '../../src/lib/i18n.ts';
 import { keyIntent, shortcutLetter } from '../../src/lib/editor/keyboard.ts';
-import { blockDirection } from '../../src/lib/editor/outline.ts';
+import { visibleRows } from '../../src/lib/editor/outline.ts';
 import { FirstNoteController } from '../../src/lib/firstNote.ts';
 
 test('Jalali Nowruz, Esfand leap days, month ends and digit input share one conversion authority', () => {
@@ -80,10 +80,11 @@ test('Persian layout shortcut fallback does not reinterpret native movement or I
   assert.equal(keyIntent({...key,keyCode:229}), null); assert.equal(keyIntent({...key,altKey:true}), null);
 });
 
-test('multilingual outline chooses a stable first-strong edge without changing text', () => {
-  const values = ['سلام English ۱۲۳', 'English سلام ۱۲۳', '۱۲۳ [[فارسی]]', '۱۲۳ Project فارسی', '۱۲۳'];
-  assert.deepEqual(values.map(blockDirection), ['rtl', 'ltr', 'rtl', 'ltr', undefined]);
-  assert.equal(values[0], 'سلام English ۱۲۳');
+test('mixed-language parent/child depth and content are independent of first-strong text', () => {
+  const contents = ['سلام English ۱۲۳', 'English سلام ۱۲۳', 'دنبالهٔ فارسی\nline two', 'English parent', 'فرزند فارسی'];
+  const blocks = contents.map((content, i) => ({ id: `b${i}`, parent_id: [null, 'b0', 'b1', null, 'b3'][i], page_id: 'p', position: i, content, task_status: null }));
+  assert.deepEqual(visibleRows(blocks, new Set()).map(({ block, depth }) => [block.id, depth, block.content]),
+    [['b0', 0, contents[0]], ['b1', 1, contents[1]], ['b2', 2, contents[2]], ['b3', 0, contents[3]], ['b4', 1, contents[4]]]);
 });
 
 function fixture(options = {}) {
