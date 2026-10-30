@@ -45,6 +45,43 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### Recovery and mixed-direction outline — 2026-10-30 (Ubuntu/Xvfb; Fedora pending)
+
+Recovery uses a compact dismissible notice above the workspace. Dismissing it
+does not remove the private draft; the sidebar's Review recovery drafts entry
+opens a focused modal with the existing read-only comparison, revision-guarded
+recover, and separately confirmed discard. The header's current save status is
+independent of the older local snapshot notice; failed saves still display the
+prominent header/editor error. New or updated snapshots can resurface the
+notice. Native dialogs support Escape, tab traversal and focus return.
+
+The outline row's marker, content and task control follow the first strong
+letter of **acknowledged** content, independently of the UI language; native
+textareas and inactive block buttons retain `dir="auto"`. This is presentation
+only: drafts, caret/IME, stored Unicode, commands, block order, and persistence
+are unchanged. An inactive text button sizes to its content so it stays near
+its marker even in the opposite-language UI. Indentation still follows each
+row's logical start; opposite-direction parent/child rows can occupy opposite
+edges of the page. Evaluate that visual hierarchy on Fedora before any further
+outline changes; do not silently change editing semantics to force alignment.
+
+From a locked unbundled release build, `python3 tests/webview/smoke.py
+--reliability --artifacts test-artifacts/webview-recovery-bidi-reliability`
+checks a real SQLite write lock, an exact private snapshot, restart with an
+external graph edit, Light/Dark/RTL notice screenshots, dismissal without data
+loss, review/Escape/reopen, comparison close, discard cancellation, explicit
+recovery, draft cleanup, block identity and exact restart. `--review --artifacts
+test-artifacts/webview-recovery-bidi-review` captures Light/Dark/RTL nested
+English/Persian outlines and checks exact mixed-script edits in RTL, undo/redo,
+and reopen. `--shell --artifacts test-artifacts/webview-recovery-bidi-shell`
+covers search-to-source and navigation with the new row layout. Node editor
+tests cover rapid drafts, native movement contracts, and simulated composition;
+the two `tests/perf/editor_*.mjs` files model 5,000-block draft notifications
+and lookups, **not** real WebView input latency. Ubuntu/Xvfb production IPC is
+not native Fedora/Wayland, real Persian IME candidate handling, caret/selection
+visual inspection, or assistive-technology testing.
+
+
 ### UI Foundation Phase 3B — 2026-10-30 (Ubuntu/Xvfb, Fedora pending)
 
 Tasks now shares the Journal's 812px content width and logical padding, with

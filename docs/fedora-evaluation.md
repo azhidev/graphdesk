@@ -47,6 +47,19 @@ supplied alongside the bundle after its creation, not predicted here.
 
 ## Updating an existing evaluation checkout for UI Foundation
 
+For the recovery/bidi refinement, repeat the full-bundle guards below with its
+**committed revision** (not an earlier Phase 3B build); verify SHA-256, full Git
+SHA, clean checkout and rebuild on Fedora. On a disposable graph, enter Persian
+text in an English UI and English text in a Persian UI. Inspect nested outlines
+with opposite-script parents/children, long lines, mixed content, markers and
+task controls in Light/Dark/RTL. Check a real Persian IME candidate cycle,
+selection and caret during rapid typing, undo/redo and exact restart. With an
+unresolved snapshot, check current Saved versus older recovery notice, dismiss
+and reopen via the sidebar, compare, Escape and focus return, cancel discard,
+and recover only after checking both versions. Induce a failed save on disposable
+data and verify the prominent warning persists. Record screenshots and any
+remaining opposite-edge parent/child visual grouping issue separately.
+
 For Phase 3B, repeat the full-bundle guards below with the **committed Phase 3B
 revision** and a new `graphdesk-ui-phase3b-$revision.bundle` name. Verify its
 SHA-256 and full Git SHA on Fedora, fetch into a clean evaluation checkout and
