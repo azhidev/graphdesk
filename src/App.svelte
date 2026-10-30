@@ -65,6 +65,7 @@
   let renameTitle = $state('');
   let journalDate = $state(localDate());
   let query = $state('');
+  let searchInput = $state<HTMLInputElement>();
   let searchComposing = $state(false);
   let resultIndex = $state(0);
   let searchRevision = $state(0);
@@ -416,6 +417,11 @@
       event.preventDefault(); void selectHit(results.hits[resultIndex]);
     } else if (event.key === 'Escape') { event.preventDefault(); query = ''; searchOpen = false; if (narrow) sidebarOverlay = false; void focusPage(); }
   }
+  function clearSearch() {
+    if (searchComposing) return;
+    query = ''; resultIndex = 0;
+    searchInput?.focus();
+  }
   function overlayKeys(event: KeyboardEvent) {
     if (event.key === 'Tab' && sidebarOverlay && !document.querySelector('dialog[open]')) {
       const controls = [...document.querySelectorAll<HTMLElement>('#workspace-sidebar button:not(:disabled), #workspace-sidebar input:not(:disabled), #workspace-sidebar select:not(:disabled), #workspace-sidebar summary')].filter(el => el.getClientRects().length);
@@ -570,17 +576,19 @@
           <button class="back-to-workspace" onclick={closeSearch} disabled={searchComposing}><svg class="icon direction-icon" aria-hidden="true"><use href="#shell-left" /></svg>{$tr('Workspace')}</button>
           <h2>{$tr('Search')}</h2>
           <label for="search" class="sr-only">{$tr('Search pages and blocks')}</label>
-          <input id="search" type="search" dir="auto" bind:value={query} placeholder={$tr('Search · Ctrl/Cmd+K')} onkeydown={searchKeys}
+          <div class="search-field"><input bind:this={searchInput} id="search" type="search" dir="auto" bind:value={query} placeholder={$tr('Search · Ctrl/Cmd+K')} onkeydown={searchKeys}
           oncompositionstart={() => searchComposing = true} oncompositionend={() => searchComposing = false}
           aria-describedby="search-help" />
+          {#if query}<button class="clear-search" aria-label={$tr('Clear search')} title={$tr('Clear search')} disabled={searchComposing} onclick={clearSearch}>×</button>{/if}</div>
           <p id="search-help" class="hint">{$tr('Phrase search · ↑/↓ choose · Enter opens · Esc clears')}</p>
           {#if results.pending}<p role="status">{$tr('Searching…')}</p>{/if}
           {#if results.error}<ErrorNotice message={results.error} />{/if}
-          {#if query.trim() && !results.pending && !results.error && !results.hits.length}<p>{$tr('No matches.')}</p>{/if}
+          {#if !query.trim()}<p class="search-empty">{$tr('Search pages and blocks')}</p>
+          {:else if !results.pending && !results.error && !results.hits.length}<p class="search-empty">{$tr('No matches.')}</p>{/if}
           <ul aria-label={$tr('Search results')} class="results">{#each results.hits as hit, index (`${hit.kind}:${hit.id}`)}
-            <li><button id={`search-hit-${index}`} class:chosen={index === resultIndex} aria-current={index === resultIndex ? 'true' : undefined} disabled={locked} onclick={() => selectHit(hit)} dir="auto">
-              <strong>{$tr(hit.kind === 'page' ? 'Page' : 'Block')} · <bdi>{contextLabel(hit.page_id)}</bdi></strong>
-              <span dir="auto">{hit.text.slice(0, 180)}</span>
+            <li><button id={`search-hit-${index}`} class:chosen={index === resultIndex} aria-current={index === resultIndex ? 'true' : undefined} disabled={locked} onclick={() => selectHit(hit)}>
+              <span class="result-context"><span class="result-type">{$tr(hit.kind === 'page' ? 'Page' : 'Block')}</span><bdi dir="auto" class:page-title={hit.kind === 'page'}>{contextLabel(hit.page_id)}</bdi></span>
+              {#if hit.kind === 'block'}<span class="result-snippet" dir="auto">{hit.text.slice(0, 180)}</span>{/if}
             </button></li>
           {/each}</ul>
           {#if results.hits.filter(h => h.kind === 'page').length === 100 || results.hits.filter(h => h.kind === 'block').length === 100}<p class="hint">{$tr('Up to 100 results per kind. Refine your phrase to find more.')}</p>{/if}
@@ -715,13 +723,26 @@
   .page-list button { overflow: hidden; }.page-list bdi { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sidebar-bottom { flex: none; border-block-start: 1px solid var(--line); padding: var(--space-2) var(--space-3); }
   .search-sidebar { min-height: 0; flex: 1; overflow-y: auto; padding: 21px 15px; }
-  .search-sidebar h2 { font-size: 19px; margin: 24px 5px 15px; }.back-to-workspace { display: flex; align-items: center; gap: 9px; padding: 4px 5px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
-  .search-sidebar input { width: 100%; padding: 8px; }
+  .search-sidebar h2 { font-size: 19px; letter-spacing: -.025em; margin: 24px 5px 15px; }.back-to-workspace { display: flex; align-items: center; gap: 9px; padding: 4px 5px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--muted); font-size: 12px; }
+  .back-to-workspace:hover:not(:disabled) { background: var(--hover); }
+  .search-field { display: flex; align-items: center; min-height: 36px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface); }
+  .search-field:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .search-field input { width: 100%; min-width: 0; padding: 7px 8px; border: 0 !important; outline: 0; background: transparent !important; }
+  .search-field input:focus-visible { outline: 0; }
+  .search-field input::-webkit-search-cancel-button { display: none; }
+  .clear-search { flex: none; width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 18px; }
+  .clear-search:hover:not(:disabled) { background: var(--hover); }
   .hint { color: var(--muted); font-size: 11px; }.search-sidebar .hint { margin-block: var(--space-2) var(--space-4); }
-  .results { max-height: 55vh; overflow-y: auto; padding: 0; list-style: none; }
-  .results button { width: 100%; text-align: start; padding: 8px; margin-block: 2px; background: transparent; border: 0; overflow-wrap: anywhere; }
+  .results { margin: 0; padding: 0; list-style: none; }
+  .results button { width: 100%; text-align: start; padding: 9px 8px; margin-block: 2px; border: 0; border-radius: var(--radius-control); background: transparent; overflow-wrap: anywhere; }
+  .results button:hover:not(:disabled) { background: var(--hover); }
   .results button.chosen { background: var(--selected); color: var(--accent-ink); }
-  .results span { display: block; font-size: 12px; white-space: pre-wrap; }.results strong { font-size: 11px; font-weight: 620; }
+  .result-context { display: flex; flex-wrap: wrap; gap: 2px 7px; align-items: baseline; color: var(--muted); font-size: 11px; }
+  .result-context bdi { min-width: 0; overflow-wrap: anywhere; }
+  .result-context .page-title { color: var(--ink); font-size: 13px; font-weight: 630; }
+  .result-type { color: var(--soft); font-weight: 650; }
+  .result-snippet { display: block; margin-block-start: 4px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; color: var(--ink); }
+  .search-empty { padding: 12px 8px; color: var(--muted); font-size: 12px; }
   .content { min-width: 0; min-height: 0; overflow-y: auto; }
   .notes-view { min-width: 0; }.page-document { max-width: 812px; margin-inline: auto; padding: 52px 52px 88px; }
   #page-heading { font-size: 28px; line-height: 1.25; letter-spacing: -.025em; font-weight: 650; margin: 0 0 var(--space-4); }

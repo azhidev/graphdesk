@@ -47,6 +47,7 @@ export const messages = {
   'Full path to notes.sqlite3': 'مسیر کامل فایل notes.sqlite3', 'Open graph': 'باز کردن گراف', 'Create graph': 'ساخت گراف',
   'The parent directory must exist. Create never overwrites an existing file.': 'پوشهٔ مقصد باید موجود باشد. ساخت گراف هیچ فایل موجودی را بازنویسی نمی‌کند.',
   'Search pages and blocks': 'جست‌وجوی صفحه‌ها و بلوک‌ها', 'Search · Ctrl/Cmd+K': 'جست‌وجو · Ctrl/Cmd+K',
+  'Clear search': 'پاک کردن جست‌وجو',
   'Phrase search · ↑/↓ choose · Enter opens · Esc clears': 'جست‌وجوی عبارتی · ↑/↓ انتخاب · Enter باز کردن · Esc پاک کردن',
   'Searching…': 'در حال جست‌وجو…', 'No matches.': 'نتیجه‌ای پیدا نشد.', 'Page': 'صفحه', 'Block': 'بلوک',
   'Search results': 'نتایج جست‌وجو', 'Up to 100 results per kind. Refine your phrase to find more.': 'حداکثر ۱۰۰ نتیجه از هر نوع. برای نتایج دیگر عبارت دقیق‌تری بنویسید.',
