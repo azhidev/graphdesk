@@ -42,6 +42,14 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
         pump(.8)
         shot(name, 1300, 1000)
 
+    def discovery(prefix, rtl=False):
+        select('ctrl+k', 'ctrl+a'); paste('plan'); pump(.8)
+        desktop(f'{prefix}-search')
+        click(1210 if rtl else 70, 85)
+        click(1210 if rtl else 85, 195)
+        desktop(f'{prefix}-tasks')
+        click(1210 if rtl else 80, 120)
+
     start()
     field(480, 130, str(graph)); click(590, 180)
     today = time.strftime('%Y-%m-%d')
@@ -87,11 +95,13 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     assert prefs()['theme'] == 'light'
     dismiss_settings()
     desktop('01-english-light-gregorian-journal')
+    discovery('10-english-light')
 
     settings(); choose('theme', 'dark', 370, 'End', 'Return')
     assert prefs()['theme'] == 'dark'
     dismiss_settings()
     desktop('02-english-dark-gregorian-journal')
+    discovery('11-english-dark')
 
     settings(); choose('theme', 'light', 370, 'Home', 'Down', 'Return')
     choose('language', 'fa', 456, 'End', 'Return')
@@ -100,6 +110,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
                (('theme', 'light'), ('language', 'fa'), ('calendar', 'jalali'))), prefs()
     dismiss_settings()
     desktop('03-persian-rtl-jalali-journal')
+    discovery('12-persian-rtl', rtl=True)
 
     settings(1210); choose('language', 'en', 456, 'Home', 'Return')
     choose('calendar', 'gregorian', 542, 'Home', 'Return')
@@ -133,9 +144,26 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     wait_sql('SELECT content FROM blocks WHERE id=?', [(original,)], (nested,))
     select('ctrl+y')
     wait_sql('SELECT content FROM blocks WHERE id=?', [(edited,)], (nested,))
+    click(85, 195)
+    click(470, 245); select('Home', 'Down', 'Return')
+    desktop('13-todo-filter')
+    click(510, 325); pump(.5)
+    paste('source ')
+    task_text = 'source Plan the UI foundation review and share clear screenshots.'
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(task_text,)], (task,))
+    xdo('key', 'Escape', 'alt+Left'); pump()
+    desktop('14-filter-restored')
+    assert sql("SELECT count(*) FROM blocks WHERE task_status='done'") == [(0,)]
+    click(470, 245); select('End', 'Return')
+    desktop('15-tasks-empty')
+    select('ctrl+k', 'ctrl+a'); paste('unlikelynomatchphrase'); pump(.8)
+    desktop('16-search-no-matches')
+    click(223, 187)
+    desktop('17-search-cleared')
     close(); assert app().wait(timeout=10) == 0
     start(); field(480, 130, str(graph)); select('Tab', 'Return')
     wait_sql('SELECT content FROM blocks WHERE id=?', [(edited,)], (nested,))
+    wait_sql('SELECT content FROM blocks WHERE id=?', [(task_text,)], (task,))
     close(); assert app().wait(timeout=10) == 0
     assert sql('SELECT count(*) FROM blocks') == [(12,)]
-    print('PASS: nine production visual captures, nested mixed-script edit/undo/redo and restart from one disposable graph', flush=True)
+    print('PASS: twenty production captures, filtered task/source return, Tasks/Search empty/clear, nested mixed-script edit/undo/redo and restart', flush=True)

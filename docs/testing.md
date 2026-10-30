@@ -45,6 +45,34 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### UI Foundation Phase 3B — 2026-10-30 (Ubuntu/Xvfb, Fedora pending)
+
+Tasks now shares the Journal's 812px content width and logical padding, with
+compact filter controls and quiet rows showing task content before status and
+source. Search keeps the original controller, result order, keyboard selection
+and source focus, but distinguishes page titles from block snippets, uses one
+scrolling sidebar, and offers an explicit keyboard-accessible clear control.
+Empty Tasks filters no longer suggest creating TODO tasks when viewing DONE.
+The editor and scoped per-block draft path were not changed.
+
+After an unbundled production build, run `python3 tests/webview/smoke.py
+--review --artifacts test-artifacts/webview-phase3b-review` for Light/Dark and
+Persian RTL Search/Tasks screenshots, filtered task/source/Back, empty filters,
+Search no-results/clear, nested text undo/redo and exact reopen. Run `--shell
+--artifacts test-artifacts/webview-phase3b-shell` for keyboard search-to-source,
+draft persistence, task status/undo/redo, history and RTL overlay/reopen. These
+use disposable graphs and native production WebKitGTK IPC under Ubuntu/Xvfb,
+not native Fedora, real Persian IME or assistive technology.
+
+**Deferred editor visual concern:** On Persian RTL pages, right-aligned block
+markers can be far from auto-direction English text. Validate that spacing with
+mixed-script native input and caret/selection on Fedora before a separate
+focused corrective pass; do not infer a safe bidi fix from these Tasks/Search
+captures. The old `--daily` fixed-coordinate fixture still misses the moved
+task selector; it is not passing Phase 3B evidence. Real 5,000-block WebView
+responsiveness likewise requires a native comparison, not the synthetic model.
+
+
 ### UI Foundation Phase 3A — 2026-10-29 (Ubuntu/Xvfb, Fedora pending)
 
 The Journal heading now presents the selected calendar as a localized long-form

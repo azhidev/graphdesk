@@ -47,6 +47,18 @@ supplied alongside the bundle after its creation, not predicted here.
 
 ## Updating an existing evaluation checkout for UI Foundation
 
+For Phase 3B, repeat the full-bundle guards below with the **committed Phase 3B
+revision** and a new `graphdesk-ui-phase3b-$revision.bundle` name. Verify its
+SHA-256 and full Git SHA on Fedora, fetch into a clean evaluation checkout and
+build there with `npm ci --ignore-scripts`, `npm run check`, `npm run test:editor`,
+`npm run test:schema`, and `npm run tauri -- build --no-bundle -- --locked`.
+Launch that Fedora binary with a disposable graph. Compare Tasks and Search in
+Light/Dark and Persian RTL/Jalali, filter active/TODO/DONE and page, follow a
+task and return via history, search page/block matches with ↑/↓/Enter and clear,
+then verify draft save/reopen. Test empty states and a real Persian IME candidate
+cycle separately. Record the RTL block-marker/English-text spacing concern for
+a later focused editor pass; Phase 3B does not alter block bidi behavior.
+
 For Phase 2, use the same guarded bundle/update procedure below but substitute
 `phase2` in the artifact name and use the **Phase 2 committed revision**. On the
 clean Fedora checkout verify the full SHA and digest, run `npm ci --ignore-scripts`,
