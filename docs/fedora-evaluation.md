@@ -47,6 +47,18 @@ supplied alongside the bundle after its creation, not predicted here.
 
 ## Updating an existing evaluation checkout for UI Foundation
 
+For the outline-structure correction, build the **committed revision** via the
+verified bundle procedure below. In English and Persian layouts compare a
+Persian parent with an English child, an English parent with a Persian child,
+and three mixed levels. Inspect wrapped/multiline blocks, task selectors and
+markers during editing and after save/reopen, including Light/Dark. Test native
+Persian IME preedit/candidate commit, caret motion, selection, rapid typing and
+undo/redo with exact persisted text. Confirm that an opposite-language line
+changes character order, not the row's structural edge. The Ubuntu/Xvfb
+production screenshots in `test-artifacts/webview-outline-structure-review/`
+are comparison evidence, not Fedora validation.
+
+
 For the recovery/bidi refinement, repeat the full-bundle guards below with its
 **committed revision** (not an earlier Phase 3B build); verify SHA-256, full Git
 SHA, clean checkout and rebuild on Fedora. On a disposable graph, enter Persian

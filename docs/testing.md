@@ -45,6 +45,33 @@ native Windows/macOS builds, installers and performance metrics were not tested.
 
 ## Compatibility record
 
+### Mixed-direction outline structure — 2026-10-30 (Ubuntu/Xvfb; Fedora pending)
+
+Outline rows now inherit the page's LTR/RTL layout rather than deriving their
+flex direction from individual text. Markers, task selectors and depth-based
+indentation share that edge; the controls precede the text in visual and tab
+order. Native textareas and inactive text buttons still use `dir="auto"` for
+character order, while their CSS **text alignment** follows the shared outline
+edge. No text, input commands, persistence, or draft notification path changed.
+The previous per-block structural direction described below is historical and
+is superseded by this correction.
+
+`python3 tests/webview/smoke.py --review --artifacts
+test-artifacts/webview-outline-structure-review` captures production Light,
+Dark, and Persian RTL layouts with Persian-parent/English-child,
+English-parent/Persian-child, three-level mixed-language nesting, and long
+multiline wrapped content. The fixture checks RTL rapid ASCII key input,
+mixed-script text, selection/movement without mutation, native multiline edit,
+undo/redo, and exact save/reopen via disposable SQLite data. `--shell --artifacts
+test-artifacts/webview-outline-structure-shell` exercises source focus, task
+selector placement, undo/redo, navigation and persisted RTL preferences.
+`--reliability` remains the separate production recovery regression.
+Unit tests cover composition and rapid drafts, while `tests/perf/editor_revision.mjs`
+models scoped draft notifications. These Ubuntu/Xvfb results are **not** a real
+Persian IME candidate/caret/selection or 5,000-row WebView latency check on
+native Fedora.
+
+
 ### Recovery and mixed-direction outline — 2026-10-30 (Ubuntu/Xvfb; Fedora pending)
 
 Recovery uses a compact dismissible notice above the workspace. Dismissing it
