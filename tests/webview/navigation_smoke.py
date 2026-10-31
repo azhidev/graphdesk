@@ -37,8 +37,20 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
         # This fixture has no window manager (the main-window start helper also
         # explicitly focuses windows). Do not mistake Xvfb focus policy for a
         # real compositor test; native Fedora/Wayland remains separate.
-        window = xdo('search', '--onlyvisible', '--pid', app().pid, '--name', '(Open|Create) graph').splitlines()[-1]
-        xdo('windowmove', window, 80, 80, 'windowfocus', window); pump()
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            try:
+                windows = xdo('search', '--onlyvisible', '--pid', app().pid,
+                              '--name', '^(Open|Create) graph$').splitlines()
+            except subprocess.CalledProcessError:
+                windows = []
+            if windows:
+                window = windows[-1]
+                xdo('windowmove', window, 80, 80, 'windowfocus', window); pump()
+                assert int(xdo('getwindowfocus')) == int(window), 'native dialog did not receive focus'
+                return
+            pump(.1)
+        raise AssertionError('native Open/Create graph dialog never became visible')
 
     def native_path(path):
         # GTK native file/save dialog, not a mocked path or test-only IPC.
