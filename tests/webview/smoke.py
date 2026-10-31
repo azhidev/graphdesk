@@ -145,7 +145,7 @@ def main():
         lib.XSendEvent(display, window, 0, 0, event); lib.XFlush(display); lib.XCloseDisplay(display); pump(.5)
 
     def reopen():
-        start(); field(480, 130, str(graph)); click(590, 180)
+        start(); field(480, 130, str(graph)); click(470, 180)
 
     def find(text):
         xdo('key', 'ctrl+k', 'ctrl+a'); paste(text); pump(.5)
@@ -254,21 +254,26 @@ def main():
             tomorrow_id = sql('SELECT page_id FROM journals WHERE date!=?', (today,))[0][0]
             paste(' focused')
             wait_sql('SELECT content FROM blocks WHERE page_id=?', [('tomorrow task focused',)], (tomorrow_id,))
-            click(355, 368); xdo('key', 'Home', 'Down', 'Return'); pump()
+            # The active block's task select precedes its textarea in tab order.
+            # Geometry moved with the outline; follow focus rather than pixels.
+            click(520, 333); xdo('key', 'shift+Tab'); pump()
+            xdo('key', 'Home', 'Down', 'Return'); pump()
             wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('todo',)], (tomorrow_id,))
-            click(195, 130); shot('06-tasks')
+            click(100, 195); shot('06-tasks')
             xdo('key', 'Tab', 'Home', 'Down', 'Down', 'Down', 'Return', 'Escape'); pump()
             shot('06a-no-done-tasks')
             xdo('key', 'Home', 'Down', 'Return', 'Escape'); pump()
             xdo('key', 'Tab', 'End', 'Return', 'Escape'); pump()
             shot('06b-filtered-tasks')
-            click(195, 130)
+            click(100, 195)
             xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Return'); pump()
             xdo('key', 'ctrl+End'); paste(' source focus')
             wait_sql('SELECT content FROM blocks WHERE page_id=?', [('tomorrow task focused source focus',)], (tomorrow_id,))
-            click(355, 368); xdo('key', 'Home', 'Down', 'Down', 'Return'); pump()
+            click(600, 333); click(480, 333); pump()
+            xdo('key', 'Home', 'Down', 'Down'); pump()
+            xdo('key', 'Return'); pump()
             wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('doing',)], (tomorrow_id,))
-            click(355, 368); xdo('key', 'Home', 'Down', 'Down', 'Down', 'Return'); pump()
+            click(480, 333); xdo('key', 'Home', 'Down', 'Down', 'Down', 'Return'); pump()
             wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('done',)], (tomorrow_id,))
             xdo('key', 'ctrl+z'); pump()
             wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('doing',)], (tomorrow_id,))
@@ -276,12 +281,12 @@ def main():
             paste(' search focus'); text = ' search focus' + text
             wait_sql('SELECT content FROM blocks WHERE id=?', [(text,)], (block_id,))
             shot('07-search-focus')
-            find(''); click(700, 370); xdo('key', 'ctrl+End')
+            find(''); click(700, 335); xdo('key', 'ctrl+End')
             lock = sqlite3.connect(graph, isolation_level=None); lock.execute('BEGIN IMMEDIATE')
             try:
                 paste(' retained draft'); pump(6)
                 assert sql('SELECT content FROM blocks WHERE id=?', (block_id,)) == [(text,)]
-                click(195, 130); close(); assert app.poll() is None
+                click(100, 195); close(); assert app.poll() is None
                 shot('08-retained-error')
             finally:
                 lock.execute('ROLLBACK'); lock.close()
@@ -315,12 +320,14 @@ def main():
             wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(3,)], (today_id,))
             expected_subtree = sql('SELECT * FROM blocks WHERE page_id=? ORDER BY id', (today_id,))
             expected_edges = sql('SELECT * FROM inline_references ORDER BY source_block_id,title_key')
-            xdo('key', 'ctrl+Home', 'Up', 'ctrl+Home', 'Up', 'Escape'); pump()
-            xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+            click(650, 335); xdo('key', 'Escape'); pump()
+            click(560, 283); pump()
+            xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
             shot('10-subtree-confirmation')
             xdo('key', 'Escape'); pump()
-            assert sql('SELECT * FROM blocks WHERE page_id=? ORDER BY id', (today_id,)) == expected_subtree
-            xdo('key', 'Escape', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+            actual_subtree = sql('SELECT * FROM blocks WHERE page_id=? ORDER BY id', (today_id,))
+            assert actual_subtree == expected_subtree, (actual_subtree, expected_subtree)
+            click(560, 283); xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
             xdo('key', 'Tab', 'space'); pump()
             wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(0,)], (today_id,))
             xdo('key', 'Tab', 'space'); pump()
@@ -329,33 +336,40 @@ def main():
             shot('11-subtree-restored')
             xdo('key', 'ctrl+shift+z'); pump()
             wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(0,)], (today_id,))
-            xdo('key', 'Tab', 'Tab', 'space'); pump()
+            click(445, 283); pump()
+            wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(3,)], (today_id,))
+            click(580, 373); xdo('key', 'Escape'); click(560, 283)
+            xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+            xdo('key', 'Tab', 'space'); pump()
             wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(1,)], (today_id,))
-            xdo('key', 'Escape', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+            click(650, 335); xdo('key', 'Escape'); click(560, 283)
+            xdo('key', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'space'); pump()
+            xdo('key', 'Tab', 'space'); pump()
             wait_sql('SELECT count(*) FROM blocks WHERE page_id=?', [(0,)], (today_id,))
             assert sql('SELECT content,task_status FROM blocks WHERE page_id=?', (tomorrow_id,)) == [('tomorrow task focused source focus', 'doing')]
             # Explicit link creation, rename-stable bindings and backlinks remain
             # integrated with the new shell; unresolved Later must stay absent.
             xdo('key', 'ctrl+shift+j'); pump(); paste('[[Target]] [[Later]]')
             wait_sql('SELECT count(*) FROM inline_references', [(2,)])
-            click(610, 413)  # references are keyed/sorted, Later precedes Target
+            click(675, 378)  # references are keyed/sorted, Later precedes Target
             wait_sql("SELECT count(*) FROM pages WHERE title='Target'", [(1,)])
             target_id = sql("SELECT id FROM pages WHERE title='Target'")[0][0]
-            click(390, 184); xdo('key', 'Tab'); paste('Renamed'); xdo('key', 'Return'); pump()
+            click(430, 166); field(600, 200, 'Renamed'); click(885, 200)
             wait_sql('SELECT title FROM pages WHERE id=?', [('Renamed',)], (target_id,))
             wait_sql("SELECT target_page_id FROM inline_references WHERE title_key='target'", [(target_id,)])
             assert sql("SELECT count(*) FROM pages WHERE title='Later'") == [(0,)]
             shot('12-renamed-backlinks')
-            click(390, 184)  # collapse rename controls
-            click(490, 435); xdo('key', 'ctrl+End'); paste(' backlink focus')
+            click(430, 166)  # collapse rename controls
+            click(490, 375); xdo('key', 'ctrl+End'); paste(' backlink focus')
             wait_sql("SELECT content FROM blocks WHERE page_id=?", [('[[Target]] [[Later]] backlink focus',)], (today_id,))
             # A resolved binding still opens the renamed UUID without rewriting source.
-            click(610, 413)
+            click(675, 378)
             pump()
-            click(390, 309); paste('ordinary page task')
-            click(355, 307); xdo('key', 'Home', 'Down', 'Return'); pump()
+            click(480, 255); paste('ordinary page task')
+            wait_sql('SELECT content FROM blocks WHERE page_id=?', [('ordinary page task',)], (target_id,))
+            click(510, 255); click(480, 255); xdo('key', 'Home', 'Down', 'Return'); pump()
             wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('todo',)], (target_id,))
-            click(195, 130); shot('13-tasks-across-pages-journals')
+            click(100, 195); shot('13-tasks-across-pages-journals')
             # A narrow desktop still offers the same workspace controls. Keyboard
             # search must reveal/focus source content even when it is below fold.
             xdo('windowsize', window, 680, 900); pump()
@@ -372,7 +386,7 @@ def main():
             # Explicit graph switch creates an independent database and leaves
             # existing graph content untouched; reopen the original afterward.
             expected_graph = sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id')
-            click(1180, 44)
+            click(285, 27)
             second = work / 'second.sqlite3'
             field(480, 130, str(second)); click(590, 180)
             with sqlite3.connect(second) as connection:
@@ -380,7 +394,7 @@ def main():
                 assert connection.execute('SELECT count(*) FROM blocks').fetchone()[0] == 0
                 assert connection.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
             assert sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id') == expected_graph
-            click(1180, 44); field(480, 130, str(graph)); click(590, 180)
+            click(285, 27); field(480, 130, str(graph)); click(470, 180)
             assert sql('SELECT id,page_id,content,task_status FROM blocks ORDER BY id') == expected_graph
             shot('15-graph-switched-back')
         assert sql('PRAGMA integrity_check') == [('ok',)]

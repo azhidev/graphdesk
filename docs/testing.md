@@ -2,6 +2,19 @@
 
 ## Automated checks
 
+### Phase 4 Ubuntu regression status
+
+The production `--daily` fixture now targets the active task selector through
+keyboard focus for its first status change, and uses updated workspace,
+dialog, reference and graph-chooser positions elsewhere. It still checks exact
+SQLite content, task transitions, canceled/confirmed subtree deletion, retained
+drafts under a writer lock, normal close/reopen and graph isolation. Run with
+`python3 tests/webview/smoke.py --daily --artifacts test-artifacts/phase4-daily`.
+The fixture is fixed-geometry Ubuntu/Xvfb automation, not a native Fedora or
+assistive-technology check. The `--navigation` and `--persian` legacy fixtures
+also contain coordinate-dependent flows; report their result separately rather
+than treating a passing daily/recovery/review suite as coverage of those flows.
+
 Run from the repository root with the README's toolchains/native prerequisites:
 
 ```sh
