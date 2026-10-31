@@ -11,9 +11,13 @@ SQLite content, task transitions, canceled/confirmed subtree deletion, retained
 drafts under a writer lock, normal close/reopen and graph isolation. Run with
 `python3 tests/webview/smoke.py --daily --artifacts test-artifacts/phase4-daily`.
 The fixture is fixed-geometry Ubuntu/Xvfb automation, not a native Fedora or
-assistive-technology check. The `--navigation` and `--persian` legacy fixtures
-also contain coordinate-dependent flows; report their result separately rather
-than treating a passing daily/recovery/review suite as coverage of those flows.
+assistive-technology check. The `--navigation` fixture waits for and focuses
+the actual native Open/Create dialog instead of assuming it appeared after a
+fixed delay. The `--persian` fixture closes Settings explicitly, enters the
+Jalali picker fields on the RTL sidebar, and restores the pending note via its
+notice before asserting exact text on restart. Run these suites separately;
+neither Xvfb's window-manager-less focus behavior nor XKB layout input proves
+native compositor activation or real IME candidate behavior.
 
 Run from the repository root with the README's toolchains/native prerequisites:
 

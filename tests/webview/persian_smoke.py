@@ -32,18 +32,18 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     data = preference('calendar', 'jalali')
     assert data['language'] == 'fa' and data['search_mode'] == 'original'
     assert sql('SELECT p.id,p.title,j.date FROM pages p LEFT JOIN journals j ON j.page_id=p.id ORDER BY p.id') == signature
-    click(650, 44); xdo('key', 'ctrl+Home'); pump(); shot('p02-persian-jalali')
+    xdo('key', 'Escape', 'ctrl+Home'); pump(); shot('p02-persian-jalali')
     assert preference('calendar', 'jalali')['language'] == 'fa'
     # Coordinates below belong only to this fixed Linux fixture, not application code.
-    click(1140, 413)
+    click(1160, 332)
     shot('p03-picker')
-    field(1060, 450, '۱۱۰۰'); field(1150, 450, '۱'); field(1210, 450, '۱')
-    xdo('key', 'Tab', 'Return'); pump(); shot('p03a-unsupported-attempt')
+    field(1100, 382, '۱۱۰۰'); field(1200, 382, '۱'); field(1260, 382, '۱')
+    xdo('key', 'Return'); pump(); shot('p03a-unsupported-attempt')
     assert preference('calendar', 'jalali')['language'] == 'fa'
     assert sql('SELECT p.id,p.title,j.date FROM pages p LEFT JOIN journals j ON j.page_id=p.id ORDER BY p.id') == signature
     # Gregorian 2024-03-20 = Jalali 1403-01-01; non-ASCII digits are accepted.
-    field(1060, 450, '۱۴۰۳'); field(1150, 450, '۰۱'); field(1210, 450, '٠١')
-    xdo('key', 'Tab', 'Return'); pump()
+    field(1100, 382, '۱۴۰۳'); field(1200, 382, '۰۱'); field(1260, 382, '٠١')
+    xdo('key', 'Return'); pump()
     assert sql('SELECT p.id,p.title,j.date FROM pages p LEFT JOIN journals j ON j.page_id=p.id ORDER BY p.id') == signature
     shot('p04-preview')
     assert observer.execute('PRAGMA data_version').fetchone() == data_version
@@ -74,7 +74,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     start(); field(480, 130, str(graph)); xdo('key', 'Tab', 'Return'); pump()
     data = preference('calendar', 'jalali'); assert data['language'] == 'fa' and data['search_mode'] == 'original'
     xdo('key', 'ctrl+Home'); pump(); shot('p06-pending-recovery')
-    click(1000, 222); pump(); shot('p07-restored-form')
+    click(1090, 168); pump(); shot('p07-restored-form')
     assert sql('SELECT count(*) FROM journals') == [(1,)]
     assert sql('SELECT count(*) FROM blocks') == [(1,)]
     xdo('key', 'Tab', 'Return'); pump()
@@ -119,10 +119,10 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     shot('p10-mode-location')
     # Settings are closed after restart. Select only search mode; neither other
     # preference may change as a side effect.
-    click(1170, 792)
-    xdo('key', 'Tab', 'Tab', 'Tab', 'space'); pump(); xdo('key', 'End', 'Return'); pump(.6)
+    click(1200, 975)
+    click(600, 626); xdo('key', 'End', 'Return'); pump(.6)
     data = preference('search_mode', 'persian'); assert data['language'] == 'fa' and data['calendar'] == 'jalali'
-    click(650, 44)
+    xdo('key', 'Escape'); pump()
     xdo('key', 'ctrl+k', 'ctrl+a'); paste('یک کتاب 123'); pump(.5)
     xdo('key', 'Return'); pump(); paste('جست‌وجو ')
     text = 'جست‌وجو ' + text
@@ -135,9 +135,9 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     assert sql('PRAGMA integrity_check') == [('ok',)] and sql('PRAGMA foreign_key_check') == []
     shot('p12-reopened')
     observer = sqlite3.connect(graph); version = observer.execute('PRAGMA data_version').fetchone()
-    click(1170, 792); xdo('key', 'Tab', 'space'); pump(); xdo('key', 'Home', 'Return'); pump(.6)
+    click(1200, 975); click(600, 455); xdo('key', 'Home', 'Return'); pump(.6)
     data = preference('language', 'en'); assert data['calendar'] == 'jalali' and data['search_mode'] == 'persian'
-    click(650, 44); shot('p13-english-jalali')
+    xdo('key', 'Escape'); pump(); shot('p13-english-jalali')
     assert observer.execute('PRAGMA data_version').fetchone() == version; observer.close()
     close(); assert app().wait(timeout=10) == 0
     print('PASS: Persian/Jalali preferences, no-write date preview, private first-note capture under lock, SIGKILL/restart, explicit restore/submit, clipboard, normalized search and integrity', flush=True)
