@@ -100,7 +100,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     wait_sql('SELECT content FROM blocks WHERE id=?', [('forward visited beta target',)], (beta_block,))
 
     # Tasks is a destination; its filters survive a source jump and Back.
-    click(195, 130); pump()
+    click(75, 85); click(100, 195); pump()
     click(470, 230); xdo('key', 'Home', 'Down', 'Return'); pump(); click(1100, 175)
     click(750, 230); xdo('key', 'Home', 'Down', 'Down', 'Return'); pump(); click(1100, 175)
     shot('n06a-task-filters')
@@ -117,14 +117,14 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     shot('n09-preview-history-no-write')
 
     # Enable opt-in remembering on the common graph chooser.
-    click(1180, 44); pump(); shot('n10-chooser-settings')
-    click(150, 342); pump()
+    click(285, 27); pump(); shot('n10-chooser-settings')
+    click(420, 300); pump()
     data = wait_registry(lambda d: d['remember'] and len(d['entries']) == 1)
     assert data['entries'][0]['path'] == str(graph.resolve())
-    click(150, 374); pump(); wait_registry(lambda d: d['reopen'])
+    click(420, 328); pump(); wait_registry(lambda d: d['reopen'])
     second_dir = work / 'گراف دوم'; second_dir.mkdir()
     second = second_dir / 'smoke.sqlite3'
-    click(280, 310); pump(); shot('n11-native-save')
+    click(610, 263); pump(); shot('n11-native-save')
     native_path(second)
     data = wait_registry(lambda d: len(d['entries']) == 2 and d['entries'][0]['path'] == str(second.resolve()))
     assert second.exists(), 'inspection must never create a missing fixture database'
@@ -166,8 +166,8 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     # not the displaced textarea row below it.
     click(435, 330); pump(1)
     wait_sql('SELECT content FROM blocks WHERE id=?', [('task back changed alpha task [[Beta]] retained',)], (alpha_block,))
-    xdo('key', 'ctrl+Home'); click(1180, 44); pump()
-    click(150, 342); pump()
+    xdo('key', 'ctrl+Home'); click(285, 27); pump()
+    click(420, 300); pump()
     wait_registry(lambda d: not d['remember'] and not d['reopen'] and d['entries'] == [])
     assert second.exists() and graph.exists()
     for path in (graph, second):

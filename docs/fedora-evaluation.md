@@ -5,6 +5,58 @@ Wayland or hardware graphics. See the shared [Linux guide](platforms/linux.md),
 [native checklist](testing.md#native-platform-checklist) and [data safety](data.md).
 Start with disposable graphs or backed-up copies, never your only important notes.
 
+## Phase 4 handoff checklist (native results required before completion)
+
+Use the **final committed SHA**, full-bundle verification and clean Fedora checkout
+procedure below. Do not transfer or launch the Ubuntu binary. Record pass/fail/not
+tested for each item, with Fedora release, WebKitGTK/GTK versions, compositor,
+actual Wayland or XWayland backend, screen scale and window dimensions. Use
+isolated disposable graphs and private application directories; never inject
+failures into personal data. Stop on data loss or unacknowledged save loss.
+
+1. Build the checked-out SHA with Node 24, Rust 1.99.1, locked dependencies and
+   `npm run check`, `npm run test:editor`, `npm run test:schema`,
+   `cargo test --locked --workspace`, and
+   `npm run tauri -- build --no-bundle -- --locked`. Confirm `file`/`ldd` on
+   the Fedora executable. Run the WebView suites where Xvfb, xdotool and the
+   fixture's GTK/Python dependencies are available; report unavailable checks.
+2. On native Fedora, independently set English LTR / Persian RTL and Gregorian /
+   Jalali (all four combinations), then restart and check persisted preferences
+   and unchanged ISO journal identities. Compare Persian parent/English child,
+   English parent/Persian child and three mixed levels in Light/Dark, with
+   markers and selectors on the shared structural edge. Verify wrapped text,
+   emoji, combining marks and ZWNJ by exact save/reopen comparison.
+3. Keyboard-only: Tab/Shift+Tab through sidebar, selectors, editor toolbar,
+   dialogs and Settings; verify focus visibility, Escape dismissal/focus return,
+   narrow-window overlay Escape/outside-click behavior and error announcements
+   with available screen-reader facilities. Verify native textarea selection,
+   caret motion, split/indent/outdent, undo/redo, search/task source focus, and
+   page/history navigation. Test a **real** Persian IME candidate/preedit cycle
+   (commit and cancel) separately from pasted Persian text.
+4. In a disposable graph, hold a SQLite writer lock while editing finalized
+   text. Check prominent failed-save warning, blocked close/graph switch,
+   private recovery snapshot, and retry after unlock. Force-terminate only the
+   disposable app; restart, dismiss the notice without deleting the snapshot,
+   reopen Review, compare current and saved versions, cancel then confirm
+   discard on a separate draft, and explicitly recover the intended text.
+   Check close/reopen byte-exact text, SQLite integrity and foreign keys with
+   the app closed. Check pending first-note capture and second-graph isolation.
+5. Using the verified 1,000- and 5,000-block **single-page** fixtures and
+   instructions in [large-graph benchmark](large-graph-benchmark.md), measure
+   graph open and benchmark-page display separately (repeat trials), scroll
+   top/middle/bottom/top, rapidly type at each location, measure Saved and exact
+   reopen, and sample 30-second idle process-tree PSS/CPU with
+   `tests/perf/linux_process.py` (`missing_pss` must be zero). Record interaction
+   memory and page rendering mode. Stop before 5,000 if 1,000 is severely
+   problematic. Compare the earlier *native Fedora* 5,000-block baseline of
+   approximately 596 MiB PSS, 0.03% idle CPU and 3 s page display only under
+   comparable conditions. Ubuntu/Xvfb and Node synthetic measurements are not
+   Fedora results.
+
+Review native results, failures and untested items before declaring Phase 4
+complete. A passed fixture is not a native IME, assistive-technology or
+hardware-graphics result.
+
 ## Transfer the committed source (not the Ubuntu binary)
 
 The Ubuntu VM must first commit the evaluation instructions, then create a **full**

@@ -24,11 +24,11 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     observer = sqlite3.connect(graph)
     data_version = observer.execute('PRAGMA data_version').fetchone()
     xdo('key', 'Escape', 'ctrl+End'); pump(); shot('p01-settings-location')
-    click(110, 745)
-    xdo('key', 'Tab', 'space'); pump(); xdo('key', 'End', 'Return'); pump(.6)
+    click(100, 975)
+    click(600, 455); xdo('key', 'End', 'Return'); pump(.6)
     data = preference('language', 'fa')
     assert data['calendar'] == 'gregorian' and data['search_mode'] == 'original'
-    xdo('key', 'Tab', 'space'); pump(); xdo('key', 'End', 'Return'); pump(.6)
+    click(600, 540); xdo('key', 'End', 'Return'); pump(.6)
     data = preference('calendar', 'jalali')
     assert data['language'] == 'fa' and data['search_mode'] == 'original'
     assert sql('SELECT p.id,p.title,j.date FROM pages p LEFT JOIN journals j ON j.page_id=p.id ORDER BY p.id') == signature
