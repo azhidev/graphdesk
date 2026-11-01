@@ -5,6 +5,8 @@ No test IPC hooks, remote inspector, sandbox overrides or external listeners.
 """
 import argparse
 import ctypes
+from contextlib import nullcontext
+import json
 import os
 from pathlib import Path
 import secrets
@@ -24,8 +26,13 @@ def persian_normalize(text):
 
 
 def main():
+    if not __debug__:
+        raise RuntimeError('Do not use Python -O: smoke assertions must run')
     parser = argparse.ArgumentParser()
     parser.add_argument('--artifacts', type=Path, required=True)
+    parser.add_argument('--binary', type=Path, help='Explicit native release executable for isolated validation')
+    parser.add_argument('--work', type=Path, help='New empty private fixture directory; caller owns cleanup')
+    parser.add_argument('--perf', action='store_true', help='Open an isolated single-page fixture and sample idle process tree')
     parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--reliability', action='store_true', help='Exercise private recovery after forced termination')
     parser.add_argument('--daily', action='store_true', help='Daily workflow suite (the default)')
@@ -37,14 +44,20 @@ def main():
     root = Path(__file__).resolve().parents[2]
     args.artifacts.mkdir(parents=True, exist_ok=True)
     if not args.inside:
-        with tempfile.TemporaryDirectory(prefix='graphdesk-webview-') as temporary:
+        if args.work is not None:
+            entries = list(args.work.iterdir()) if args.work.is_dir() else []
+            prepared = args.perf and len(entries) == 1 and entries[0].name == 'benchmark.sqlite3' and entries[0].is_file() and not entries[0].is_symlink()
+            if not args.work.is_dir() or (entries and not prepared):
+                parser.error('--work must be a fresh empty fixture directory (or one prepared benchmark copy)')
+        context = nullcontext(args.work.resolve()) if args.work is not None else tempfile.TemporaryDirectory(prefix='graphdesk-webview-')
+        with context as temporary:
             work = Path(temporary)
             auth = work / 'Xauthority'
             auth.touch(mode=0o600)
             cookie = secrets.token_hex(16)
             subprocess.run(['xauth', '-f', str(auth), 'add', ':99', '.', cookie], check=True)
             display_read, display_write = os.pipe()
-            with ((work if args.review else args.artifacts) / 'xvfb.log').open('w') as log:
+            with ((work if args.review or args.work else args.artifacts) / 'xvfb.log').open('w') as log:
                 xvfb = subprocess.Popen(['Xvfb', '-displayfd', str(display_write), '-screen', '0', '1400x1100x24',
                                          '-nolisten', 'tcp', '-auth', str(auth)], pass_fds=(display_write,), stdout=log, stderr=log)
                 os.close(display_write)
@@ -55,16 +68,22 @@ def main():
                     subprocess.run(['xauth', '-f', str(auth), 'add', f':{display}', '.', cookie], check=True)
                     env = {**os.environ, 'DISPLAY': f':{display}', 'XAUTHORITY': str(auth),
                            'XDG_CONFIG_HOME': str(work / 'config'), 'XDG_DATA_HOME': str(work / 'data'),
-                           'XDG_CACHE_HOME': str(work / 'cache'), 'GRAPHDESK_SMOKE_WORK': str(work)}
-                    if args.review:
-                        env['GDK_BACKEND'] = 'x11'
+                           'XDG_CACHE_HOME': str(work / 'cache'), 'GRAPHDESK_SMOKE_WORK': str(work),
+                           'GDK_BACKEND': 'x11'}
+                    # A Fedora Wayland login may export these. Never let a fixture
+                    # connect to the real desktop instead of our owned Xvfb.
+                    env.pop('WAYLAND_DISPLAY', None)
+                    env.pop('WAYLAND_SOCKET', None)
                     subprocess.run(['dbus-run-session', '--', sys.executable, str(Path(__file__).resolve()),
                                     '--inside', '--artifacts', str(args.artifacts.resolve()),
                                     *(['--reliability'] if args.reliability else []),
                                     *(['--persian'] if args.persian else []),
                                     *(['--navigation'] if args.navigation else []),
                                     *(['--shell'] if args.shell else []),
-                                    *(['--review'] if args.review else [])], cwd=root, env=env, check=True, timeout=300)
+                                    *(['--review'] if args.review else []),
+                                    *(['--perf'] if args.perf else []),
+                                    *(['--work', str(args.work.resolve())] if args.work else []),
+                                    *(['--binary', str(args.binary.resolve())] if args.binary else [])], cwd=root, env=env, check=True, timeout=300)
                 finally:
                     os.close(display_read)
                     xvfb.terminate(); xvfb.wait(timeout=10)
@@ -75,10 +94,10 @@ def main():
     gi.require_version('Gdk', '3.0')
     from gi.repository import Gdk, Gtk
     work = Path(os.environ['GRAPHDESK_SMOKE_WORK'])
-    graph = work / ('review-notes.sqlite3' if args.review else 'smoke.sqlite3')
+    graph = work / ('benchmark.sqlite3' if args.perf else 'review-notes.sqlite3' if args.review else 'smoke.sqlite3')
     app = None
     window = None
-    log = ((work if args.review else args.artifacts) / 'app.log').open('w')
+    log = ((work if args.review or args.work else args.artifacts) / 'app.log').open('w')
 
     def pump(seconds=.3):
         end = time.monotonic() + seconds
@@ -119,7 +138,8 @@ def main():
 
     def start():
         nonlocal app, window
-        app = subprocess.Popen([str(root / 'target/release/graphdesk-desktop')], stdout=log, stderr=log)
+        app = subprocess.Popen([str(args.binary or root / 'target/release/graphdesk-desktop')],
+                               cwd=work if args.binary else root, stdout=log, stderr=log)
         pump(2)
         window = int(xdo('search', '--onlyvisible', '--pid', app.pid, '--name', 'Graphdesk').splitlines()[0])
         xdo('windowsize', window, 1300, 1000, 'windowmove', window, 0, 0, 'windowfocus', window); pump()
@@ -152,6 +172,10 @@ def main():
         xdo('key', 'ctrl+k', 'ctrl+a'); paste(text); pump(.5)
 
     try:
+        if args.perf:
+            from perf_capture import run
+            run(work, graph, root, start, close, field, click, paste, xdo, pump, shot, sql, app=lambda: app)
+            return
         if args.review:
             from review_capture import run
             run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, lambda: app)
@@ -255,7 +279,8 @@ def main():
             reopen(); pump()
             shot('r08-multiple-snapshots')
             with sqlite3.connect(stores[0]) as recovery:
-                assert recovery.execute('SELECT id,updated_at FROM recovery_drafts ORDER BY updated_at').fetchall() == stamped
+                persisted_before_resolution = recovery.execute('SELECT id,updated_at FROM recovery_drafts ORDER BY updated_at').fetchall() == stamped
+                assert persisted_before_resolution
             click(950, 85); shot('r09-multiple-review')
             click(500, 200); shot('r10-confirm-one-discard')
             for remaining in (2, 1, 0):
@@ -269,10 +294,19 @@ def main():
             close(); assert app.wait(timeout=10) == 0
             with sqlite3.connect(stores[0]) as recovery:
                 assert recovery.execute('SELECT id,updated_at FROM recovery_drafts').fetchall() == []
+                assert recovery.execute('PRAGMA integrity_check').fetchone() == ('ok',)
             reopen(); pump(); shot('r12-resolved-restart')
             assert sql('SELECT id,content FROM blocks ORDER BY id') == expected_blocks
             with sqlite3.connect(stores[0]) as recovery:
                 assert recovery.execute('SELECT id,updated_at FROM recovery_drafts').fetchall() == []
+                assert recovery.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+            (work / 'recovery-evidence.json').write_text(json.dumps({
+                'synthetic_snapshot_count': len(stamped),
+                'same_ids_and_timestamps_after_restart': persisted_before_resolution,
+                'remaining_after_confirmed_discards': [2, 1, 0],
+                'after_final_restart': 0,
+                'recovery_store_integrity': 'ok',
+            }, sort_keys=True))
         else:
             click(460, 170)
             assert sql('SELECT count(*) FROM journals') == [(1,)]

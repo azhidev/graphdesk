@@ -96,6 +96,10 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     start(); field(480, 130, str(graph)); select('Tab', 'Return')
     pump(.7)
     assert sql('SELECT count(*) FROM blocks') == [(15,)]
+    # Fresh isolated preferences default to System before explicit Light/Dark.
+    files = list((work / 'config').rglob('preferences.json'))
+    assert not files or json.loads(files[0].read_text())['theme'] == 'system'
+    desktop('00-english-system-gregorian-journal')
     # Explicit Light, independent of the display's color-scheme preference.
     settings(); choose('theme', 'light', 370, 'Home', 'Down', 'Return')
     assert prefs()['theme'] == 'light'
@@ -190,6 +194,7 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     wait_sql('SELECT content FROM blocks WHERE id=?', [(english_edited,)], (english,))
     wait_sql('SELECT content FROM blocks WHERE id=?', [(persian_edited,)], (persian,))
     wait_sql('SELECT content FROM blocks WHERE id=?', [(third_edited,)], (third,))
+    desktop('18-reopened-verified')
     close(); assert app().wait(timeout=10) == 0
     assert sql('SELECT count(*) FROM blocks') == [(15,)]
     print('PASS: twenty-one production captures, RTL mixed-script edits, filtered task/source return, Tasks/Search empty/clear, nested undo/redo and exact restart', flush=True)
