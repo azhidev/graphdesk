@@ -554,6 +554,38 @@ mod tests {
     }
 
     #[test]
+    fn resolved_multi_block_snapshots_stay_absent_after_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("drafts.db");
+        let (graph, page, block) = ids();
+        let other = Uuid::new_v4();
+        let unrelated_graph = Uuid::new_v4();
+        let mut store = RecoveryStore::open(&path).unwrap();
+        let discarded = store.put(graph, page, block, "base", 1, "discard", 100).unwrap();
+        let recovered = store.put(graph, page, other, "base", 1, "recover", 101).unwrap();
+        let acknowledged = store.put(graph, page, block, "saved", 2, "saved text", 102).unwrap();
+        let unrelated = store.put(unrelated_graph, page, block, "base", 1, "retain", 103).unwrap();
+        let before = store.list(graph, 104).unwrap();
+        assert_eq!(before.iter().map(|d| (d.id, d.updated_at)).collect::<Vec<_>>(),
+            vec![(acknowledged.id, 102), (recovered.id, 101), (discarded.id, 100)]);
+
+        store.remove_matching(graph, discarded.id, &discarded.content, discarded.updated_at).unwrap();
+        store.clear_matching(graph, other, &recovered.content).unwrap();
+        store.clear_matching(graph, block, &acknowledged.content).unwrap();
+        assert!(store.list(graph, 104).unwrap().is_empty());
+        drop(store); // A normal close must not depend on the previous connection.
+
+        let mut reopened = RecoveryStore::open(&path).unwrap();
+        assert!(reopened.list(graph, 105).unwrap().is_empty());
+        assert_eq!(reopened.list(unrelated_graph, 105).unwrap()[0].id, unrelated.id);
+        assert_eq!(reopened.conn.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0)).unwrap(), "ok");
+        // A fresh edit must have a new identity; it is not a resurrected row.
+        let fresh = reopened.put(graph, page, block, "saved text", 3, "next edit", 106).unwrap();
+        assert!(!before.iter().any(|old| old.id == fresh.id));
+        assert_eq!(reopened.list(graph, 107).unwrap()[0].updated_at, 106);
+    }
+
+    #[test]
     fn expiration_boundary_never_refreshes_on_read() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = RecoveryStore::open(dir.path().join("drafts.db")).unwrap();

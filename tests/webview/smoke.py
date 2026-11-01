@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import unicodedata
+from uuid import uuid4
 
 
 def persian_normalize(text):
@@ -234,6 +235,44 @@ def main():
             close(); assert app.wait(timeout=10) == 0
             reopen(); assert sql('SELECT content FROM blocks') == [(draft,)]
             shot('r07-reopened')
+            # Seed distinct older snapshots in this disposable graph/private
+            # store while the app is closed. IDs/timestamps distinguish survivors
+            # from new captures after reopening.
+            close(); assert app.wait(timeout=10) == 0
+            stamped = [(str(uuid4()), int(time.time()) + i) for i in range(3)]
+            extra_blocks = [str(uuid4()) for _ in range(2)]
+            with sqlite3.connect(graph) as connection:
+                connection.create_function('persian_normalize', 1, persian_normalize, deterministic=True)
+                connection.execute('PRAGMA foreign_keys=ON')
+                connection.executemany('INSERT INTO blocks(id,page_id,position,content) VALUES(?,?,?,?)',
+                    [(id, page_id, i, f'canonical {i}') for i, id in enumerate(extra_blocks, 1)])
+            expected_blocks = sql('SELECT id,content FROM blocks ORDER BY id')
+            with sqlite3.connect(stores[0]) as recovery:
+                recovery.executemany('INSERT INTO recovery_drafts(id,graph_id,page_id,block_id,base,revision,content,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+                    [(id, graph_id, page_id, [block_id, *extra_blocks][i], f'older base {i}', i + 10, f'older draft {i}', timestamp)
+                     for i, (id, timestamp) in enumerate(stamped)])
+                assert recovery.execute('SELECT id,updated_at FROM recovery_drafts ORDER BY updated_at').fetchall() == stamped
+            reopen(); pump()
+            shot('r08-multiple-snapshots')
+            with sqlite3.connect(stores[0]) as recovery:
+                assert recovery.execute('SELECT id,updated_at FROM recovery_drafts ORDER BY updated_at').fetchall() == stamped
+            click(950, 85); shot('r09-multiple-review')
+            click(500, 200); shot('r10-confirm-one-discard')
+            for remaining in (2, 1, 0):
+                click(570, 153); pump()
+                with sqlite3.connect(stores[0]) as recovery:
+                    assert recovery.execute('SELECT id,updated_at FROM recovery_drafts ORDER BY updated_at').fetchall() == stamped[:remaining]
+                if remaining:
+                    click(500, 200); pump()
+            shot('r11-all-resolved')
+            assert sql('SELECT id,content FROM blocks ORDER BY id') == expected_blocks
+            close(); assert app.wait(timeout=10) == 0
+            with sqlite3.connect(stores[0]) as recovery:
+                assert recovery.execute('SELECT id,updated_at FROM recovery_drafts').fetchall() == []
+            reopen(); pump(); shot('r12-resolved-restart')
+            assert sql('SELECT id,content FROM blocks ORDER BY id') == expected_blocks
+            with sqlite3.connect(stores[0]) as recovery:
+                assert recovery.execute('SELECT id,updated_at FROM recovery_drafts').fetchall() == []
         else:
             click(460, 170)
             assert sql('SELECT count(*) FROM journals') == [(1,)]

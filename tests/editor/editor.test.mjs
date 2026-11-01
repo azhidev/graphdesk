@@ -443,6 +443,49 @@ test('normal recovery capture has a bounded wait during continuous unsaved typin
   await f.editor.flush(); assert.equal(f.editor.dirty,false);
 });
 
+test('multi-block captures clear after delayed acknowledgement and editor reload', async () => {
+  const stored = [block('a', 'old A'), block('b', 'old B')];
+  const revisions = {a: 0, b: 0}, snapshots = new Map();
+  let serial = 0, release, entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const acknowledgement = new Promise(resolve => { release = resolve; });
+  const transport = {
+    async page() { return {blocks: structuredClone(stored), revisions: {...revisions}, can_undo: false, can_redo: false}; },
+    async apply(_session, _page, action) {
+      assert.equal(action.kind, 'save_text');
+      const target = stored.find(b => b.id === action.id);
+      assert.equal(action.expected, target.content);
+      assert.equal(action.revision, revisions[action.id]);
+      if (action.id === 'a' && revisions.a === 0) { entered(); await acknowledgement; }
+      target.content = action.content; revisions[action.id]++;
+      return {...result([structuredClone(target)], action.id), revisions: {[action.id]: revisions[action.id]}};
+    },
+  };
+  const recovery = {
+    async put(_session, _page, id, base, revision, content) {
+      const key = `${id}:${base}:${revision}`;
+      const previous = snapshots.get(key);
+      snapshots.set(key, {id: previous?.id ?? ++serial, content, updated_at: ++serial});
+    },
+    async clear(_session, id, content) {
+      for (const [key, record] of snapshots) if (key.startsWith(`${id}:`) && record.content === content) snapshots.delete(key);
+    },
+  };
+  const editor = new EditorController(transport, () => {}, {debounce: 10000, maxWait: 20000, groupGap: 1000}, recovery);
+  editor.reset('session'); await editor.load('page');
+  editor.setDraft('a', 'first A'); editor.setDraft('b', 'final B'); await editor.capture();
+  const before = [...snapshots.values()].map(({id, updated_at}) => [id, updated_at]);
+  assert.equal(before.length, 2);
+  const saving = editor.flush(); await waiting;
+  editor.setDraft('a', 'final A'); await editor.capture();
+  assert.equal(snapshots.size, 2); // The newer text coalesces on the same base/revision.
+  release(); await saving;
+  assert.equal(editor.status, 'Saved'); assert.equal(snapshots.size, 0);
+  editor.reset('reopened'); await editor.load('page');
+  assert.equal(editor.dirty, false); assert.equal(snapshots.size, 0);
+  assert.deepEqual(stored.map(b => b.content), ['final A', 'final B']);
+});
+
 test('a response that never arrives times out and reconciles the committed revision without replaying it', async () => {
   const f=reliableFixture();
   const editor=new EditorController(f.transport,()=>{}, {debounce:10000,maxWait:20000,groupGap:1000,ackTimeout:15}, f.recovery);
