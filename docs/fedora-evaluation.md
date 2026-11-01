@@ -1,7 +1,10 @@
 # Fedora-specific desktop evaluation
 
-**Native Fedora validation is pending.** Ubuntu/Xvfb does not certify Fedora,
-Wayland or hardware graphics. See the shared [Linux guide](platforms/linux.md),
+**Scoped native Fedora visual and 5,000-block responsiveness checks were reported
+acceptable during UI Foundation evaluation.** The full checklist below has not
+been documented as passed; native IME, accessibility and other checks still need
+separate evidence. Ubuntu/Xvfb does not certify Fedora, Wayland or hardware
+graphics. See the shared [Linux guide](platforms/linux.md),
 [native checklist](testing.md#native-platform-checklist) and [data safety](data.md).
 Start with disposable graphs or backed-up copies, never your only important notes.
 
@@ -241,7 +244,7 @@ stop and report it; only install dependencies after reviewing the existing
 Fedora/Tauri prerequisites. Do not substitute GTK 4/WebKitGTK 4.0, disable
 WebKit sandboxing/SELinux, or run the Ubuntu executable as a compatibility test.
 
-## Manual native checks and baseline (not yet performed)
+## Remaining manual native checks and baseline (full checklist not yet recorded)
 
 Use only new disposable local graphs and the [native checklist](testing.md#native-platform-checklist).
 From the Wayland login, test separate `GDK_BACKEND=wayland` and
@@ -280,7 +283,8 @@ during sampling. Separately record human-observed scrolling a long page, typing
 mixed text and resizing between normal/narrow widths: graph size, scale, display
 backend, visible stalls, and repeated approximate latency if observable. No
 artificial cache clearing, power tweaks, root privileges or speculative optimization.
-These instructions are a measurement plan, **not Fedora results**.
+These instructions are a measurement plan, **not additional Fedora results**;
+the scoped UI Foundation visual and 5,000-block checks above do not complete it.
 
 ## Optional removable local install
 

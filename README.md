@@ -6,10 +6,12 @@ tasks. Each graph is an independent SQLite file. No account, cloud service or
 runtime network access is required.
 
 **Early development (0.1.0).** Linux, Windows and macOS are target platforms, not
-yet an officially supported release matrix. Existing desktop validation covers
-Ubuntu with GTK/WebKit under Xvfb. Other Linux distributions, native Wayland,
-Windows and macOS still need native validation. No installers or signed releases
-are published. Use disposable graphs or backed-up copies for evaluation.
+yet an officially supported release matrix. Desktop validation covers Ubuntu
+with GTK/WebKit under Xvfb; scoped Fedora visual and 5,000-block responsiveness
+checks were reported acceptable for UI Foundation, but the full native checklist,
+real IME/accessibility, Windows and macOS remain unverified. No installers or
+signed releases are published. Use disposable graphs or backed-up copies for
+evaluation.
 
 ## Features
 

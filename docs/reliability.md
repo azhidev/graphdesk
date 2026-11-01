@@ -1,5 +1,32 @@
 # Reliability hardening — Milestone 3
 
+## Known issue: Fedora recovery drafts after restart (P3 — deferred)
+
+**Status: Open / Not reproduced.** During native Fedora UI Foundation evaluation,
+the user resolved all visible recovery drafts, saw no pending recovery notice,
+closed normally, then saw **11 unresolved drafts** after restart. Canonical graph
+text appeared unchanged and the app displayed Saved before and after restart.
+Whether the 11 were the same snapshot IDs, newly captured versions, or stale
+enumeration is unknown; no affected user database was inspected or changed.
+
+The isolated Core, editor and IPC regression tests and Ubuntu/Xvfb production
+WebView recovery suite pass. In the disposable WebView trial, explicit resolution
+left zero persistent rows after normal exit and restart. This does **not** establish
+that the native Fedora observation was only visual. Dismissing the notice is not
+resolving snapshots; Saved acknowledges the graph write, not deletion of older
+private snapshots.
+Priority is P3 — Deferred investigation, **not fixed**. Do not suppress warnings
+or delete recovery copies automatically. The remaining verification is a
+metadata-only comparison of snapshot IDs and `updated_at` timestamps before
+resolution, after normal exit and after restart on a **new disposable Fedora
+graph/app directory**; see the exact [investigation procedure](testing.md#recovery-recurrence-investigation--disposable-data-only).
+
+Escalate immediately above P3 and suspend daily-driver evaluation if exact saved
+text is lost, a recovery action replaces incorrect content, confirmed discard
+persistently fails to remove the same ID, or a resolved ID returns after a
+verified zero-row close without an intervening new capture. Preserve sanitized
+evidence and the affected data privately; do not use or publish personal graphs.
+
 ## Milestone 5 extension
 
 Pending first-note text now uses the same independent private store, capture target,
