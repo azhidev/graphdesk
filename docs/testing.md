@@ -2,6 +2,63 @@
 
 ## Automated checks
 
+### Recovery recurrence investigation — disposable data only
+
+`--reliability` now tests production IPC with three additional synthetic
+multi-block private snapshots: after normal exit it records IDs/timestamps,
+restarts, confirms all are still listed, confirms each discard in the UI,
+checks the exact remaining IDs after each deletion, closes normally, restarts,
+and checks that zero records remain and canonical block text is unchanged.
+The original writer-lock, forced-interruption, comparison, explicit recovery,
+and failed-save assertions remain. The extra rows are fixture data inserted
+**only while the disposable app is stopped**. Rust Core tests exercise durable
+multi-record removal/clear and reopen; editor tests exercise overlapping saves,
+multiple blocks, rapid input and delayed acknowledgements.
+
+No recurrence of *resolved* snapshot IDs has been reproduced in those isolated
+checks. A dismissed banner is not a resolved snapshot: the sidebar's Review
+entry remains available. `Saved` means canonical graph text was acknowledged,
+not that every older private snapshot has been dismissed or deleted. A cleanup
+failure retains the snapshot and reports an editor warning. Without a before/
+after list of IDs and timestamps from the affected Fedora run, its cause is
+not established; do not delete or edit that user's recovery store to investigate.
+
+For an independent **native Fedora** reproduction, use only new disposable
+paths (the commands below must not point to an existing graph or application
+directory):
+
+```sh
+base=$(mktemp -d)  # private, disposable test directory
+export XDG_CONFIG_HOME="$base/config" XDG_DATA_HOME="$base/data" XDG_CACHE_HOME="$base/cache"
+mkdir -m 700 -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+./target/release/graphdesk-desktop  # create "$base/test.sqlite3" via Create graph
+```
+
+On several blocks, edit rapidly and wait for Saved; for a separate trial use
+a SQLite writer lock on **only** `$base/test.sqlite3`, capture finalized drafts,
+then release the lock and retry. Resolve each entry via Compare / Recover or
+confirmed Discard (the notice's × only hides the notice). Record the UI count,
+whether Review remains in the sidebar, and exact persisted text. Close the
+app normally before each database inspection and before restarting it with the
+**same** three XDG paths. Locate the one disposable store under `$base/data`
+(do not search other application directories):
+
+```sh
+find "$base/data" -type f -path '*/recovery/*.sqlite3' -print
+sqlite3 -readonly "$store" 'SELECT id,graph_id,block_id,revision,updated_at FROM recovery_drafts ORDER BY updated_at,id;'
+sqlite3 -readonly "$store" 'PRAGMA integrity_check;'
+```
+
+Set `store` to the displayed disposable path, never a personal recovery file.
+Collect the metadata-only query **before resolution**, **after all explicit
+resolutions and normal exit**, and **after restart and normal exit**. Expected
+after resolution and restart: zero rows and zero UI records. If IDs survive,
+investigate failed deletion; if new IDs appear, investigate new captures; if
+the store is empty but UI reports records, investigate enumeration/refresh.
+Report failure messages and timings without note text. Unresolved versions
+expire on list after 14 days; don't treat expiry as evidence of successful
+resolution. This procedure is a handoff, **not** a Fedora result.
+
 ### Phase 4 Ubuntu regression status
 
 The production `--daily` fixture now targets the active task selector through
