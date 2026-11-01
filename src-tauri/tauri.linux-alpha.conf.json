@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "active": true,
+    "targets": ["rpm", "deb"],
+    "category": "Productivity",
+    "shortDescription": "Local-first graph notes and journals",
+    "longDescription": "GraphDesk is a local-first desktop knowledge app with graph notes, journals, tasks, and private draft recovery. Graph files are user-selected SQLite databases."
+  }
+}

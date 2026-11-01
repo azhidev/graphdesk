@@ -147,6 +147,41 @@ fn native_paths_with_spaces_and_unicode_preserve_graph_data() -> Result<()> {
 }
 
 #[test]
+fn closed_graph_backup_and_separate_restore_preserve_text_identity_and_constraints() -> Result<()> {
+    use std::{fs::{self, OpenOptions}, io};
+    let dir = tempfile::tempdir()?;
+    let source = dir.path().join("graph سلام.sqlite3");
+    let backup = dir.path().join("backup.sqlite3");
+    let restored = dir.path().join("restored.sqlite3");
+    let mut graph = Graph::create(&source)?;
+    let id = graph.id()?;
+    let page = graph.create_page("Notes")?;
+    let block = graph.create_block(page.id, None, "سلام ZWNJ\u{200c} 😀")?;
+    // A live main-file copy cannot be trusted: committed WAL frames may be absent.
+    assert!(source.with_extension("sqlite3-wal").exists());
+    drop(graph);
+
+    fn copy_new(from: &Path, to: &Path) -> io::Result<()> {
+        let mut input = fs::File::open(from)?;
+        let mut output = OpenOptions::new().write(true).create_new(true).open(to)?;
+        io::copy(&mut input, &mut output)?;
+        output.sync_all()
+    }
+    copy_new(&source, &backup)?; // Only after all graph connections exit.
+    assert!(copy_new(&source, &backup).is_err()); // No silent overwrite.
+    let mut reopened = Graph::open(&source)?;
+    reopened.create_block(page.id, None, "later edit")?;
+    drop(reopened);
+    copy_new(&backup, &restored)?;
+    let restored_graph = Graph::open(&restored)?;
+    assert_eq!(restored_graph.id()?, id);
+    assert_eq!(restored_graph.children(page.id, None)?, vec![block]);
+    assert_eq!(restored_graph.conn.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))?, "ok");
+    assert!(!restored_graph.conn.prepare("PRAGMA foreign_key_check")?.exists([])?);
+    Ok(())
+}
+
+#[test]
 fn inline_bindings_reopen_and_legacy_mutations_are_transactional() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("links.sqlite3");
