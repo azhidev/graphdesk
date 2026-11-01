@@ -46,16 +46,67 @@ defaults with a visible warning where appropriate; failed writes retain prior ch
 
 ## Backup and upgrade
 
-Wait for **Saved**, close normally and verify every process using the graph has
-exited, then copy to a new backup path. Never copy just a live main database;
-committed writes may be in WAL. If sidecars remain, preserve the closed database
-and sidecars as a set or use a reviewed SQLite-aware backup procedure. Never mix
-database/sidecar versions. No built-in online backup/export exists.
+There is no built-in online backup/export. For an **offline graph backup**, wait
+for **Saved**, close GraphDesk normally (resolve any blocked-close warning), and
+verify **every process** with this graph has exited. Use a local private directory
+and new absolute paths. Copy only if the graph has **no** `-wal` or `-shm`
+sidecars after close; otherwise stop and use a reviewed SQLite-aware backup
+procedure, not a bare main-file copy or sidecar deletion. Never mix a database
+with sidecars from another moment. On a disposable graph, the Core regression
+test checks that a closed copy restores exact text, identity and constraints.
 
-Test restore by opening a separate copy and checking pages, tasks, links and
-Unicode. Keep an untouched pre-upgrade backup: opening may migrate a graph and
-older binaries may reject it. Binary rollback is not database rollback.
-Uninstalling an application must never delete graphs or backups.
+For a closed, checkpointed graph (`source`) and a **new** backup destination
+(`backup`) on a local filesystem, use this no-overwrite copy (Python 3):
+
+```sh
+source=/absolute/path/to/closed-graph.sqlite3
+backup=/absolute/path/to/private-backups/graph-YYYYMMDD.sqlite3
+python3 - "$source" "$backup" <<'PY'
+import os, sys
+from pathlib import Path
+source, backup = sys.argv[1:]
+if not Path(source).is_file() or any(Path(source + suffix).exists() for suffix in ('-wal', '-shm')):
+    raise SystemExit('Source missing or SQLite sidecars present: stop; do not copy the main file alone')
+with open(source, 'rb') as original:
+    fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as copy:
+        while chunk := original.read(1024 * 1024):
+            copy.write(chunk)
+        copy.flush()
+        os.fsync(copy.fileno())
+PY
+```
+
+This fails rather than overwriting an existing backup; if it fails mid-copy,
+do **not** open the incomplete destination. Verify the copy with a read-only
+SQLite connection before treating it as a backup (and repeat on the restored
+copy), with GraphDesk closed. `immutable=1` is safe **only** for the closed,
+checkpointed copy, never a live or WAL-dependent database:
+
+```sh
+python3 - "$backup" <<'PY'
+import sqlite3, sys
+from pathlib import Path
+with sqlite3.connect(Path(sys.argv[1]).resolve().as_uri() + '?mode=ro&immutable=1', uri=True) as db:
+    assert db.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+    assert db.execute('PRAGMA foreign_key_check').fetchall() == []
+    print('graph UUID:', db.execute('SELECT id FROM graph_identity WHERE singleton=1').fetchone()[0])
+    print('schema version:', db.execute('SELECT max(version) FROM schema_migrations').fetchone()[0])
+PY
+```
+
+Restore **only to a new, empty absolute path**, by repeating the guarded copy
+with `source="$backup"` and `backup=/absolute/path/to/restore.sqlite3` after
+verifying no backup sidecars exist. Check integrity/foreign keys and compare
+page, task, link and Unicode content in the restored graph. Never copy over an
+existing graph, and keep an untouched pre-upgrade backup: opening may migrate
+a graph and older binaries may reject it. Binary rollback is not database
+rollback. The graph copy retains the logical UUID, so GraphDesk may offer
+existing private recovery drafts for that UUID; **compare**, never automatically
+apply them. Recovery is stored separately in app-local data and is **not**
+included in a graph backup. Preserve its private store separately if unresolved
+drafts matter. A package upgrade/removal must never delete user-selected graphs,
+private recovery stores, preferences or backups; verify this on native Fedora.
 
 ## Failure recovery and privacy
 

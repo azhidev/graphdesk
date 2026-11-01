@@ -17,8 +17,12 @@ container build does not prove native runtime libraries exist.
 Follow the common [build steps](../../README.md#build-from-source). Output is
 `target/release/graphdesk-desktop`. Launch from a terminal first. The executable
 depends on compatible shared libraries; copying between distributions is not a
-portability guarantee. No installer is provided. Optional Fedora-specific setup
-is in [the Fedora guide](../fedora-evaluation.md).
+portability guarantee. No official installer is published. Optional Fedora-specific
+setup is in [the Fedora guide](../fedora-evaluation.md).
+An **opt-in Linux alpha bundle** can now be built with the separate
+`src-tauri/tauri.linux-alpha.conf.json` config. See
+[distribution](../distribution.md#linux-alpha-build-and-validation) for
+`.rpm`/`.deb` paths, packaging caveats and disposable native install checks.
 
 Use [the native checklist](../testing.md#native-platform-checklist). Record distro,
 architecture, GTK/WebKit, driver and compositor versions. Distinguish native Wayland

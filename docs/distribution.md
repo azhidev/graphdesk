@@ -16,8 +16,8 @@ behavior across setups, Windows/macOS, power-loss and upgrade/uninstall data
 preservation remain unverified or incompletely recorded. See the
 [Fedora handoff](fedora-evaluation.md) and [testing evidence](testing.md).
 
-**Recommended smallest next milestone: disposable Fedora alpha install and data
-safety trial.** No new editor features, visual redesign, updater or public release:
+**Milestone 8 is preparing the disposable Fedora alpha install and data-safety
+trial.** No new editor features, visual redesign, updater or public release:
 
 1. Produce one opt-in, local Fedora-native package from the locked commit
    (evaluate Tauri RPM; keep the existing unbundled executable as comparison).
@@ -40,12 +40,73 @@ safety trial.** No new editor features, visual redesign, updater or public relea
    users if critical input, restore or accessibility checks fail.
 
 Acceptance is a reproducible local install/rollback and data-preserving restore
-record, plus an explicit remaining-risk list. Packaging is **proposed**, not
-implemented or approved for publication by this handoff.
+record, plus an explicit remaining-risk list. Ubuntu-built bundles do not satisfy
+the native Fedora acceptance criteria.
 
-Bundling is disabled in `src-tauri/tauri.conf.json`; current builds produce an
-unbundled executable. Platform icons exist, but this is not installer validation.
-No official packages, signed artifacts, updater or file associations exist.
+## Linux alpha build and validation
+
+The opt-in `src-tauri/tauri.linux-alpha.conf.json` turns on Tauri's existing
+bundler **only** when passed with `--config`. The normal unbundled developer
+build is unchanged. It preserves version `0.1.0`, identifier
+`org.graphdesk.desktop`, embedded production frontend, icon and native launcher.
+No dev server, filesystem permission, post-install scripts, file associations,
+auto-update or app-directory overrides are added. Each target builds for the
+**build host's** Linux architecture/ABI; an Ubuntu-generated RPM is a package
+format check, **not** a Fedora-compatible release binary. On a clean Fedora
+checkout of the committed revision, with approved local build prerequisites:
+
+```sh
+npm ci
+npm run check
+npm run test:editor
+npm run test:schema
+cargo test --locked --workspace
+npm run tauri -- build --config src-tauri/tauri.linux-alpha.conf.json --bundles rpm -- --locked
+```
+
+The package is under `target/release/bundle/rpm/Graphdesk-0.1.0-1.x86_64.rpm`
+on x86_64; use the actual generated name on other architectures. Ubuntu-side
+`--bundles deb` produces `target/release/bundle/deb/Graphdesk_0.1.0_amd64.deb`.
+Inspect package metadata, payload, desktop launcher (`Exec=graphdesk-desktop`),
+icon, library dependencies and checksum before installing. The Tauri-generated
+packages install a binary under `/usr/bin` and icons/launcher under `/usr/share`;
+graphs, preferences and drafts are not package-owned files. No RPM has been
+installed or launched on Fedora as part of the VM work.
+
+Native Fedora trial (disposable graph paths and isolated XDG config/data/cache):
+
+1. Record Fedora release/arch, Wayland vs XWayland, SHA-256, package manifest and
+   dependencies. Install locally with `sudo dnf install ./Graphdesk-*.rpm` **on
+   Fedora only**, after reviewing the package; do not disable SELinux/sandboxing.
+   Launch from the desktop menu and a different working directory, offline and
+   without Vite, then create/open a disposable graph and restart normally.
+2. Wait for Saved and close all instances; make and independently verify a
+   no-overwrite graph backup and restore using [data safety](data.md#backup-and-upgrade).
+   Compare exact text/identities/tasks/links, SQLite integrity and foreign keys.
+   Compare private recovery separately; do not mistake the graph backup for a
+   copy of unresolved drafts. Preserve a pre-upgrade backup and XDG directories.
+3. Upgrade to a **later, separately versioned** compatible Fedora build and
+   verify graphs/preferences/recovery still exist; don't pretend a same-version
+   reinstall validates upgrade. Record a schema migration only if the two builds
+   actually differ. On Fedora, `sudo dnf remove graphdesk` (not a purge or data
+   cleanup), check the disposable XDG paths and external graphs, reinstall the
+   reviewed RPM, and reopen the same graph. Roll back the binary by reinstalling
+   the old package only after checking schema compatibility; if the newer build
+   migrated the graph, restore the untouched old backup to a **new** path and
+   open it with the old binary. Never overwrite a live/newer graph.
+4. Exercise real Persian IME candidate commit/cancel, RTL/LTR edits, native
+   dialogs, window focus, accessibility where available and recovery comparison;
+   mark unavailable checks *not tested*. Stop on lost text, failed restore or
+   persistent incorrect recovery, and retain evidence privately. The P3 issue
+   remains open; do not suppress warnings.
+
+VM-side builds and regression tests are not a native Fedora package install,
+upgrade, uninstall, display, Persian IME or accessibility result. No signing or
+publishing is included.
+
+Bundling is disabled in `src-tauri/tauri.conf.json` by default; the opt-in
+Linux alpha config above enables local package builds. No official packages,
+signed artifacts, updater or file associations exist.
 The desktop has a user-session single-instance plugin, but second-launch window
 activation still needs validation on a real compositor; it is not per-graph locking.
 Keep packaging opt-in until native runtime/data-safety checks pass. Do not change

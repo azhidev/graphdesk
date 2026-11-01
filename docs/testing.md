@@ -2,6 +2,22 @@
 
 ## Automated checks
 
+### Milestone 8 VM packaging and offline graph copy
+
+The opt-in Linux alpha Tauri configuration builds `.deb` and `.rpm` in the Ubuntu
+VM with production frontend assets (not the dev server). The Debian payload
+contains a desktop launcher, icon sizes and `/usr/bin/graphdesk-desktop`; the
+RPM bundler completed, but native Fedora manifest/runtime/install checks remain
+pending. `tests/test_linux_alpha.py` runs the exact guarded offline copy and
+read-only integrity/foreign-key verification snippets in
+[data](data.md#backup-and-upgrade) on disposable databases: live WAL refuses a bare main-file copy, a closed
+database copies, no-overwrite refuses an existing destination, and a separate
+restore preserves Unicode text and graph identity. A graph-core test verifies
+the same closed-copy path against a real graph reopened by the Rust API.
+Neither test proves package upgrade/uninstall preservation or copies unresolved
+private recovery drafts; the full native Fedora trial is in
+[distribution](distribution.md#linux-alpha-build-and-validation).
+
 ### Recovery recurrence investigation — disposable data only
 
 `--reliability` now tests production IPC with three additional synthetic

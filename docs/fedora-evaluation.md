@@ -7,6 +7,9 @@ separate evidence. Ubuntu/Xvfb does not certify Fedora, Wayland or hardware
 graphics. See the shared [Linux guide](platforms/linux.md),
 [native checklist](testing.md#native-platform-checklist) and [data safety](data.md).
 Start with disposable graphs or backed-up copies, never your only important notes.
+For the opt-in package, upgrade/uninstall and offline backup trial, use the
+[Milestone 8 Fedora checklist](distribution.md#linux-alpha-build-and-validation);
+the Phase 4 source-build instructions below are historical and do not validate an RPM.
 
 ## Phase 4 handoff checklist (native results required before completion)
 
