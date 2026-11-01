@@ -45,6 +45,11 @@ the native Fedora acceptance criteria.
 
 ## Linux alpha build and validation
 
+The developer-only [Fedora evidence runner](fedora-alpha-runner.md) supplies
+read-only RPM inspection, isolated production Xvfb checks, backup/restore
+summaries and a review archive. Installation and native Wayland/IME checks remain
+separate authorized Fedora steps.
+
 The opt-in `src-tauri/tauri.linux-alpha.conf.json` turns on Tauri's existing
 bundler **only** when passed with `--config`. The normal unbundled developer
 build is unchanged. It preserves version `0.1.0`, identifier

@@ -2,6 +2,26 @@
 
 ## Automated checks
 
+### Fedora alpha evidence runner — Ubuntu rehearsal only
+
+The [developer-only runner](fedora-alpha-runner.md) reuses the production
+WebView `--review`/`--reliability`/`--shell`/`--navigation` suites, Core
+large-page fixtures and Linux process sampler. `--local` rehearsal in this
+Ubuntu VM passed all four suites with explicit Xvfb/X11 screenshots; closed-graph
+copy/restore matched SQLite integrity/FK checks, file and text hashes and
+page/block/journal/reference counts. A separate disposable live WAL copy was
+refused. Schema/unittest discovery reports **25 passed**, including read-only
+RPM inspection mocks and archive exclusion of raw app logs/databases. Actual
+read-only RPM query was **BLOCKED** here because the `rpm` utility is absent.
+
+The existing 1,000/5,000 single-page fixture copies produced 30-second idle
+Xvfb process-tree PSS/CPU measurements with `missing_pss=0` and screenshots
+of the page displayed; these are evidence of a measurement, **not** native
+Fedora performance certification or interaction latency. The no-perf and perf
+Ubuntu rehearsal outputs live only in ignored `test-artifacts/` and are not
+Fedora results. Native package installation, upgrade/uninstall, Wayland focus,
+GNOME launcher, IME and accessibility remain NOT TESTED until separately run.
+
 ### Milestone 8 VM packaging and offline graph copy
 
 The opt-in Linux alpha Tauri configuration builds `.deb` and `.rpm` in the Ubuntu
