@@ -119,3 +119,42 @@ The Xvfb/Python GTK, xauth, xdotool, dbus-run-session and `smaps_rollup`
 dependencies are the same as the [existing WebView fixture](testing.md).
 Only the installed binary under `/usr/bin/graphdesk-desktop` is tested by default
 on Fedora; `--local` is an explicitly labeled source-build rehearsal.
+
+## Targeted Review click diagnosis (installed binary; no package changes)
+
+If Review stops after the English edit but the Persian edit does not persist,
+run the **direct** WebView fixture twice from the Fedora checkout, using new
+artifact directory names each time. Do not run `fedora_alpha.py --mode full` for
+this probe: its normal Review run does not forward diagnostic coordinates.
+
+```sh
+cd /home/azhidev/projects/graphdesk
+umask 077
+python3 tests/webview/smoke.py --review --diagnose-review \
+  --review-persian-click 690,518 --review-nested-click 700,590 \
+  --binary /usr/bin/graphdesk-desktop \
+  --artifacts test-artifacts/fedora-review-diag-original
+python3 tests/webview/smoke.py --review --diagnose-review \
+  --review-persian-click 690,530 --review-nested-click 700,607 \
+  --binary /usr/bin/graphdesk-desktop \
+  --artifacts test-artifacts/fedora-review-diag-alternative
+```
+
+If either directory already exists, choose a **different fresh name** instead;
+the probe refuses to overwrite it. A failed assertion returns nonzero but still
+writes `diagnostic-results.json` and `diag-*-after-click.png`,
+`diag-*-after-paste.png`, and `diag-*-assertion-failed.png` for the failing
+stage. Read each result file locally to compare `outcome`, `target_id`,
+`changed_ids` and `suffix_received_ids`: `intended_block_exact` means the
+expected content reached the target; `another_block` means the suffix appeared
+elsewhere; `no_block_persisted_edit` means no SQLite block changed. Other
+non-exact outcomes need screenshot inspection. The nested stage runs only if
+the Persian stage passes. A PASS here covers only these two edits, not Review.
+
+These ignored private artifacts contain only synthetic fixture data; keep the
+screenshots local and do not add them, raw app logs or databases to any shared
+archive. Compare both runs before attributing the failure to coordinate drift.
+If Fedora evidence confirms drift, focus the editor using the rendered target
+block's stable `data-block-id` (or an accessible target selector) and verify
+the active editable element before pasting, rather than replacing one fixed
+coordinate with another. Do not change production code based on this probe.

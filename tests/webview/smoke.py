@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import stat
 import sqlite3
 import subprocess
 import sys
@@ -23,6 +24,16 @@ def persian_normalize(text):
     mapping = {ord('ي'): 'ی', ord('ك'): 'ک', 0x200c: ' '}
     mapping.update({ord(c): str(i) for digits in ('۰۱۲۳۴۵۶۷۸۹', '٠١٢٣٤٥٦٧٨٩') for i, c in enumerate(digits)})
     return unicodedata.normalize('NFC', text.translate(mapping))
+
+
+def review_point(value):
+    try:
+        x, y = (int(part) for part in value.split(','))
+        if 0 <= x < 1300 and 0 <= y < 1000:
+            return x, y
+    except (ValueError, TypeError):
+        pass
+    raise argparse.ArgumentTypeError('expected x,y within the 1300x1000 review window')
 
 
 def main():
@@ -40,9 +51,32 @@ def main():
     parser.add_argument('--navigation', action='store_true', help='Native graph dialogs, registry, single instance and navigation')
     parser.add_argument('--shell', action='store_true', help='Phase 1 shell and preference integration')
     parser.add_argument('--review', action='store_true', help='Capture production UI Foundation visual review and nested editing')
+    parser.add_argument('--diagnose-review', action='store_true', help='Stop after two targeted Review edits; use private screenshots and synthetic-only metadata')
+    parser.add_argument('--review-persian-click', type=review_point, default=(690, 530), metavar='X,Y',
+                        help='Diagnostic-only Persian click (default: 690,530)')
+    parser.add_argument('--review-nested-click', type=review_point, default=(700, 607), metavar='X,Y',
+                        help='Diagnostic-only nested click (default: 700,607)')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
-    args.artifacts.mkdir(parents=True, exist_ok=True)
+    points_supplied = any(option == flag or option.startswith(flag + '=') for option in sys.argv[1:]
+                          for flag in ('--review-persian-click', '--review-nested-click'))
+    if args.diagnose_review and not args.review:
+        parser.error('--diagnose-review requires --review')
+    if points_supplied and not args.diagnose_review:
+        parser.error('coordinate overrides require --diagnose-review')
+    if args.diagnose_review:
+        os.umask(0o077)
+        # No existing/shared output; screenshots may contain synthetic note text.
+        if not args.artifacts.resolve().is_relative_to((root / 'test-artifacts').resolve()) or (root / 'test-artifacts').is_symlink():
+            parser.error('diagnostic screenshots must stay in repository test-artifacts/')
+        if not args.inside:
+            if args.artifacts.exists() or args.artifacts.is_symlink():
+                parser.error('diagnostic artifacts directory must be new; never overwrite earlier evidence')
+            args.artifacts.mkdir(parents=True, mode=0o700)
+        if not args.artifacts.is_dir() or args.artifacts.is_symlink() or stat.S_IMODE(args.artifacts.stat().st_mode) & 0o077:
+            parser.error('diagnostic artifacts directory must be private (0700) and not a symlink')
+    else:
+        args.artifacts.mkdir(parents=True, exist_ok=True)
     if not args.inside:
         if args.work is not None:
             entries = list(args.work.iterdir()) if args.work.is_dir() else []
@@ -81,6 +115,9 @@ def main():
                                     *(['--navigation'] if args.navigation else []),
                                     *(['--shell'] if args.shell else []),
                                     *(['--review'] if args.review else []),
+                                    *(['--diagnose-review'] if args.diagnose_review else []),
+                                    *(['--review-persian-click', ','.join(map(str, args.review_persian_click))] if args.diagnose_review else []),
+                                    *(['--review-nested-click', ','.join(map(str, args.review_nested_click))] if args.diagnose_review else []),
                                     *(['--perf'] if args.perf else []),
                                     *(['--work', str(args.work.resolve())] if args.work else []),
                                     *(['--binary', str(args.binary.resolve())] if args.binary else [])], cwd=root, env=env, check=True, timeout=300)
@@ -178,7 +215,8 @@ def main():
             return
         if args.review:
             from review_capture import run
-            run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, lambda: app)
+            diagnostic = (args.review_persian_click, args.review_nested_click, args.artifacts) if args.diagnose_review else None
+            run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, lambda: app, diagnostic=diagnostic)
             return
         if args.shell:
             from shell_smoke import run

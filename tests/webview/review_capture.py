@@ -11,7 +11,25 @@ from uuid import uuid4
 from smoke import persian_normalize
 
 
-def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, app):
+def classify_edit(before, after, target, expected, suffix):
+    """Synthetic block IDs only; never include draft text in diagnostic metadata."""
+    changed = [block_id for block_id, content in after.items() if content != before.get(block_id)]
+    received = [block_id for block_id, content in after.items()
+                if suffix in content and suffix not in before.get(block_id, '')]
+    if after.get(target) == expected:
+        outcome = 'intended_block_exact'
+    elif any(block_id != target for block_id in received):
+        outcome = 'another_block'
+    elif target in received or target in changed:
+        outcome = 'intended_block_nonexact'
+    elif changed:
+        outcome = 'other_change_without_expected_suffix'
+    else:
+        outcome = 'no_block_persisted_edit'
+    return {'outcome': outcome, 'target_id': target, 'changed_ids': changed, 'suffix_received_ids': received}
+
+
+def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, app, diagnostic=None):
     def prefs():
         files = list((work / 'config').rglob('preferences.json'))
         assert len(files) == 1
@@ -126,6 +144,34 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     wait_sql('SELECT content FROM blocks WHERE id=?', [(english_edited,)], (english,))
     select('ctrl+Home', 'shift+Right', 'shift+Right')
     assert sql('SELECT content FROM blocks WHERE id=?', (english,)) == [(english_edited,)]
+    if diagnostic:
+        persian_point, nested_point, artifacts = diagnostic
+        results = {'mode': 'targeted_review_diagnostic', 'display': 'isolated Xvfb/X11',
+                   'coordinates': {'persian': persian_point, 'nested': nested_point}}
+
+        def probe(stage, target, expected, suffix, point, keys):
+            before = dict(sql('SELECT id,content FROM blocks'))
+            click(*point); desktop(f'diag-{stage}-after-click')
+            select(*keys); paste(suffix); desktop(f'diag-{stage}-after-paste')
+            try:
+                wait_sql('SELECT content FROM blocks WHERE id=?', [(expected,)], (target,))
+            except AssertionError:
+                desktop(f'diag-{stage}-assertion-failed')
+                results[stage] = classify_edit(before, dict(sql('SELECT id,content FROM blocks')), target, expected, suffix)
+                (artifacts / 'diagnostic-results.json').write_text(json.dumps(results, indent=2) + '\n')
+                raise AssertionError(f'{stage} did not persist expected text in intended block; see private diagnostic-results.json') from None
+            results[stage] = classify_edit(before, dict(sql('SELECT id,content FROM blocks')), target, expected, suffix)
+            (artifacts / 'diagnostic-results.json').write_text(json.dumps(results, indent=2) + '\n')
+
+        persian_edited = 'بررسی روزانه — متن فارسی با English و عدد ۱۲۳. English ۱۲'
+        probe('persian', persian, persian_edited, ' English ۱۲', persian_point, ('End',))
+        third_edited = three_level + ' پایان English ۱۲'
+        probe('nested', third, third_edited, ' پایان English ۱۲', nested_point, ('ctrl+End',))
+        assert results['persian']['outcome'] == results['nested']['outcome'] == 'intended_block_exact'
+        close(); assert app().wait(timeout=10) == 0
+        print('PASS: targeted Review diagnostic persisted both edits in intended synthetic blocks; full Review not run', flush=True)
+        return
+
     click(690, 518); select('End'); paste(' English ۱۲')
     persian_edited = 'بررسی روزانه — متن فارسی با English و عدد ۱۲۳. English ۱۲'
     wait_sql('SELECT content FROM blocks WHERE id=?', [(persian_edited,)], (persian,))
