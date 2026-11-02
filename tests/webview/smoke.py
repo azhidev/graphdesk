@@ -64,6 +64,8 @@ def main():
         parser.error('--diagnose-review requires --review')
     if points_supplied and not args.diagnose_review:
         parser.error('coordinate overrides require --diagnose-review')
+    if args.shell:
+        os.umask(0o077)  # Shell captures may contain synthetic note text.
     if args.diagnose_review:
         os.umask(0o077)
         # No existing/shared output; screenshots may contain synthetic note text.
@@ -91,7 +93,7 @@ def main():
             cookie = secrets.token_hex(16)
             subprocess.run(['xauth', '-f', str(auth), 'add', ':99', '.', cookie], check=True)
             display_read, display_write = os.pipe()
-            with ((work if args.review or args.work else args.artifacts) / 'xvfb.log').open('w') as log:
+            with ((work if args.review or args.shell or args.work else args.artifacts) / 'xvfb.log').open('w') as log:
                 xvfb = subprocess.Popen(['Xvfb', '-displayfd', str(display_write), '-screen', '0', '1400x1100x24',
                                          '-nolisten', 'tcp', '-auth', str(auth)], pass_fds=(display_write,), stdout=log, stderr=log)
                 os.close(display_write)
@@ -134,7 +136,7 @@ def main():
     graph = work / ('benchmark.sqlite3' if args.perf else 'review-notes.sqlite3' if args.review else 'smoke.sqlite3')
     app = None
     window = None
-    log = ((work if args.review or args.work else args.artifacts) / 'app.log').open('w')
+    log = ((work if args.review or args.shell or args.work else args.artifacts) / 'app.log').open('w')
 
     def pump(seconds=.3):
         end = time.monotonic() + seconds

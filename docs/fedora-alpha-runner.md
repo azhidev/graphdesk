@@ -180,3 +180,34 @@ SQLite assertion failure inspect `focus-*-assertion-failed.png` locally; errors
 omit note contents (persistence errors include synthetic IDs/classification).
 Keep the screenshots and disposable data private. Ubuntu passing this full
 suite does not substitute for a Fedora full-suite rerun.
+
+## Shell Settings focus check (installed binary; no package changes)
+
+Fedora Shell saved Dark but did not persist Persian after `Tab, End, Return`.
+Review on the same installation did persist Persian and Jalali after directly
+focusing their selectors. This argues against a general preference-save failure;
+the precise Fedora focus destination after Tab was not observed. The Shell
+fixture now clicks Theme, Language and Calendar selectors individually,
+records a post-click screenshot, and requires the complete preference
+state to match after **each** change and again after restart. It still runs
+Tasks, Search, history, narrow RTL overlay, and exact graph assertions.
+
+On Fedora, after the test-only commit is present in the checkout, rerun the
+**complete Shell suite** against the already-installed executable. Choose a
+fresh ignored artifacts path if the example already exists:
+
+```sh
+cd /home/azhidev/projects/graphdesk
+umask 077
+python3 tests/webview/smoke.py --shell \
+  --binary /usr/bin/graphdesk-desktop \
+  --artifacts test-artifacts/fedora-shell-settings-full
+```
+
+If a setting does not persist, inspect `*-control-clicked.png` and
+`*-assertion-failed.png` **locally**. A failure names only mismatched setting
+keys, not preference contents. New Shell artifacts use private permissions;
+raw app/Xvfb logs and disposable graphs remain in the temporary fixture work
+directory, not in the screenshots folder or any shared archive. Do not rebuild
+or reinstall the RPM for this fixture-only check. Ubuntu success is not a
+Fedora result.

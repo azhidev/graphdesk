@@ -8,16 +8,40 @@ import sqlite3
 import time
 
 
+def preference_mismatches(actual, expected):
+    """Report setting names, never raw preference files or note content."""
+    return [key for key, value in expected.items() if actual.get(key) != value]
+
+
 def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, app):
-    def preference(key, value):
+    expected_settings = {'theme': 'system', 'language': 'en', 'calendar': 'gregorian', 'search_mode': 'original'}
+
+    def preference(expected):
         deadline = time.monotonic() + 8
+        mismatches = ['preferences.json missing']
         while time.monotonic() < deadline:
-            for path in (work / 'config').rglob('preferences.json'):
-                data = json.loads(path.read_text())
-                if data[key] == value:
-                    return data
+            files = list((work / 'config').rglob('preferences.json'))
+            if len(files) == 1:
+                mismatches = preference_mismatches(json.loads(files[0].read_text()), expected)
+                if not mismatches:
+                    return
+            elif len(files) > 1:
+                mismatches = ['multiple isolated preference files']
             pump(.1)
-        raise AssertionError(f'Preference not saved: {key}={value}')
+        raise AssertionError(f'Expected isolated settings not saved: {mismatches}')
+
+    def choose(key, value, y, image):
+        # As in Review, focus the actual select; saving temporarily disables
+        # controls, so a Tab from the previous select has no stable destination.
+        wanted = {**expected_settings, key: value}
+        try:
+            click(600, y); pump(.3); shot(f'{image}-control-clicked')
+            xdo('key', 'End', 'Return'); pump(.6)
+            preference(wanted)  # The chosen value AND all other settings.
+        except AssertionError:
+            shot(f'{image}-assertion-failed')
+            raise
+        expected_settings.update(wanted)
 
     start(); shot('01-chooser')
     field(480, 130, str(graph)); click(590, 180)
@@ -47,14 +71,10 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     click(70, 85); click(86, 195); pump(); shot('05-tasks')
     xdo('key', 'alt+Left'); pump(); shot('06-history-source')
     click(100, 968); pump(); shot('07-settings-open')
-    xdo('key', 'End', 'Return'); pump(.6)
-    assert preference('theme', 'dark')['language'] == 'en'
+    choose('theme', 'dark', 370, '08-theme')
     shot('08-dark')
-    xdo('key', 'Tab', 'End', 'Return'); pump(.6)
-    assert preference('language', 'fa')['theme'] == 'dark'
-    xdo('key', 'Tab', 'End', 'Return'); pump(.6)
-    data = preference('calendar', 'jalali')
-    assert data['language'] == 'fa' and data['theme'] == 'dark' and data['search_mode'] == 'original'
+    choose('language', 'fa', 456, '09-language')
+    choose('calendar', 'jalali', 542, '09-calendar')
     shot('09-persian-rtl-jalali')
     xdo('key', 'Escape'); pump()
     window = int(xdo('search', '--onlyvisible', '--pid', app().pid, '--name', 'Graphdesk').splitlines()[0])
@@ -69,9 +89,10 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
     xdo('key', 'Return'); pump(); xdo('key', 'ctrl+Home'); paste(' narrow')
     wait_sql('SELECT content FROM blocks WHERE id=?', [(' narrow editedshell workflow فارسی 😀',)], (block_id,))
     close(); assert app().wait(timeout=10) == 0
-    assert preference('theme', 'dark')['calendar'] == 'jalali'
+    preference(expected_settings)
     start(); field(480, 130, str(graph)); xdo('key', 'Tab', 'Return'); pump()
     shot('13-reopened-preferences')
+    preference(expected_settings)
     assert sql('SELECT content FROM blocks WHERE id=?', (block_id,)) == [(' narrow editedshell workflow فارسی 😀',)]
     close(); assert app().wait(timeout=10) == 0
     with sqlite3.connect(graph) as db:
