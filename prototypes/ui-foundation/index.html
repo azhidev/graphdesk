@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GraphDesk · UI Foundation study</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="preview.js"></script>
+</head>
+<body>
+  <!-- Local, dependency-free outline icon set. Icons are decorative; controls keep text/labels. -->
+  <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+    <symbol id="i-panel" viewBox="0 0 20 20"><rect x="2.5" y="3" width="15" height="14" rx="2"/><path d="M7.5 3v14"/></symbol>
+    <symbol id="i-journal" viewBox="0 0 20 20"><rect x="3.25" y="3.25" width="13.5" height="13.5" rx="2"/><path d="M3.5 7.5h13M7 2v3M13 2v3M7 11h2.5"/></symbol>
+    <symbol id="i-tasks" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="m6.5 10 2.3 2.2 4.7-4.7"/></symbol>
+    <symbol id="i-search" viewBox="0 0 20 20"><circle cx="8.7" cy="8.7" r="5.2"/><path d="m12.6 12.6 4 4"/></symbol>
+    <symbol id="i-page" viewBox="0 0 20 20"><path d="M5 2.75h7l3 3V17H5zM12 2.75V6h3M7.5 9h5M7.5 12h5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M8.8 2.5h2.4l.45 1.7 1.55.65 1.55-.9 1.7 1.7-.9 1.55.65 1.55 1.7.45v2.4l-1.7.45-.65 1.55.9 1.55-1.7 1.7-1.55-.9-1.55.65-.45 1.7H8.8l-.45-1.7-1.55-.65-1.55.9-1.7-1.7.9-1.55-.65-1.55-1.7-.45V8.8l1.7-.45.65-1.55-.9-1.55 1.7-1.7 1.55.9 1.55-.65z"/></symbol>
+    <symbol id="i-left" viewBox="0 0 20 20"><path d="m11.8 4.8-5.2 5.2 5.2 5.2M7 10h10"/></symbol>
+    <symbol id="i-right" viewBox="0 0 20 20"><path d="m8.2 4.8 5.2 5.2-5.2 5.2M13 10H3"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m5.5 7.5 4.5 4.5 4.5-4.5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 20 20"><circle cx="4.5" cy="10" r=".8"/><circle cx="10" cy="10" r=".8"/><circle cx="15.5" cy="10" r=".8"/></symbol>
+  </svg>
+  <div class="review" aria-label="Prototype states">
+    <span class="review-label">UI FOUNDATION / VISUAL STUDY</span>
+    <nav aria-label="Review states">
+      <a href="?view=journal" data-link="journal">Journal</a>
+      <a href="?view=dark" data-link="dark">Dark</a>
+      <a href="?view=rtl" data-link="rtl">فارسی / RTL</a>
+      <a href="?view=search" data-link="search">Search</a>
+      <a href="?view=tasks" data-link="tasks">Tasks</a>
+      <a href="?view=narrow" data-link="narrow">Narrow</a>
+      <a href="?view=empty" data-link="empty">Empty day</a>
+      <a href="?view=settings" data-link="settings">Settings surface</a>
+    </nav>
+    <span class="review-note">Static study · not connected to your graphs</span>
+  </div>
+
+  <div class="frame">
+    <header class="app-header">
+      <div class="header-start">
+        <button class="icon-button sidebar-toggle" type="button" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="true"><svg class="icon" aria-hidden="true"><use href="#i-panel"/></svg></button>
+        <div class="mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <span class="brand">GraphDesk</span>
+        <span class="header-divider" aria-hidden="true"></span>
+        <button class="graph-switch" type="button" aria-label="Switch graph">
+          <span class="graph-avatar" aria-hidden="true">P</span><bdi class="graph-name">Personal notes</bdi><svg class="icon chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+        </button>
+      </div>
+      <div class="header-end">
+        <span class="header-status"><span class="status-dot" aria-hidden="true"></span><span data-en="Saved" data-fa="ذخیره شد">Saved</span></span>
+        <span class="header-divider" aria-hidden="true"></span>
+        <button class="icon-button history-back" type="button" aria-label="Back" title="Back · Alt+Left"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg></button>
+        <button class="icon-button history-forward" type="button" aria-label="Forward" title="Forward · Alt+Right" disabled><svg class="icon" aria-hidden="true"><use href="#i-right"/></svg></button>
+        <button class="quiet-button page-jump" type="button"><span data-en="Go to page" data-fa="رفتن به صفحه">Go to page</span><kbd dir="ltr">Ctrl/Cmd P</kbd></button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar" id="sidebar" aria-label="Workspace navigation">
+        <div class="sidebar-scroll">
+          <div class="sidebar-top">
+          <div class="sidebar-heading" data-en="WORKSPACE" data-fa="فضای کار">WORKSPACE</div>
+          <nav class="primary-nav" aria-label="Workspace">
+            <a class="nav-item journal-entry selected" href="?view=journal" aria-current="page"><svg class="icon nav-icon" aria-hidden="true"><use href="#i-journal"/></svg><span data-en="Journal" data-fa="روزانه">Journal</span><span class="nav-hint" data-en="Today" data-fa="امروز">Today</span></a>
+            <button class="nav-item" type="button"><svg class="icon nav-icon" aria-hidden="true"><use href="#i-plus"/></svg><span data-en="Capture today" data-fa="یادداشت امروز">Capture today</span></button>
+            <a class="nav-item tasks-entry" href="?view=tasks"><svg class="icon nav-icon" aria-hidden="true"><use href="#i-tasks"/></svg><span data-en="Tasks" data-fa="کارها">Tasks</span></a>
+            <a class="nav-item search-entry" href="?view=search"><svg class="icon nav-icon" aria-hidden="true"><use href="#i-search"/></svg><span data-en="Search" data-fa="جست‌وجو">Search</span><bdi dir="ltr" class="nav-hint">Ctrl/Cmd K</bdi></a>
+          </nav>
+
+          <div class="sidebar-divider"></div>
+          <div class="section-heading"><span data-en="JOURNAL DATE" data-fa="تاریخ روزانه">JOURNAL DATE</span></div>
+          <button class="date-control" type="button"><svg class="icon" aria-hidden="true"><use href="#i-journal"/></svg><bdi class="date-label" data-en="October 29, 2026" data-fa="۷ آبان ۱۴۰۵">October 29, 2026</bdi><svg class="icon chevron" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+          </div>
+
+          <div class="pages-area"><div class="section-heading pages-heading"><span data-en="PAGES" data-fa="صفحه‌ها">PAGES</span><button type="button" class="add-button" aria-label="New page" title="New page"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button></div>
+          <nav class="page-nav" aria-label="Pages">
+            <button class="nav-item" type="button"><svg class="icon page-icon" aria-hidden="true"><use href="#i-page"/></svg><bdi data-en="Project Atlas" data-fa="پروژه Atlas">Project Atlas</bdi></button>
+            <button class="nav-item" type="button"><svg class="icon page-icon" aria-hidden="true"><use href="#i-page"/></svg><bdi data-en="Reading notes" data-fa="یادداشت‌های مطالعه">Reading notes</bdi></button>
+            <button class="nav-item" type="button"><svg class="icon page-icon" aria-hidden="true"><use href="#i-page"/></svg><bdi data-en="Weekly review" data-fa="مرور هفتگی">Weekly review</bdi></button>
+          </nav>
+          </div>
+        </div>
+        <div class="sidebar-bottom"><button type="button" class="nav-item settings-trigger"><svg class="icon nav-icon" aria-hidden="true"><use href="#i-settings"/></svg><span data-en="Settings" data-fa="تنظیمات">Settings</span></button></div>
+      </aside>
+
+      <aside class="sidebar search-sidebar" id="search-sidebar" aria-label="Search pages and blocks" hidden>
+        <div class="sidebar-scroll">
+          <a class="back-link" href="?view=journal"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg><span data-en="Workspace" data-fa="فضای کار">Workspace</span></a>
+          <h2 data-en="Search" data-fa="جست‌وجو">Search</h2>
+          <label class="search-field"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input type="search" value="design" aria-label="Search pages and blocks" placeholder="Search pages and blocks"></label>
+          <p class="search-tip" data-en="Phrase search · Enter opens · Esc clears" data-fa="جست‌وجوی عبارتی · Enter باز کردن · Esc پاک کردن">Phrase search · Enter opens · Esc clears</p>
+          <div class="section-heading"><span data-en="PAGES" data-fa="صفحه‌ها">PAGES</span><span class="count">1</span></div>
+          <button type="button" class="result"><span class="result-title">Design system</span><span class="result-context" data-en="Page" data-fa="صفحه">Page</span></button>
+          <div class="section-heading"><span data-en="BLOCKS" data-fa="بلوک‌ها">BLOCKS</span><span class="count">2</span></div>
+          <button type="button" class="result selected-result" aria-current="true"><span class="result-context">Journal · October 29</span><span class="result-title">Refine the <strong>design</strong> foundation…</span></button>
+          <button type="button" class="result"><span class="result-context">Project Atlas</span><span class="result-title">Review the <strong>design</strong> notes…</span></button>
+          <p class="search-tip" data-en="Results come from saved text, not unsaved drafts." data-fa="نتایج از متن ذخیره‌شده هستند، نه پیش‌نویس‌های ذخیره‌نشده.">Results come from saved text, not unsaved drafts.</p>
+        </div>
+      </aside>
+
+      <main class="main-content" id="content">
+        <div class="document">
+          <div class="page-topline"><span class="eyebrow" data-en="JOURNAL / THURSDAY" data-fa="روزانه / پنجشنبه">JOURNAL / THURSDAY</span><button type="button" class="quiet-button page-actions"><span data-en="Page actions" data-fa="گزینه‌های صفحه">Page actions</span><svg class="icon" aria-hidden="true"><use href="#i-more"/></svg></button></div>
+          <h1 data-en="October 29, 2026" data-fa="۷ آبان ۱۴۰۵">October 29, 2026</h1>
+          <nav class="day-nav" aria-label="Journal navigation">
+            <button type="button" class="day-control"><svg class="icon day-arrow" aria-hidden="true"><use href="#i-left"/></svg><span data-en="Previous day" data-fa="روز قبل">Previous day</span></button>
+            <button type="button" class="day-control today-control" data-en="Today" data-fa="امروز">Today</button>
+            <button type="button" class="day-control"><span data-en="Next day" data-fa="روز بعد">Next day</span><svg class="icon day-arrow" aria-hidden="true"><use href="#i-right"/></svg></button>
+          </nav>
+          <div class="document-rule"></div>
+
+          <section class="outline" aria-label="Page blocks">
+            <div class="block"><span class="bullet" aria-hidden="true">•</span><p dir="auto" data-en="A quieter workspace makes it easier to think. Keep the tools nearby, but let the notes lead." data-fa="یک محیط آرام‌تر کمک می‌کند بهتر فکر کنیم. ابزارها نزدیک باشند، اما یادداشت‌ها در مرکز توجه بمانند.">A quieter workspace makes it easier to think. Keep the tools nearby, but let the notes lead.</p></div>
+            <div class="block"><span class="bullet" aria-hidden="true">•</span><p dir="auto" data-en="Refine the design foundation for the daily workspace." data-fa="پایهٔ طراحی را برای فضای کار روزانه بازبینی کنیم.">Refine the design foundation for the daily workspace.</p></div>
+            <div class="block depth-1"><span class="bullet" aria-hidden="true">•</span><p dir="auto" data-en="Keep navigation compact and the editor readable at smaller window sizes." data-fa="پیمایش را فشرده نگه داریم و خوانایی ویرایشگر را در پنجره‌های کوچک حفظ کنیم.">Keep navigation compact and the editor readable at smaller window sizes.</p></div>
+            <div class="block depth-1"><span class="bullet" aria-hidden="true">•</span><p dir="auto"><span data-en="Check " data-fa="پس از بازبینی، پیوندهای ">Check </span><bdi dir="ltr">[[Project Atlas]]</bdi><span data-en=" links and active tasks after the review." data-fa=" و کارهای فعال را بررسی کنیم."> links and active tasks after the review.</span></p></div>
+            <div class="block depth-2"><span class="bullet" aria-hidden="true">•</span><p dir="auto" data-en="Persian notes and English page titles can live in the same outline." data-fa="یادداشت‌های فارسی و عنوان‌های انگلیسی مانند GraphDesk می‌توانند در یک فهرست باشند.">Persian notes and English page titles can live in the same outline.</p></div>
+            <div class="block editing"><span class="bullet" aria-hidden="true">•</span><div class="editing-area"><label class="sr-only" for="example-block">Block text</label><textarea id="example-block" rows="1" dir="auto" spellcheck="false">A small, deliberate next step.</textarea></div></div>
+          </section>
+          <div class="block-actions" role="group" aria-label="Block editor actions">
+            <select aria-label="Task status"><option data-en="No task" data-fa="بدون کار">No task</option><option>TODO</option><option>DOING</option><option>DONE</option></select>
+            <span class="action-separator" aria-hidden="true"></span>
+            <button type="button" data-en="Undo" data-fa="واگرد">Undo</button><button type="button" disabled data-en="Redo" data-fa="بازانجام">Redo</button>
+            <details class="more-actions"><summary data-en="Block actions ···" data-fa="گزینه‌های بلوک ···">Block actions ···</summary><div class="more-list"><button type="button" data-en="Indent" data-fa="تورفتگی">Indent</button><button type="button" data-en="Outdent" data-fa="بیرون‌رفتگی">Outdent</button><button type="button" data-en="Move up" data-fa="بالا بردن">Move up</button><button type="button" data-en="Move down" data-fa="پایین بردن">Move down</button><button type="button" data-en="Delete…" data-fa="حذف…">Delete…</button><details class="editing-help"><summary data-en="Editing help" data-fa="راهنمای ویرایش">Editing help</summary><p data-en="Enter splits · Shift+Enter inserts a new line · Tab / Shift+Tab changes nesting · Escape leaves the text field." data-fa="Enter تفکیک · Shift+Enter خط جدید · Tab / Shift+Tab تغییر تو‌رفتگی · Escape خروج از متن">Enter splits · Shift+Enter inserts a new line · Tab / Shift+Tab changes nesting · Escape leaves the text field.</p></details></div></details>
+          </div>
+
+          <section class="empty-day" hidden aria-label="Empty journal day"><div class="empty-symbol" aria-hidden="true">○</div><h2 data-en="No notes for this day yet" data-fa="هنوز یادداشتی برای این روز وجود ندارد">No notes for this day yet</h2><p data-en="Browsing a date doesn't create a journal. Add your first note when you're ready." data-fa="مرور تاریخ، روزانه‌ای ایجاد نمی‌کند. هر زمان آماده بودید اولین یادداشت را اضافه کنید.">Browsing a date doesn't create a journal. Add your first note when you're ready.</p><button type="button" data-en="Add a note" data-fa="افزودن یادداشت">Add a note</button></section>
+
+          <section class="page-bottom" aria-label="Page details">
+            <button type="button" class="inline-disclosure"><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg><span data-en="Backlinks" data-fa="پیوندهای ورودی">Backlinks</span><span class="count">0</span></button>
+            <p data-en="No incoming links yet." data-fa="هنوز پیوند ورودی وجود ندارد.">No incoming links yet.</p>
+          </section>
+        </div>
+        <section class="tasks-workspace" aria-label="Tasks" hidden>
+          <div class="eyebrow" data-en="WORKSPACE / TASKS" data-fa="فضای کار / کارها">WORKSPACE / TASKS</div>
+          <div class="tasks-title"><div><h1 data-en="Tasks" data-fa="کارها">Tasks</h1><p data-en="From every page in this graph. Open a task to edit its source block." data-fa="کارها از همهٔ صفحه‌های این گراف. برای ویرایش، بلوک اصلی را باز کنید.">From every page in this graph. Open a task to edit its source block.</p></div><button type="button" class="quiet-button" data-en="Refresh tasks" data-fa="بازآوری کارها">Refresh tasks</button></div>
+          <div class="task-filters"><label><span data-en="Status" data-fa="وضعیت">Status</span><select aria-label="Task status filter"><option data-en="Active (TODO + DOING)" data-fa="فعال (TODO + DOING)">Active (TODO + DOING)</option><option>TODO</option><option>DOING</option><option>DONE</option></select></label><label><span data-en="Page" data-fa="صفحه">Page</span><select aria-label="Task page filter"><option data-en="All pages and journals" data-fa="همهٔ صفحه‌ها و روزانه‌ها">All pages and journals</option><option>Project Atlas</option><option>Reading notes</option></select></label></div>
+          <div class="task-group"><h2><span data-en="Active" data-fa="فعال">Active</span><span>3</span></h2>
+            <button type="button" class="task-result"><span class="task-marker" aria-hidden="true"></span><span class="task-copy"><strong>Review the design notes for Project Atlas</strong><span>Project Atlas · TODO</span></span><svg class="icon task-open" aria-hidden="true"><use href="#i-right"/></svg></button>
+            <button type="button" class="task-result"><span class="task-marker" aria-hidden="true"></span><span class="task-copy"><strong>Check Persian search phrases against the saved journal</strong><span>Journal · October 29 · DOING</span></span><svg class="icon task-open" aria-hidden="true"><use href="#i-right"/></svg></button>
+            <button type="button" class="task-result"><span class="task-marker" aria-hidden="true"></span><span class="task-copy"><strong>Collect reference pages for the weekly review</strong><span>Weekly review · TODO</span></span><svg class="icon task-open" aria-hidden="true"><use href="#i-right"/></svg></button>
+          </div>
+          <p class="task-footnote" data-en="Task changes happen in the source editor. Results are from saved blocks." data-fa="تغییر کارها در ویرایشگر اصلی انجام می‌شود. نتایج از بلوک‌های ذخیره‌شده هستند.">Task changes happen in the source editor. Results are from saved blocks.</p>
+        </section>
+      </main>
+    </div>
+  </div>
+  <dialog class="settings-dialog" aria-labelledby="settings-heading" aria-describedby="settings-intro">
+    <div class="settings-header"><div><div class="eyebrow" data-en="PREFERENCES" data-fa="ترجیحات">PREFERENCES</div><h2 id="settings-heading" tabindex="-1" data-en="Settings" data-fa="تنظیمات">Settings</h2></div><button class="icon-button settings-close" type="button" aria-label="Close settings" title="Close settings">×</button></div>
+    <p id="settings-intro" data-en="Adjust how GraphDesk looks and displays dates. Your notes are unchanged." data-fa="ظاهر GraphDesk و نمایش تاریخ را تغییر دهید. یادداشت‌های شما تغییری نمی‌کنند.">Adjust how GraphDesk looks and displays dates. Your notes are unchanged.</p>
+    <div class="settings-fields">
+      <label><span data-en="Appearance" data-fa="نمای ظاهری">Appearance</span><select aria-label="Theme"><option value="system" data-en="System" data-fa="سیستم">System</option><option value="light" data-en="Light" data-fa="روشن">Light</option><option value="dark" data-en="Dark" data-fa="تیره">Dark</option></select></label>
+      <label><span data-en="Language" data-fa="زبان">Language</span><select aria-label="Language"><option value="en">English</option><option value="fa">فارسی</option></select></label>
+      <label><span data-en="Calendar" data-fa="گاه‌شماری">Calendar</span><select aria-label="Calendar"><option value="gregorian" data-en="Gregorian" data-fa="میلادی">Gregorian</option><option value="jalali" data-en="Jalali" data-fa="جلالی">Jalali</option></select></label>
+    </div>
+    <div class="settings-footer"><span data-en="Prototype preview only · preferences are not saved" data-fa="فقط پیش‌نمایش نمونه · تنظیمات ذخیره نمی‌شوند">Prototype preview only · preferences are not saved</span><button class="settings-done" type="button" data-en="Done" data-fa="انجام شد">Done</button></div>
+  </dialog>
+  <script>document.documentElement.dataset.view = new URLSearchParams(location.search).get('view') || 'journal';</script>
+</body>
+</html>
