@@ -18,6 +18,7 @@
   import { graphApi, type GraphRegistry, type RecentGraph } from './lib/graphs';
   import { GraphSwitch } from './lib/graphSwitch';
   import GraphChooser from './lib/GraphChooser.svelte';
+  import GraphSwitchPopover from './lib/GraphSwitchPopover.svelte';
   import PageSwitcher from './lib/PageSwitcher.svelte';
   import type { TaskFilter } from './lib/tasks';
   import type { MessageKey } from './lib/i18n';
@@ -46,6 +47,8 @@
   let view = $state<'notes' | 'tasks'>('notes');
   let searchOpen = $state(false), sidebarCollapsed = $state(false), sidebarOverlay = $state(false), narrow = $state(false);
   let settingsOpen = $state(false);
+  let graphSwitchRoot = $state<HTMLElement>();
+  let graphSwitchButton = $state<HTMLButtonElement>();
   let settingsDialog: HTMLDialogElement;
   let settingsReturn: HTMLElement | null = null;
   let sidebarToggle = $state<HTMLButtonElement>();
@@ -169,6 +172,7 @@
   }
   async function openSearch() {
     if (!session || locked) return;
+    switching = false;
     searchOpen = true; sidebarCollapsed = false;
     if (narrow) sidebarOverlay = true;
     await tick(); document.getElementById('search')?.focus();
@@ -190,6 +194,7 @@
   }
   async function goPages() {
     if (locked) return;
+    switching = false;
     try { departureAllowed(); await quickPages.show(); } catch (e) { error = errorMessage(e); }
   }
 
@@ -285,6 +290,7 @@
     else await focusPage();
   }
   async function navigate(target: Destination) {
+    switching = false;
     departureAllowed(); rememberLocation();
     const wasOverlay = narrow && sidebarOverlay;
     if (wasOverlay) { sidebarOverlay = false; await tick(); }
@@ -424,6 +430,9 @@
     searchInput?.focus();
   }
   function overlayKeys(event: KeyboardEvent) {
+    if (event.key === 'Escape' && switching && !event.isComposing && event.keyCode !== 229) {
+      event.preventDefault(); event.stopPropagation(); switching = false; graphSwitchButton?.focus(); return;
+    }
     if (event.key === 'Tab' && sidebarOverlay && !document.querySelector('dialog[open]')) {
       const controls = [...document.querySelectorAll<HTMLElement>('#workspace-sidebar button:not(:disabled), #workspace-sidebar input:not(:disabled), #workspace-sidebar select:not(:disabled), #workspace-sidebar summary')].filter(el => el.getClientRects().length);
       if (controls.length) {
@@ -435,6 +444,13 @@
     if (event.key === 'Escape' && sidebarOverlay && !document.querySelector('dialog[open]') && !event.isComposing && event.keyCode !== 229 && !searchComposing && !editor.composing) {
       event.preventDefault(); event.stopPropagation(); void closeOverlay();
     }
+  }
+  async function toggleGraphSwitch() {
+    switching = !switching;
+    if (switching) { await tick(); graphSwitchRoot?.querySelector<HTMLButtonElement>('#graph-switch-popover button:not(:disabled)')?.focus(); }
+  }
+  function outsideGraphSwitch(event: MouseEvent) {
+    if (switching && graphSwitchRoot && !event.composedPath().includes(graphSwitchRoot)) switching = false;
   }
   async function addPage(event: SubmitEvent) {
     event.preventDefault();
@@ -474,7 +490,7 @@
   });
 </script>
 
-<svelte:window onkeydown={shortcut} onkeydowncapture={overlayKeys} />
+<svelte:window onkeydown={shortcut} onkeydowncapture={overlayKeys} onclick={outsideGraphSwitch} />
 <svg class="icon-defs" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
   <symbol id="shell-panel" viewBox="0 0 20 20"><rect x="2.5" y="3" width="15" height="14" rx="2"/><path d="M7.5 3v14"/></symbol>
   <symbol id="shell-journal" viewBox="0 0 20 20"><rect x="3.25" y="3.25" width="13.5" height="13.5" rx="2"/><path d="M3.5 7.5h13M7 2v3M13 2v3M7 11h2.5"/></symbol>
@@ -497,6 +513,11 @@
     <label>{$tr('Calendar')}<select value={$preferences.calendar} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('calendar', e.currentTarget)}><option value="gregorian">{$tr('Gregorian')}</option><option value="jalali">{$tr('Jalali')}</option></select></label>
     <label>{$tr('Search mode')}<select value={$preferences.search_mode} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('search_mode', e.currentTarget)}><option value="original">{$tr('Original phrase search')}</option><option value="persian">{$tr('Persian-friendly')}</option></select></label>
   </div>
+  {#if session}<details class="graph-options"><summary>{$tr('Recent graphs')}</summary>
+    <label><input type="checkbox" checked={registry.remember} disabled={locked || !registryReady} onchange={async e => { const input = e.currentTarget; await registrySettings(input.checked, false); input.checked = registry.remember; }} />{$tr('Remember recent graphs')}</label>
+    <label><input type="checkbox" checked={registry.reopen} disabled={locked || !registryReady || !registry.remember} onchange={async e => { const input = e.currentTarget; await registrySettings(true, input.checked); input.checked = registry.reopen; }} />{$tr('Reopen last graph on startup')}</label>
+    {#if registry.remember && registry.entries.length}<button disabled={locked} onclick={() => forget(null)}>{$tr('Clear remembered graphs')}</button>{/if}
+  </details>{/if}
   {#if prefsError}<ErrorNotice message={prefsError} />{/if}
   <div class="settings-footer"><details><summary>{$tr('Keyboard shortcuts')}</summary><p>{$tr('Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Alt+←/→: history outside text fields')}</p></details><button class="settings-done" onclick={closeSettings}>{$tr('Done')}</button></div>
 </dialog>
@@ -528,7 +549,10 @@
       {#if session}<button bind:this={sidebarToggle} class="icon-button sidebar-toggle" aria-label={$tr('Workspace')} aria-expanded={narrow ? sidebarOverlay : !sidebarCollapsed} aria-controls="workspace-sidebar" onclick={toggleSidebar}><svg class="icon" aria-hidden="true"><use href="#shell-panel" /></svg></button>{/if}
       <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand">GraphDesk</span>
       {#if session}<span class="header-divider" aria-hidden="true"></span>
-        <button class="graph-switch" disabled={locked} aria-expanded={switching} title={activePath} onclick={() => switching = !switching}><span class="graph-avatar" aria-hidden="true">{graphName.charAt(0).toUpperCase()}</span><bdi dir="auto" class="graph-name">{graphName}</bdi><svg class="icon chevron" aria-hidden="true"><use href="#shell-chevron" /></svg><span class="sr-only">{$tr(switching ? 'Cancel graph switch' : 'Switch graph')}</span></button>
+        <div class="graph-switch-anchor" bind:this={graphSwitchRoot}>
+          <button bind:this={graphSwitchButton} class="graph-switch" disabled={locked} aria-expanded={switching} aria-controls="graph-switch-popover" aria-haspopup="dialog" onclick={toggleGraphSwitch}><span class="graph-avatar" aria-hidden="true">{graphName.charAt(0).toUpperCase()}</span><bdi dir="auto" class="graph-name">{graphName}</bdi><svg class="icon chevron" aria-hidden="true"><use href="#shell-chevron" /></svg><span class="sr-only">{$tr('Switch graph')}</span></button>
+          {#if switching}<GraphSwitchPopover current={activePath} {registry} ready={registryReady} disabled={locked} onPick={pick} onRecent={recent} />{/if}
+        </div>
       {/if}
     </div>
     {#if session}<div class="header-end">
@@ -541,7 +565,7 @@
       <button class="page-jump" disabled={locked || composing} onclick={goPages} title="Ctrl/Cmd+P">{$tr('Go to page')} <kbd dir="ltr">Ctrl/Cmd P</kbd></button>
     </div>{:else}<button class="icon-button" aria-label={$tr('Settings')} onclick={revealSettings}><svg class="icon" aria-hidden="true"><use href="#shell-settings" /></svg></button>{/if}
   </header>
-  {#if !session || switching}
+  {#if !session}
   <div class="graph-chooser-surface"><GraphChooser bind:path bind:composing={graphComposing} {registry} ready={prefsReady && registryReady} disabled={locked}
     onManual={open} onPick={pick} onRecent={recent} onSettings={registrySettings} onForget={forget} />
   </div>
@@ -688,6 +712,7 @@
   .icon-button:hover:not(:disabled), .graph-switch:hover:not(:disabled), .page-jump:hover:not(:disabled) { background: var(--hover); }
   .icon-button { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; }
   .graph-switch { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding: 5px 8px; font-size: 13px; font-weight: 610; }
+  .graph-switch-anchor { position: relative; min-width: 0; }
   .graph-avatar { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 5px; background: var(--selected); color: var(--accent-ink); font-size: 11px; }
   .graph-name { max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .chevron { width: 14px; height: 14px; color: var(--soft); }
@@ -761,6 +786,9 @@
   .settings-fields { display: grid; gap: 20px; }
   .settings-fields label { display: grid; gap: 7px; font-size: 13px; font-weight: 620; }
   .settings-fields select { min-height: 36px; width: 100%; padding: 6px 10px; font-weight: 400; }
+  .graph-options { margin-block-start: var(--space-4); color: var(--muted); font-size: 13px; }
+  .graph-options summary { cursor: pointer; }.graph-options label { display: block; margin-block: 10px; }
+  .graph-options input { margin-inline-end: 8px; }
   .settings-footer { display: flex; justify-content: space-between; align-items: start; gap: 14px; border-block-start: 1px solid var(--line); margin-block-start: 28px; padding-block-start: 16px; }
   .settings-footer details { font-size: 12px; color: var(--muted); }.settings-footer summary { cursor: pointer; }
   .settings-done { padding: 7px 14px; background: var(--selected); color: var(--accent-ink); font-weight: 650; }
