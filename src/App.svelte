@@ -513,11 +513,12 @@
     <label>{$tr('Calendar')}<select value={$preferences.calendar} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('calendar', e.currentTarget)}><option value="gregorian">{$tr('Gregorian')}</option><option value="jalali">{$tr('Jalali')}</option></select></label>
     <label>{$tr('Search mode')}<select value={$preferences.search_mode} disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} onchange={e => changePreference('search_mode', e.currentTarget)}><option value="original">{$tr('Original phrase search')}</option><option value="persian">{$tr('Persian-friendly')}</option></select></label>
   </div>
-  {#if session}<details class="graph-options"><summary>{$tr('Recent graphs')}</summary>
+  <details class="graph-options"><summary>{$tr('Recent graphs')}</summary>
     <label><input type="checkbox" checked={registry.remember} disabled={locked || !registryReady} onchange={async e => { const input = e.currentTarget; await registrySettings(input.checked, false); input.checked = registry.remember; }} />{$tr('Remember recent graphs')}</label>
     <label><input type="checkbox" checked={registry.reopen} disabled={locked || !registryReady || !registry.remember} onchange={async e => { const input = e.currentTarget; await registrySettings(true, input.checked); input.checked = registry.reopen; }} />{$tr('Reopen last graph on startup')}</label>
     {#if registry.remember && registry.entries.length}<button disabled={locked} onclick={() => forget(null)}>{$tr('Clear remembered graphs')}</button>{/if}
-  </details>{/if}
+    <p>{$tr('Remembering stores file paths privately on this computer, not notes. Turning it off clears remembered paths.')}</p>
+  </details>
   {#if prefsError}<ErrorNotice message={prefsError} />{/if}
   <div class="settings-footer"><details><summary>{$tr('Keyboard shortcuts')}</summary><p>{$tr('Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Alt+←/→: history outside text fields')}</p></details><button class="settings-done" onclick={closeSettings}>{$tr('Done')}</button></div>
 </dialog>
@@ -566,8 +567,8 @@
     </div>{:else}<button class="icon-button" aria-label={$tr('Settings')} onclick={revealSettings}><svg class="icon" aria-hidden="true"><use href="#shell-settings" /></svg></button>{/if}
   </header>
   {#if !session}
-  <div class="graph-chooser-surface"><GraphChooser bind:path bind:composing={graphComposing} {registry} ready={prefsReady && registryReady} disabled={locked}
-    onManual={open} onPick={pick} onRecent={recent} onSettings={registrySettings} onForget={forget} />
+  <div class="graph-chooser-surface"><GraphChooser bind:path bind:composing={graphComposing} {registry} {inventory} ready={prefsReady && registryReady} disabled={locked}
+    onManual={open} onPick={pick} onRecent={recent} onForget={forget} />
   </div>
   {/if}
   <div class="shell-notices">
@@ -579,7 +580,6 @@
     <button disabled={locked} onclick={() => registrySettings(false, false)}>{$tr('Reset remembered paths (turn off)')}</button>
   </section>{/if}
   {#if landingError}<p role="alert">{$tr('Graph opened, but today could not be loaded. Retry Today or switch graphs.')} <button disabled={locked} onclick={() => run(landToday, 'Opening journal…')}>{$tr('Retry Today')}</button></p>{/if}
-  {#if !session && inventory}<p role="status">{$tr('Recovery drafts found for {count} graph(s). Open the original graph to compare and recover text.', { count: inventory })}</p>{/if}
   {#if session}
     {#key session}<RecoveryPanel bind:this={recoveryPanel} {session} records={recoveryRecords} disabled={locked} onChanged={refreshRecovery} onRecover={recover} />{/key}
   {/if}
@@ -722,7 +722,7 @@
   .page-jump { white-space: nowrap; padding: 6px 9px; color: var(--muted); font-size: 12px; }
   kbd { font: 10px system-ui, sans-serif; color: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; margin-inline-start: 8px; }
   :global([dir='rtl']) .direction-icon { transform: scaleX(-1); }
-  .graph-chooser-surface { width: min(36rem, calc(100% - 32px)); max-height: 36vh; overflow-y: auto; margin: var(--space-4) auto; flex: none; }
+  .graph-chooser-surface { width: min(36rem, calc(100% - 32px)); max-height: calc(100vh - 110px); overflow-y: auto; margin: auto; padding-block: 16px; flex: none; }
   .shell-notices { max-height: 28vh; overflow-y: auto; padding-inline: var(--space-4); }
   .shell-notices > :global(*) { margin-block: var(--space-2); }
   .workspace { position: relative; display: grid; grid-template-columns: 254px minmax(0, 1fr); flex: 1; min-height: 0; }
