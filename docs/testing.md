@@ -6,11 +6,12 @@
 
 The [developer-only runner](fedora-alpha-runner.md) reuses the production
 WebView `--review`/`--reliability`/`--shell`/`--navigation` suites, Core
-large-page fixtures and Linux process sampler. `--local` rehearsal in this
+large-page fixtures and Linux process sampler. Before the chooser redesign,
+`--local` rehearsal in this
 Ubuntu VM passed all four suites with explicit Xvfb/X11 screenshots; closed-graph
 copy/restore matched SQLite integrity/FK checks, file and text hashes and
 page/block/journal/reference counts. A separate disposable live WAL copy was
-refused. Schema/unittest discovery reports **25 passed**, including read-only
+refused. At that time schema/unittest discovery reported **25 passed**, including read-only
 RPM inspection mocks and archive exclusion of raw app logs/databases. Actual
 read-only RPM query was **BLOCKED** here because the `rpm` utility is absent.
 
@@ -21,6 +22,16 @@ Fedora performance certification or interaction latency. The no-perf and perf
 Ubuntu rehearsal outputs live only in ignored `test-artifacts/` and are not
 Fedora results. Native package installation, upgrade/uninstall, Wayland focus,
 GNOME launcher, IME and accessibility remain NOT TESTED until separately run.
+
+For the post-chooser frontend, `npm run check`, `npm run build`, 66 editor
+tests and 29 Python schema/fixture unit tests passed in Ubuntu. `cargo test`
+was unavailable in the VM (`cargo: command not found`). A probe of the old
+debug executable showed the **old** chooser and failed before opening a graph;
+it is not verification of the changed frontend. Review/Shell native automation
+uses previous startup coordinates and must be adapted and rerun with the
+newly built Fedora binary before claiming regression coverage. This is a
+test-harness mismatch, not evidence of a product defect. Native Wayland focus,
+caret, real IME and 5,000-block indent/outdent remain unverified.
 
 ### Milestone 8 VM packaging and offline graph copy
 

@@ -211,3 +211,59 @@ raw app/Xvfb logs and disposable graphs remain in the temporary fixture work
 directory, not in the screenshots folder or any shared archive. Do not rebuild
 or reinstall the RPM for this fixture-only check. Ubuntu success is not a
 Fedora result.
+
+## Final UX candidate — pending native acceptance (not a closeout result)
+
+The Fedora 44 operator reports the earlier RPM's Review, Shell, Reliability,
+synthetic restore and backup/restore checks as passed. The Navigation Xvfb
+failure remains unclassified. The editor scroll, graph popover and startup
+chooser changes are **not in that installed RPM** and have not been validated
+under native Fedora/Wayland. `cargo` is unavailable in the Ubuntu VM; a
+previously built debug executable renders an older chooser, not these changes.
+The old Review/Shell/performance fixture startup coordinates refer to the
+previous path form and need focused adaptation against a new native build.
+Do not treat a chooser click failure in those fixtures as a graph regression.
+
+After transferring the committed source through an approved host-side method,
+on Fedora review dependency provenance and run the standard checks/build from
+the checkout (no system install is performed):
+
+```sh
+cd /home/azhidev/projects/graphdesk
+git status --short --branch
+npm ci
+npm run check && npm run test:editor && npm run test:schema
+cargo test --locked --workspace
+npm run tauri -- build --config src-tauri/tauri.linux-alpha.conf.json --bundles rpm -- --locked
+```
+
+For a **manual, isolated** release-binary trial, create a new disposable test
+account or private XDG directories; never use personal graphs or recovery:
+
+```sh
+umask 077
+base=$(mktemp -d)
+mkdir -m 700 "$base/config" "$base/data" "$base/cache"
+XDG_CONFIG_HOME="$base/config" XDG_DATA_HOME="$base/data" XDG_CACHE_HOME="$base/cache" \
+  ./target/release/graphdesk-desktop
+```
+
+- In the fresh chooser, verify native Open/Create actions and Cancel (no file
+  created), advanced path/no-overwrite, and actionable recovery inventory by
+  reopening the **original disposable graph**. Recent graphs must be absent
+  until explicitly enabled in Settings; avoid showing full paths in the
+  switcher. After opting in, verify graph IDs before/after two-graph switching,
+  save-before-switch, Escape/outside/selection dismissal, focus return and
+  RTL/light/dark at 1300×1000 and at a smaller window.
+- On a disposable 5,000-block single-page graph, scroll to a visible task near
+  the middle, record before/after viewport position, active UUID, caret and
+  selection; indent/outdent using Tab, Shift+Tab and toolbar. Repeat with
+  nested blocks and undo/redo. Confirm parent/order via Core or closed-graph
+  SQLite, exact persisted text after restart and intact recovery drafts. If
+  jumping persists, capture a private before/after screencast and determine
+  whether the active row was visible before focus restoration. Do not assume
+  a full reload from movement alone.
+- Validate native Wayland caret, Settings, Search and a real Persian IME
+  candidate/commit/cancel cycle separately; Xvfb cannot stand in for these.
+  Leave assistive technology, real-version upgrade, navigation Xvfb cause and
+  the unresolved recovery-draft recurrence explicitly open until evidenced.

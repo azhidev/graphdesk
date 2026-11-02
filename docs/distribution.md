@@ -50,6 +50,37 @@ read-only RPM inspection, isolated production Xvfb checks, backup/restore
 summaries and a review archive. Installation and native Wayland/IME checks remain
 separate authorized Fedora steps.
 
+### Milestone 8 native status (reported Fedora 44, before final UX changes)
+
+The Fedora operator reports a native RPM build/install, the production Review
+and Shell suites, Reliability with synthetic recovery and a closed-graph
+backup/restore as **PASS**. Manual GNOME launch, two-graph switching, native
+Open/Create dialog cancellation, bilingual text persistence after restart and
+subjectively acceptable large-graph responsiveness also passed. The Navigation
+Xvfb fixture **FAIL** is not classified as a product defect. These results
+predate the final editor scroll, switcher and startup changes; they do not
+validate the new binary. The older VM-only packaging status below is historical.
+
+Three separate commits implement a conditional editor focus scroll, an anchored
+graph-switch popover and a compact startup chooser. The scroll behavior is a
+code-supported **likely** cause of the reported jump, not a confirmed Fedora
+fix. Keyed block IDs, native caret restoration and the existing structural
+save/undo paths are retained. The startup screen now prioritizes native
+Open/Create; manual paths are advanced, graph history is opt-in, and the
+recovery inventory notice is next to the action that opens its original graph.
+No graph paths or preferences are migrated.
+
+**M8 is still open.** Verify the rebuilt Fedora binary on Wayland for editor
+indent/outdent (including a visible block midway through 5,000 siblings),
+focus/caret/selection and real Persian IME, the switcher and the startup
+screen in Light/Dark and LTR/RTL, cancel/no-overwrite, recovery and restart.
+The old coordinate-based Xvfb Review/Shell/Navigation fixtures target the
+previous chooser layout and cannot certify this UI without focused fixture
+adaptation; do not interpret their startup failure as an app defect. The
+Navigation Xvfb failure remains unclassified. The older recovery-draft
+recurrence is **unresolved**. Real-version upgrades, native assistive
+technology and native Wayland checks for the changed UI are outstanding.
+
 The opt-in `src-tauri/tauri.linux-alpha.conf.json` turns on Tauri's existing
 bundler **only** when passed with `--config`. The normal unbundled developer
 build is unchanged. It preserves version `0.1.0`, identifier
@@ -75,8 +106,9 @@ on x86_64; use the actual generated name on other architectures. Ubuntu-side
 Inspect package metadata, payload, desktop launcher (`Exec=graphdesk-desktop`),
 icon, library dependencies and checksum before installing. The Tauri-generated
 packages install a binary under `/usr/bin` and icons/launcher under `/usr/share`;
-graphs, preferences and drafts are not package-owned files. No RPM has been
-installed or launched on Fedora as part of the VM work.
+graphs, preferences and drafts are not package-owned files. The VM work did
+not install or launch the RPM on Fedora; the separate Fedora operator report
+above records a successful native install.
 
 Native Fedora trial (disposable graph paths and isolated XDG config/data/cache):
 
