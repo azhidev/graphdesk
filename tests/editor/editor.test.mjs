@@ -11,6 +11,8 @@ test('focus restoration only reveals an editor outside its scrollport', () => {
   assert.equal(needsReveal({ top: 54, bottom: 954 }, viewport), false);
   assert.equal(needsReveal({ top: 30, bottom: 150 }, viewport), true);
   assert.equal(needsReveal({ top: 930, bottom: 980 }, viewport), true);
+  assert.equal(needsReveal({ top: -180, bottom: 1000 }, viewport), false, 'oversized input is already visible');
+  assert.equal(needsReveal({ top: 960, bottom: 2100 }, viewport), true);
 });
 import { localDate } from '../../src/lib/dates.ts';
 import { SearchController } from '../../src/lib/search.ts';
