@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import { EditorController } from '../../src/lib/editor/controller.ts';
 import { visibleRows } from '../../src/lib/editor/outline.ts';
 import { keyIntent } from '../../src/lib/editor/keyboard.ts';
+import { needsReveal } from '../../src/lib/editor/scroll.ts';
+
+test('focus restoration only reveals an editor outside its scrollport', () => {
+  const viewport = { top: 54, bottom: 954 };
+  assert.equal(needsReveal({ top: 55, bottom: 940 }, viewport), false);
+  assert.equal(needsReveal({ top: 54, bottom: 954 }, viewport), false);
+  assert.equal(needsReveal({ top: 30, bottom: 150 }, viewport), true);
+  assert.equal(needsReveal({ top: 930, bottom: 980 }, viewport), true);
+});
 import { localDate } from '../../src/lib/dates.ts';
 import { SearchController } from '../../src/lib/search.ts';
 import { completion, suggestions, insertReference } from '../../src/lib/references.ts';

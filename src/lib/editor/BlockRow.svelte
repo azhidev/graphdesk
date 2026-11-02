@@ -2,6 +2,7 @@
   import { tick, untrack } from 'svelte';
   import type { Row } from './outline';
   import { keyIntent } from './keyboard';
+  import { needsReveal } from './scroll';
   import type { EditorController, Focus } from './controller';
   import type { Page, TaskState } from './types';
   import { completion, suggestions, insertReference } from '../references';
@@ -68,8 +69,12 @@
       const request = focus; appliedFocus = request.serial;
       void tick().then(() => {
         if (!input || editor.focus?.serial !== request.serial) return;
-        input.focus(); input.setSelectionRange(request.start, request.end, request.direction);
-        resize(); input.scrollIntoView({ block: 'nearest' });
+        input.focus({ preventScroll: true }); input.setSelectionRange(request.start, request.end, request.direction);
+        resize();
+        const viewport = input.closest<HTMLElement>('.content');
+        if (viewport && needsReveal(input.getBoundingClientRect(), viewport.getBoundingClientRect())) {
+          input.scrollIntoView({ block: 'nearest' });
+        }
       });
     }
   });
