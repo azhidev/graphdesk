@@ -29,6 +29,23 @@ def classify_edit(before, after, target, expected, suffix):
     return {'outcome': outcome, 'target_id': target, 'changed_ids': changed, 'suffix_received_ids': received}
 
 
+def focus_rows(select, copied_text, sql, ids):
+    """Follow native editor Down navigation, checking each rendered row's text.
+
+    The release WebView has no DOM inspection in this fixture. Ctrl+A/C in the
+    focused textarea verifies which synthetic block is active without changing
+    it; a missed navigation fails before any paste can reach the wrong block.
+    """
+    for index, block_id in enumerate(ids, 1):
+        select('ctrl+End')
+        select('Down')
+        select('ctrl+a')
+        expected = sql('SELECT content FROM blocks WHERE id=?', (block_id,))
+        if len(expected) != 1 or copied_text() != expected[0][0]:
+            raise AssertionError(f'editor focus did not reach expected synthetic row {index}')
+        select('ctrl+End')
+
+
 def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wait_sql, app, diagnostic=None):
     def prefs():
         files = list((work / 'config').rglob('preferences.json'))
@@ -93,8 +110,8 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
         english = block(journal, 0, 'Start with a quiet review of the day.')
         task = block(journal, 1, 'Plan the UI foundation review and share clear screenshots.', 'todo')
         nested = block(journal, 0, 'Check light, dark, and RTL surfaces before handing off.', parent=task)
-        block(journal, 1, 'بررسی زیرشاخهٔ فارسی with English ۱۲۳', parent=task)
-        block(journal, 2, 'Keep the editor responsive while navigating between pages.')
+        persian_child = block(journal, 1, 'بررسی زیرشاخهٔ فارسی with English ۱۲۳', parent=task)
+        preceding = block(journal, 2, 'Keep the editor responsive while navigating between pages.')
         persian = block(journal, 3, 'بررسی روزانه — متن فارسی با English و عدد ۱۲۳.')
         english_child = block(journal, 0, 'English nested under Persian — متن کوتاه', parent=persian)
         three_level = ('سطح سوم — متن بلند فارسی با English و عدد ۱۲۳ که باید در عرض صفحه بشکند و همچنان کنار نشانه و زیر والد بماند. '
@@ -172,12 +189,37 @@ def run(work, graph, start, close, click, field, paste, xdo, pump, shot, sql, wa
         print('PASS: targeted Review diagnostic persisted both edits in intended synthetic blocks; full Review not run', flush=True)
         return
 
-    click(690, 518); select('End'); paste(' English ۱۲')
+    def copied_text():
+        from gi.repository import Gdk, Gtk
+        xdo('key', '--clearmodifiers', 'ctrl+c'); pump(.3)
+        return Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).wait_for_text()
+
+    def checked_edit(stage, target, expected, suffix):
+        before = dict(sql('SELECT id,content FROM blocks'))
+        paste(suffix)
+        try:
+            wait_sql('SELECT content FROM blocks WHERE id=?', [(expected,)], (target,))
+            after = dict(sql('SELECT id,content FROM blocks'))
+            assert [block_id for block_id in after if after[block_id] != before.get(block_id)] == [target]
+        except AssertionError:
+            desktop(f'focus-{stage}-assertion-failed')
+            outcome = classify_edit(before, dict(sql('SELECT id,content FROM blocks')), target, expected, suffix)
+            raise AssertionError(f'{stage} edit failed: {outcome}; see local failure screenshot') from None
+
+    try:
+        focus_rows(select, copied_text, sql, (task, nested, persian_child, preceding, persian))
+    except AssertionError as error:
+        desktop('focus-persian-assertion-failed')
+        raise error from None
     persian_edited = 'بررسی روزانه — متن فارسی با English و عدد ۱۲۳. English ۱۲'
-    wait_sql('SELECT content FROM blocks WHERE id=?', [(persian_edited,)], (persian,))
-    click(700, 590); select('ctrl+End'); paste(' پایان English ۱۲')
+    checked_edit('persian', persian, persian_edited, ' English ۱۲')
+    try:
+        focus_rows(select, copied_text, sql, (english_child, third))
+    except AssertionError as error:
+        desktop('focus-nested-assertion-failed')
+        raise error from None
     third_edited = three_level + ' پایان English ۱۲'
-    wait_sql('SELECT content FROM blocks WHERE id=?', [(third_edited,)], (third,))
+    checked_edit('nested', third, third_edited, ' پایان English ۱۲')
     select('ctrl+z')
     wait_sql('SELECT content FROM blocks WHERE id=?', [(three_level,)], (third,))
     select('ctrl+y')

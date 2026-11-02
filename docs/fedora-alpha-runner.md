@@ -153,8 +153,30 @@ the Persian stage passes. A PASS here covers only these two edits, not Review.
 
 These ignored private artifacts contain only synthetic fixture data; keep the
 screenshots local and do not add them, raw app logs or databases to any shared
-archive. Compare both runs before attributing the failure to coordinate drift.
-If Fedora evidence confirms drift, focus the editor using the rendered target
-block's stable `data-block-id` (or an accessible target selector) and verify
-the active editable element before pasting, rather than replacing one fixed
-coordinate with another. Do not change production code based on this probe.
+archive. Fedora 44 subsequently confirmed drift: `(690,518)` changed no SQLite
+block while `(690,530)` and nested `(700,607)` reached their intended blocks.
+The default Review suite now navigates from the known English editor with
+native editor keys. Before each of the two affected pastes it copies the
+selected textarea and checks it against the intended synthetic SQLite row.
+It also checks that only the target block changed. No production DOM inspector
+or test API was added;
+the first English edit and other unrelated Review interactions still use their
+existing coordinates.
+
+To rerun the **complete default Review** against the already-installed Fedora
+binary, use a new ignored artifacts directory (not one of the diagnostic
+directories above):
+
+```sh
+cd /home/azhidev/projects/graphdesk
+umask 077
+python3 tests/webview/smoke.py --review \
+  --binary /usr/bin/graphdesk-desktop \
+  --artifacts test-artifacts/fedora-review-keyboard-full
+```
+
+Do not rebuild or reinstall the RPM for this fixture-only change. On focus or
+SQLite assertion failure inspect `focus-*-assertion-failed.png` locally; errors
+omit note contents (persistence errors include synthetic IDs/classification).
+Keep the screenshots and disposable data private. Ubuntu passing this full
+suite does not substitute for a Fedora full-suite rerun.
