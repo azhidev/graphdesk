@@ -19,8 +19,12 @@ export class NavigationHistory {
   private pending = false;
   private session: string | null = null;
   get current(): Destination | undefined { const d = this.entries[this.index]; return d && { ...d }; }
-  get canBack(): boolean { return !this.pending && this.index > 0; }
-  get canForward(): boolean { return !this.pending && this.index + 1 < this.entries.length; }
+  // Intrinsic destinations stay available visually during a transient load;
+  // can* and perform still enforce the actual pending-operation lock.
+  get hasBack(): boolean { return this.index > 0; }
+  get hasForward(): boolean { return this.index + 1 < this.entries.length; }
+  get canBack(): boolean { return !this.pending && this.hasBack; }
+  get canForward(): boolean { return !this.pending && this.hasForward; }
   get length(): number { return this.entries.length; }
   reset(session: string): void {
     this.session = session; this.generation++; this.entries = []; this.index = -1; this.pending = false;

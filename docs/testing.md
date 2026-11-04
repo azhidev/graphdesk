@@ -2,6 +2,16 @@
 
 ## Automated checks
 
+### M8 global navigation/editor flash — Fedora confirmation pending
+
+The [global flash investigation and native handoff](global-ui-flash.md) supersedes
+any inference that the earlier BlockRow fix alone resolved the full-shell symptom.
+The current full-App WebKitGTK fixture reproduced global notice insertion and
+shell-button dimming without shell remounting; corrected fixtures passed at 3 and
+5,000 rows. Final frontend check/build, 77 Node tests and 29 Python/SQLite tests
+passed. These are not Rust/native Fedora acceptance. The earlier editor correction
+is retained; native retesting remains required before closing M8.
+
 ### M8 startup-default clarification and editor flash
 
 The [visual-flash investigation](editor-visual-flash.md) records a reproduced

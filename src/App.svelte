@@ -12,6 +12,8 @@
   import { preferences, tr } from './lib/preferences';
   import { get } from 'svelte/store';
   import ErrorNotice from './lib/ErrorNotice.svelte';
+  import OperationStatus from './lib/OperationStatus.svelte';
+  import { busyControl } from './lib/busyControl';
   import { FirstNoteController, type PendingNote, type NoteState } from './lib/firstNote';
   import { appShortcut } from './lib/appShortcuts';
   import { NavigationHistory, type Destination } from './lib/navigation';
@@ -35,6 +37,7 @@
   let session = $state<string | null>(null);
   let busy = $state(false);
   let operation = $state<MessageKey | ''>('');
+  let operationScope = $state<'shell' | 'content'>('content');
   let activePath = $state('');
   let switching = $state(false);
   let handoff = $state(false), landingError = $state(false);
@@ -50,7 +53,7 @@
   const graphSwitch = new GraphSwitch(graphApi);
   const navigation = new NavigationHistory();
   let navRevision = $state(0);
-  const history = $derived.by(() => { navRevision; return { back: navigation.canBack, forward: navigation.canForward }; });
+  const history = $derived.by(() => { navRevision; return { back: navigation.hasBack, forward: navigation.hasForward }; });
   let taskStatus = $state<TaskFilter>('active'), taskPage = $state('');
   let view = $state<'notes' | 'tasks'>('notes');
   let searchOpen = $state(false), sidebarCollapsed = $state(false), sidebarOverlay = $state(false), narrow = $state(false);
@@ -213,9 +216,9 @@
     try { departureAllowed(); await quickPages.show(); } catch (e) { error = errorMessage(e); }
   }
 
-  async function run(action: () => Promise<void>, label: MessageKey = 'Loading…') {
+  async function run(action: () => Promise<void>, label: MessageKey = 'Loading…', scope: 'shell' | 'content' = 'content') {
     if (locked) return;
-    busy = true; operation = label; error = '';
+    busy = true; operation = label; operationScope = scope; error = '';
     try { await action(); } catch (e) { error = errorMessage(e); }
     finally { busy = false; operation = ''; navRevision++; }
   }
@@ -259,10 +262,10 @@
     catch (e) { landingError = true; throw e; }
     finally { navRevision++; }
   }
-  async function open(create: boolean) { await run(() => performSwitch(path, create), 'Opening graph…'); }
+  async function open(create: boolean) { await run(() => performSwitch(path, create), 'Opening graph…', 'shell'); }
   async function recent(graph: RecentGraph, automatic = false) {
     const before = session;
-    await run(() => performSwitch(graph.path, false, graph.graph_id, automatic), 'Opening graph…');
+    await run(() => performSwitch(graph.path, false, graph.graph_id, automatic), 'Opening graph…', 'shell');
     // A failed switch keeps the source graph; surface the reason from the chooser
     // and return focus to the header control instead of leaving a dead popover.
     if (session === before && switching) dismissGraphSwitch();
@@ -279,7 +282,7 @@
       const candidate = await graphApi.pick(create, $preferences.language);
       if (source !== session) throw new Error('The graph operation changed. Try again.');
       if (candidate) await performSwitch(candidate, create);
-    }, 'Choosing graph…');
+    }, 'Choosing graph…', 'shell');
     await tick(); if (origin?.isConnected) origin.focus();
   }
   async function registrySettings(remember: boolean, reopen: boolean) {
@@ -496,6 +499,7 @@
     else graphSwitchButton?.focus();
   }
   async function toggleGraphSwitch() {
+    if (locked) return;
     if (switching) { dismissGraphSwitch(); return; }
     captureGraphFocus();
     switching = !switching;
@@ -623,7 +627,7 @@
       <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand">GraphDesk</span>
       {#if session}<span class="header-divider" aria-hidden="true"></span>
         <div class="graph-switch-anchor" bind:this={graphSwitchRoot}>
-          <button bind:this={graphSwitchButton} class="graph-switch" disabled={locked} aria-expanded={switching} aria-controls="graph-switch-popover" aria-haspopup="dialog" onclick={toggleGraphSwitch} title={$tr('Switch graph (Ctrl+Tab)')}><span class="graph-avatar" aria-hidden="true">{graphName.charAt(0).toUpperCase()}</span><bdi dir="auto" class="graph-name">{graphName}</bdi><svg class="icon chevron" aria-hidden="true"><use href="#shell-chevron" /></svg><span class="sr-only">{$tr('Switch graph')}</span></button>
+          <button bind:this={graphSwitchButton} class="graph-switch" use:busyControl={locked} aria-expanded={switching} aria-controls="graph-switch-popover" aria-haspopup="dialog" onclick={toggleGraphSwitch} title={$tr('Switch graph (Ctrl+Tab)')}><span class="graph-avatar" aria-hidden="true">{graphName.charAt(0).toUpperCase()}</span><bdi dir="auto" class="graph-name">{graphName}</bdi><svg class="icon chevron" aria-hidden="true"><use href="#shell-chevron" /></svg><span class="sr-only">{$tr('Switch graph')}</span></button>
           {#if switching}<GraphSwitchPopover currentLabel={graphName} candidates={switchCandidates} labels={graphLabelMap} cursor={graphCursor} ready={registryReady} disabled={locked} onPick={pick} onSelect={recent} onCursor={index => { graphCursor = index; }} />{/if}
         </div>
       {/if}
@@ -632,10 +636,10 @@
       {#if selected}<span class:problem={saveView.error} class:pending={saveView.dirty} class="header-status" role="status"><span class="status-dot" aria-hidden="true"></span>{saveView.error ? $tr('Error — save failed') : statusText($preferences.language, saveView.status)}</span>{/if}
       <span class="header-divider" aria-hidden="true"></span>
       <nav class="history-nav" aria-label={$tr('Navigation history')}>
-        <button class="icon-button" aria-label={$tr('Back')} disabled={locked || !history.back} onclick={() => moveHistory(-1)} title="Alt+←"><svg class="icon direction-icon" aria-hidden="true"><use href="#shell-left" /></svg></button>
-        <button class="icon-button" aria-label={$tr('Forward')} disabled={locked || !history.forward} onclick={() => moveHistory(1)} title="Alt+→"><svg class="icon direction-icon" aria-hidden="true"><use href="#shell-right" /></svg></button>
+        <button class="icon-button" aria-label={$tr('Back')} disabled={!history.back} use:busyControl={locked} onclick={() => moveHistory(-1)} title="Alt+←"><svg class="icon direction-icon" aria-hidden="true"><use href="#shell-left" /></svg></button>
+        <button class="icon-button" aria-label={$tr('Forward')} disabled={!history.forward} use:busyControl={locked} onclick={() => moveHistory(1)} title="Alt+→"><svg class="icon direction-icon" aria-hidden="true"><use href="#shell-right" /></svg></button>
       </nav>
-      <button class="page-jump" disabled={locked || composing} onclick={goPages} title="Ctrl/Cmd+P">{$tr('Go to page')} <kbd dir="ltr">Ctrl/Cmd P</kbd></button>
+      <button class="page-jump" use:busyControl={locked || composing} onclick={goPages} title="Ctrl/Cmd+P">{$tr('Go to page')} <kbd dir="ltr">Ctrl/Cmd P</kbd></button>
     </div>{:else}<button class="icon-button" aria-label={$tr('Settings')} onclick={revealSettings}><svg class="icon" aria-hidden="true"><use href="#shell-settings" /></svg></button>{/if}
   </header>
   {#if !session}
@@ -644,7 +648,7 @@
   </div>
   {/if}
   <div class="shell-notices">
-  {#if operation}<p role="status">{$tr(operation)}</p>{/if}
+  <OperationStatus label={operation} scope={operationScope} region="shell" />
   {#if error}<ErrorNotice message={error} />{/if}
   {#if startupError}<ErrorNotice message={startupError} />{/if}
   {#if recoveryError}<ErrorNotice message={recoveryError} />{/if}
@@ -684,7 +688,7 @@
           {#if !query.trim()}<p class="search-empty">{$tr('Search pages and blocks')}</p>
           {:else if !results.pending && !results.error && !results.hits.length}<p class="search-empty">{$tr('No matches.')}</p>{/if}
           <ul aria-label={$tr('Search results')} class="results">{#each results.hits as hit, index (`${hit.kind}:${hit.id}`)}
-            <li><button id={`search-hit-${index}`} class:chosen={index === resultIndex} aria-current={index === resultIndex ? 'true' : undefined} disabled={locked} onclick={() => selectHit(hit)}>
+            <li><button id={`search-hit-${index}`} class:chosen={index === resultIndex} aria-current={index === resultIndex ? 'true' : undefined} use:busyControl={locked} onclick={() => selectHit(hit)}>
               <span class="result-context"><span class="result-type">{$tr(hit.kind === 'page' ? 'Page' : 'Block')}</span><bdi dir="auto" class:page-title={hit.kind === 'page'}>{contextLabel(hit.page_id)}</bdi></span>
               {#if hit.kind === 'block'}<span class="result-snippet" dir="auto">{hit.text.slice(0, 180)}</span>{/if}
             </button></li>
@@ -695,10 +699,10 @@
         <div class="sidebar-top shell-scroll">
           <p class="sidebar-heading">{$tr('Workspace')}</p>
           <nav class="primary-nav" aria-label={$tr('Workspace')}>
-            <button disabled={locked} aria-current={view === 'notes' && !!(selected?.journal_date || previewDate) ? 'page' : undefined} onclick={() => journal(localDate())}><svg class="icon" aria-hidden="true"><use href="#shell-journal" /></svg>{$tr('Journal')}<span class="nav-hint">{$tr('Today')}</span></button>
-            <button disabled={locked} onclick={() => capture()} title="Ctrl/Cmd+Shift+J"><svg class="icon" aria-hidden="true"><use href="#shell-plus" /></svg>{$tr('Capture today')}</button>
-            <button disabled={locked} onclick={showTasks} aria-current={view === 'tasks' ? 'page' : undefined}><svg class="icon" aria-hidden="true"><use href="#shell-tasks" /></svg>{$tr('Tasks')}</button>
-            <button id="search-entry" disabled={locked} onclick={openSearch}><svg class="icon" aria-hidden="true"><use href="#shell-search" /></svg>{$tr('Search')}<bdi dir="ltr" class="nav-hint">Ctrl/Cmd K</bdi></button>
+            <button use:busyControl={locked} aria-current={view === 'notes' && !!(selected?.journal_date || previewDate) ? 'page' : undefined} onclick={() => journal(localDate())}><svg class="icon" aria-hidden="true"><use href="#shell-journal" /></svg>{$tr('Journal')}<span class="nav-hint">{$tr('Today')}</span></button>
+            <button use:busyControl={locked} onclick={() => capture()} title="Ctrl/Cmd+Shift+J"><svg class="icon" aria-hidden="true"><use href="#shell-plus" /></svg>{$tr('Capture today')}</button>
+            <button use:busyControl={locked} onclick={showTasks} aria-current={view === 'tasks' ? 'page' : undefined}><svg class="icon" aria-hidden="true"><use href="#shell-tasks" /></svg>{$tr('Tasks')}</button>
+            <button id="search-entry" use:busyControl={locked} onclick={openSearch}><svg class="icon" aria-hidden="true"><use href="#shell-search" /></svg>{$tr('Search')}<bdi dir="ltr" class="nav-hint">Ctrl/Cmd K</bdi></button>
           </nav>
           <div class="sidebar-divider"></div>
           <p class="sidebar-heading">{$tr('Journal date')}</p>
@@ -714,29 +718,30 @@
               <button disabled={locked || !title.trim()}>{$tr('Create page')}</button>
             </form>
           </details></div>
-          <ul class="page-list shell-scroll">{#each pages as page (page.id)}<li><button disabled={locked} aria-current={view === 'notes' && selected?.id === page.id ? 'page' : undefined} onclick={() => select(page)} dir="auto"><svg class="icon" aria-hidden="true"><use href="#shell-page" /></svg><bdi>{pageLabel(page)}</bdi></button></li>{/each}</ul>
+          <ul class="page-list shell-scroll">{#each pages as page (page.id)}<li><button use:busyControl={locked} aria-current={view === 'notes' && selected?.id === page.id ? 'page' : undefined} onclick={() => select(page)} dir="auto"><svg class="icon" aria-hidden="true"><use href="#shell-page" /></svg><bdi>{pageLabel(page)}</bdi></button></li>{/each}</ul>
         </div>
         {/if}
         <div class="sidebar-bottom">
-          {#if recoveryRecords.length || recoveryError}<button id="review-recovery" disabled={locked} onclick={() => recoveryRecords.length ? recoveryPanel?.show() : refreshRecovery()}>{$tr('Review recovery drafts')} {#if recoveryRecords.length}<bdi>({recoveryRecords.length})</bdi>{/if}</button>{/if}
+          {#if recoveryRecords.length || recoveryError}<button id="review-recovery" use:busyControl={locked} onclick={() => { if (!locked) void (recoveryRecords.length ? recoveryPanel?.show() : refreshRecovery()); }}>{$tr('Review recovery drafts')} {#if recoveryRecords.length}<bdi>({recoveryRecords.length})</bdi>{/if}</button>{/if}
           <button onclick={revealSettings}><svg class="icon" aria-hidden="true"><use href="#shell-settings" /></svg>{$tr('Settings')}</button>
         </div>
       </aside>
       <div class="content shell-scroll" inert={narrow && sidebarOverlay}>
+      <OperationStatus label={operation} scope={operationScope} region="content" />
       {#if view === 'tasks' && session}
         <TasksView {session} {pages} refreshKey={acknowledgedBlocks} disabled={locked} bind:status={taskStatus} bind:page={taskPage} onFilter={rememberLocation}
           onOpen={hit => selectHit({ id: hit.id, page_id: hit.page_id, kind: 'block', text: hit.content })} />
       {/if}
-      <div hidden={view !== 'notes'} class="notes-view">
+      <div hidden={view !== 'notes'} class="notes-view" aria-busy={locked}>
       <section class="page-document" aria-label={$tr('Page content')}>
         {#if selected || previewDate}
           <h2 id="page-heading" tabindex="-1" dir="auto">{selected?.journal_date && selected.title === selected.journal_date ? headingDate(selected.journal_date) : selected ? pageLabel(selected) : headingDate(previewDate!)}</h2>
           {#if selected?.journal_date || previewDate}
             {@const day = selected?.journal_date ?? previewDate!}
             <nav class="journal-nav" aria-label={$tr('Journal navigation')}>
-              <button disabled={locked || day === '0000-01-01'} onclick={() => journal(adjacentDay(day, -1))}>{$tr('Previous day')}</button>
-              <button disabled={locked} onclick={() => journal(localDate())}>{$tr('Today')}</button>
-              <button disabled={locked || day === '9999-12-31'} onclick={() => journal(adjacentDay(day, 1))}>{$tr('Next day')}</button>
+              <button disabled={day === '0000-01-01'} use:busyControl={locked} onclick={() => journal(adjacentDay(day, -1))}>{$tr('Previous day')}</button>
+              <button use:busyControl={locked} onclick={() => journal(localDate())}>{$tr('Today')}</button>
+              <button disabled={day === '9999-12-31'} use:busyControl={locked} onclick={() => journal(adjacentDay(day, 1))}>{$tr('Next day')}</button>
             </nav>
             {#if unsupportedDate(day)}<p role="alert">{$tr('This date cannot be used in Jalali. Its Gregorian identity is unchanged.')}</p>{/if}
           {/if}
@@ -755,7 +760,7 @@
             {#if linksError}<ErrorNotice message={linksError} />{/if}
             {#if !links.backlinks.length}<p>{$tr('No incoming links.')}</p>{/if}
             <ul>{#each links.backlinks as block (block.id)}
-              <li><button disabled={locked} onclick={() => selectHit({ id: block.id, page_id: block.page_id, kind: 'block', text: block.content })}><bdi>{contextLabel(block.page_id)}</bdi>: <bdi>{block.content}</bdi></button></li>
+              <li><button use:busyControl={locked} onclick={() => selectHit({ id: block.id, page_id: block.page_id, kind: 'block', text: block.content })}><bdi>{contextLabel(block.page_id)}</bdi>: <bdi>{block.content}</bdi></button></li>
             {/each}</ul>
           </section>
         {:else if previewDate}

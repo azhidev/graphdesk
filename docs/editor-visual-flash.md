@@ -1,5 +1,11 @@
 # M8 editor visual-flash investigation
 
+**Follow-up:** Native Fedora testing confirmed the broader shell flash persists
+beyond this document-text correction. See the [global navigation/editor flash
+investigation](global-ui-flash.md) for the global Loading and shell-control paths,
+subsequent fix, current results and native retest. The measurements below remain
+valid for the earlier independent BlockRow mechanism, not a full-shell resolution.
+
 **M8 remains open pending rebuilt native Fedora confirmation.** The corrected
 observation is a brief visual flash, not an established scroll jump or full reload.
 The prior conditional scroll-reveal fix is unchanged. Startup findings are recorded
