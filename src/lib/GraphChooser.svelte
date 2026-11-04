@@ -1,13 +1,15 @@
 <script lang="ts">
   import type { GraphRegistry, RecentGraph } from './graphs';
   import { tr } from './preferences';
-  let { path = $bindable(''), composing = $bindable(false), registry, ready, disabled, inventory, onManual, onPick, onRecent, onForget }: {
-    path: string; composing: boolean; registry: GraphRegistry; ready: boolean; disabled: boolean; inventory: number;
+  let { path = $bindable(''), composing = $bindable(false), registry, known, labels, ready, disabled, inventory, onManual, onPick, onRecent, onForget }: {
+    path: string; composing: boolean; registry: GraphRegistry; known: RecentGraph[]; labels: Map<string, string>;
+    ready: boolean; disabled: boolean; inventory: number;
     onManual: (create: boolean) => void; onPick: (create: boolean) => void;
     onRecent: (graph: RecentGraph) => void; onForget: (path: string | null) => void;
   } = $props();
   let advanced = $state(false);
-  function filename(value: string) { return value.split(/[\\/]/).at(-1) || value; }
+  const label = (graph: RecentGraph) => labels.get(graph.path) ?? graph.path;
+  const persisted = (graph: RecentGraph) => registry.entries.some(entry => entry.path === graph.path);
 </script>
 
 <section class="chooser" aria-label={$tr('Graph selection')}>
@@ -19,12 +21,13 @@
     <button class="primary" disabled={disabled || !ready || composing} onclick={() => onPick(false)}>{$tr('Open graph…')}</button>
     <button disabled={disabled || !ready || composing} onclick={() => onPick(true)}>{$tr('Create graph…')}</button>
   </div>{/if}
-  {#if registry.remember && registry.entries.length}
-    <div class="recent"><h2>{$tr('Recent graphs')}</h2>
-      <ul>{#each registry.entries as graph (graph.path)}
-        <li><button class="recent-graph" dir="auto" disabled={disabled || !ready} onclick={() => onRecent(graph)}><bdi>{filename(graph.path)}</bdi></button>
-          <button class="forget" disabled={disabled || !ready} onclick={() => onForget(graph.path)} aria-label={`${$tr('Forget graph')} · ${filename(graph.path)}`} title={$tr('Forget graph')}>×</button></li>
+  {#if known.length}
+    <div class="recent"><h2>{$tr(registry.remember ? 'Recent graphs' : 'Session graphs')}</h2>
+      <ul>{#each known as graph (graph.path)}
+        <li><button class="recent-graph" dir="auto" title={graph.path} disabled={disabled || !ready} onclick={() => onRecent(graph)}><bdi>{label(graph)}</bdi></button>
+          {#if persisted(graph)}<button class="forget" disabled={disabled || !ready} onclick={() => onForget(graph.path)} aria-label={`${$tr('Forget graph')} · ${label(graph)}`} title={$tr('Forget graph')}>×</button>{/if}</li>
       {/each}</ul>
+      {#if !registry.remember}<p class="hint">{$tr('These graphs are listed for this session only. Enable “Remember recent graphs” in Settings to keep them.')}</p>{/if}
     </div>
   {/if}
   <details class="advanced" bind:open={advanced}>

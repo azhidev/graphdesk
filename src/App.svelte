@@ -16,7 +16,9 @@
   import { appShortcut } from './lib/appShortcuts';
   import { NavigationHistory, type Destination } from './lib/navigation';
   import { graphApi, type GraphRegistry, type RecentGraph } from './lib/graphs';
+  import { graphDisplayName, graphLabels, mergeGraphs, cycleCursor } from './lib/graphList';
   import { GraphSwitch } from './lib/graphSwitch';
+  import { graphKey } from './lib/graphKeys';
   import GraphChooser from './lib/GraphChooser.svelte';
   import GraphSwitchPopover from './lib/GraphSwitchPopover.svelte';
   import PageSwitcher from './lib/PageSwitcher.svelte';
@@ -38,6 +40,12 @@
   let handoff = $state(false), landingError = $state(false);
   let registry = $state<GraphRegistry>({ remember: false, reopen: false, entries: [], warning: false });
   let registryReady = $state(false), registryError = $state(''), graphComposing = $state(false);
+  let startupError = $state('');
+  // Successfully activated graphs are always visible for this session, even when
+  // persistence is disabled; they are only written to disk when remembering is on.
+  let sessionGraphs = $state<RecentGraph[]>([]);
+  let graphCursor = $state(-1);
+  let firstRun: { fresh: boolean; demo: RecentGraph | null; warning: boolean } | null = null;
   let quickPages: { show: () => Promise<void> };
   const graphSwitch = new GraphSwitch(graphApi);
   const navigation = new NavigationHistory();
@@ -49,6 +57,7 @@
   let settingsOpen = $state(false);
   let graphSwitchRoot = $state<HTMLElement>();
   let graphSwitchButton = $state<HTMLButtonElement>();
+  let graphSwitchReturn: HTMLElement | null = null;
   let settingsDialog: HTMLDialogElement;
   let settingsReturn: HTMLElement | null = null;
   let sidebarToggle = $state<HTMLButtonElement>();
@@ -156,7 +165,13 @@
   const locked = $derived.by(() => { revision; return busy || editor.working; });
   const composing = $derived.by(() => { revision; return editor.composing; });
   const saveView = $derived.by(() => { revision; return { status: editor.status, error: !!editor.error, dirty: editor.dirty }; });
-  const graphName = $derived(activePath.split(/[\\/]/).at(-1) || activePath);
+  const knownGraphs = $derived.by(() => mergeGraphs(sessionGraphs, registry.remember ? registry.entries : []));
+  const graphLabelMap = $derived(graphLabels(knownGraphs));
+  const graphName = $derived(graphLabelMap.get(activePath) ?? graphDisplayName(activePath));
+  const switchCandidates = $derived(knownGraphs.filter(graph => graph.path !== activePath));
+  function rememberSessionGraph(graph: RecentGraph) {
+    sessionGraphs = [graph, ...sessionGraphs.filter(entry => entry.path !== graph.path)].slice(0, 10);
+  }
   async function closeOverlay(restore = true) {
     if (!sidebarOverlay || searchComposing || editor.composing) return;
     sidebarOverlay = false;
@@ -222,6 +237,8 @@
         install: result => {
           editor.reset(result.token); session = result.token; pages = result.pages; selected = null;
           activePath = result.path; path = result.path; switching = false; previewDate = null; view = 'notes';
+          rememberSessionGraph({ path: result.path, graph_id: result.graph_id });
+          graphCursor = -1;
           searchOpen = false; sidebarOverlay = false;
           journalDate = localDate();
           taskStatus = 'active'; taskPage = ''; title = ''; renameTitle = '';
@@ -243,7 +260,17 @@
     finally { navRevision++; }
   }
   async function open(create: boolean) { await run(() => performSwitch(path, create), 'Opening graph…'); }
-  async function recent(graph: RecentGraph, automatic = false) { await run(() => performSwitch(graph.path, false, graph.graph_id, automatic), 'Opening graph…'); }
+  async function recent(graph: RecentGraph, automatic = false) {
+    const before = session;
+    await run(() => performSwitch(graph.path, false, graph.graph_id, automatic), 'Opening graph…');
+    // A failed switch keeps the source graph; surface the reason from the chooser
+    // and return focus to the header control instead of leaving a dead popover.
+    if (session === before && switching) dismissGraphSwitch();
+  }
+  async function openStartupGraph(graph: RecentGraph, automatic: boolean) {
+    await recent(graph, automatic);
+    if (!session) error = `${$tr(automatic ? 'The last active graph could not be reopened.' : 'The demo graph could not be opened.')} ${error}`;
+  }
   async function pick(create: boolean) {
     const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     await run(async () => {
@@ -266,7 +293,10 @@
     await tick(); if (origin?.isConnected) origin.focus();
   }
   async function forget(graphPath: string | null) {
-    await run(async () => { try { registry = await graphApi.forget(graphPath); registryError = ''; } catch { registryError = 'Graph registry changes could not be saved.'; } });
+    await run(async () => { try {
+      registry = await graphApi.forget(graphPath); registryError = '';
+      sessionGraphs = sessionGraphs.filter(graph => graph.path === activePath || (graphPath !== null && graph.path !== graphPath));
+    } catch { registryError = 'Graph registry changes could not be saved.'; } });
   }
   function destination(page: Page, block?: string): Destination { return page.journal_date ? { kind: 'journal', date: page.journal_date, block } : { kind: 'page', id: page.id, block }; }
   function rememberLocation() {
@@ -430,8 +460,21 @@
     searchInput?.focus();
   }
   function overlayKeys(event: KeyboardEvent) {
-    if (event.key === 'Escape' && switching && !event.isComposing && event.keyCode !== 229) {
-      event.preventDefault(); event.stopPropagation(); switching = false; graphSwitchButton?.focus(); return;
+    const intent = graphKey(event, { session: !!session, open: switching,
+      blocked: locked || !!document.querySelector('dialog[open]:not(#graph-switch-popover)'),
+      composing: graphComposing || searchComposing || editor.composing });
+    if (intent === 'next' || intent === 'previous') {
+      // Capture phase plus preventDefault stops both WebKit focus traversal and
+      // any dialog default, and composition/preedit keys are left untouched.
+      event.preventDefault(); event.stopPropagation();
+      void quickSwitch(intent === 'previous' ? -1 : 1);
+      return;
+    }
+    if (intent === 'cancel' || (intent === 'activate' && graphCursor >= 0)) {
+      event.preventDefault(); event.stopPropagation();
+      if (intent === 'cancel') dismissGraphSwitch();
+      else if (switchCandidates[graphCursor]) void recent(switchCandidates[graphCursor]);
+      return;
     }
     if (event.key === 'Tab' && sidebarOverlay && !document.querySelector('dialog[open]')) {
       const controls = [...document.querySelectorAll<HTMLElement>('#workspace-sidebar button:not(:disabled), #workspace-sidebar input:not(:disabled), #workspace-sidebar select:not(:disabled), #workspace-sidebar summary')].filter(el => el.getClientRects().length);
@@ -445,12 +488,33 @@
       event.preventDefault(); event.stopPropagation(); void closeOverlay();
     }
   }
+  function firstPopoverControl() { return graphSwitchRoot?.querySelector<HTMLButtonElement>('#graph-switch-popover button:not(:disabled)'); }
+  function captureGraphFocus() { graphSwitchReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null; }
+  function dismissGraphSwitch() {
+    switching = false; graphCursor = -1;
+    if (graphSwitchReturn?.isConnected) graphSwitchReturn.focus({ preventScroll: true });
+    else graphSwitchButton?.focus();
+  }
   async function toggleGraphSwitch() {
+    if (switching) { dismissGraphSwitch(); return; }
+    captureGraphFocus();
     switching = !switching;
-    if (switching) { await tick(); graphSwitchRoot?.querySelector<HTMLButtonElement>('#graph-switch-popover button:not(:disabled)')?.focus(); }
+    graphCursor = -1;
+    if (switching) { await tick(); firstPopoverControl()?.focus(); }
+  }
+  function focusCursor() {
+    if (graphCursor < 0) firstPopoverControl()?.focus();
+    else graphSwitchRoot?.querySelector<HTMLButtonElement>(`#graph-switch-candidate-${graphCursor}`)?.focus();
+  }
+  // Ctrl+Tab opens/re-targets the existing anchored switcher; repeated presses
+  // cycle forward, Ctrl+Shift+Tab cycles backward. Nothing is activated here.
+  async function quickSwitch(delta: number) {
+    const length = switchCandidates.length;
+    if (!switching) { captureGraphFocus(); switching = true; graphCursor = length ? cycleCursor(-1, delta, length) : -1; await tick(); focusCursor(); return; }
+    if (length) { graphCursor = cycleCursor(graphCursor, delta, length); await tick(); focusCursor(); }
   }
   function outsideGraphSwitch(event: MouseEvent) {
-    if (switching && graphSwitchRoot && !event.composedPath().includes(graphSwitchRoot)) switching = false;
+    if (switching && graphSwitchRoot && !event.composedPath().includes(graphSwitchRoot)) { switching = false; graphCursor = -1; }
   }
   async function addPage(event: SubmitEvent) {
     event.preventDefault();
@@ -469,10 +533,18 @@
     if (!isTauri()) return () => media.removeEventListener('change', updateWidth);
     const prefs = preferencesApi.load().then(result => { preferences.set(result.preferences); if (result.warning) prefsError = 'Preferences could not be loaded. Safe defaults are in use.'; })
       .catch(() => { prefsError = 'Preferences could not be loaded. Safe defaults are in use.'; }).finally(() => prefsReady = true);
-    const graphs = graphApi.load().then(result => { registry = result; if (result.warning) registryError = 'Remembered graphs could not be loaded. Paths will not be remembered until you explicitly reset these settings.'; })
-      .catch(() => { registryError = 'Remembered graphs could not be loaded. Paths will not be remembered until you explicitly reset these settings.'; }).finally(() => registryReady = true);
+    const graphs = graphApi.firstRun(localDate()).then(result => {
+      registry = result.registry;
+      firstRun = { fresh: result.fresh, demo: result.demo, warning: result.warning };
+      if (result.registry.warning) registryError = 'Remembered graphs could not be loaded. Paths will not be remembered until you explicitly reset these settings.';
+      else if (result.warning) startupError = 'Startup could not be completed. Existing graphs and recovery drafts were not replaced. Open a graph manually or check local storage permissions.';
+    }).catch(() => { registryError = 'Remembered graphs could not be loaded. Paths will not be remembered until you explicitly reset these settings.'; }).finally(() => registryReady = true);
     void Promise.all([prefs, graphs]).then(async () => {
-      if (!disposed && registry.remember && registry.reopen && !registry.warning && registry.entries[0]) await recent(registry.entries[0], true);
+      if (disposed) return;
+      // A genuinely fresh installation opens its seeded demo; otherwise reopen
+      // the last successfully activated graph when the user opted in.
+      if (firstRun?.fresh && firstRun.demo) { await openStartupGraph(firstRun.demo, false); return; }
+      if (registry.remember && registry.reopen && !registry.warning && registry.entries[0]) await openStartupGraph(registry.entries[0], true);
     });
     void recoveryApi.inventory().then(count => inventory = count).catch(() => { recoveryError = 'Recovery inventory unavailable. Open the original graph and retry recovery inspection.'; });
     let disposed = false;
@@ -520,7 +592,7 @@
     <p>{$tr('Remembering stores file paths privately on this computer, not notes. Turning it off clears remembered paths.')}</p>
   </details>
   {#if prefsError}<ErrorNotice message={prefsError} />{/if}
-  <div class="settings-footer"><details><summary>{$tr('Keyboard shortcuts')}</summary><p>{$tr('Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Alt+←/→: history outside text fields')}</p></details><button class="settings-done" onclick={closeSettings}>{$tr('Done')}</button></div>
+  <div class="settings-footer"><details><summary>{$tr('Keyboard shortcuts')}</summary><p>{$tr('Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Ctrl+Tab: switch graph · Alt+←/→: history outside text fields')}</p></details><button class="settings-done" onclick={closeSettings}>{$tr('Done')}</button></div>
 </dialog>
 
 <dialog bind:this={firstNoteDialog} aria-labelledby="first-note-heading" oncancel={event => { event.preventDefault(); cancelFirstNote(); }}>
@@ -551,8 +623,8 @@
       <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand">GraphDesk</span>
       {#if session}<span class="header-divider" aria-hidden="true"></span>
         <div class="graph-switch-anchor" bind:this={graphSwitchRoot}>
-          <button bind:this={graphSwitchButton} class="graph-switch" disabled={locked} aria-expanded={switching} aria-controls="graph-switch-popover" aria-haspopup="dialog" onclick={toggleGraphSwitch}><span class="graph-avatar" aria-hidden="true">{graphName.charAt(0).toUpperCase()}</span><bdi dir="auto" class="graph-name">{graphName}</bdi><svg class="icon chevron" aria-hidden="true"><use href="#shell-chevron" /></svg><span class="sr-only">{$tr('Switch graph')}</span></button>
-          {#if switching}<GraphSwitchPopover current={activePath} {registry} ready={registryReady} disabled={locked} onPick={pick} onRecent={recent} />{/if}
+          <button bind:this={graphSwitchButton} class="graph-switch" disabled={locked} aria-expanded={switching} aria-controls="graph-switch-popover" aria-haspopup="dialog" onclick={toggleGraphSwitch} title={$tr('Switch graph (Ctrl+Tab)')}><span class="graph-avatar" aria-hidden="true">{graphName.charAt(0).toUpperCase()}</span><bdi dir="auto" class="graph-name">{graphName}</bdi><svg class="icon chevron" aria-hidden="true"><use href="#shell-chevron" /></svg><span class="sr-only">{$tr('Switch graph')}</span></button>
+          {#if switching}<GraphSwitchPopover currentLabel={graphName} candidates={switchCandidates} labels={graphLabelMap} cursor={graphCursor} ready={registryReady} disabled={locked} onPick={pick} onSelect={recent} onCursor={index => { graphCursor = index; }} />{/if}
         </div>
       {/if}
     </div>
@@ -567,13 +639,14 @@
     </div>{:else}<button class="icon-button" aria-label={$tr('Settings')} onclick={revealSettings}><svg class="icon" aria-hidden="true"><use href="#shell-settings" /></svg></button>{/if}
   </header>
   {#if !session}
-  <div class="graph-chooser-surface"><GraphChooser bind:path bind:composing={graphComposing} {registry} {inventory} ready={prefsReady && registryReady} disabled={locked}
+  <div class="graph-chooser-surface"><GraphChooser bind:path bind:composing={graphComposing} {registry} known={knownGraphs} labels={graphLabelMap} {inventory} ready={prefsReady && registryReady} disabled={locked}
     onManual={open} onPick={pick} onRecent={recent} onForget={forget} />
   </div>
   {/if}
   <div class="shell-notices">
   {#if operation}<p role="status">{$tr(operation)}</p>{/if}
   {#if error}<ErrorNotice message={error} />{/if}
+  {#if startupError}<ErrorNotice message={startupError} />{/if}
   {#if recoveryError}<ErrorNotice message={recoveryError} />{/if}
   {#if prefsError}<ErrorNotice message={prefsError} />{/if}
   {#if registryError}<section aria-label={$tr('Graph registry')}><ErrorNotice message={registryError} />
