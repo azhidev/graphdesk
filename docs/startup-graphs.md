@@ -56,6 +56,24 @@ that safe ordering is retained.
 
 ## Privacy and migration
 
+### Clarified Fedora startup finding
+
+The Fedora operator has verified that reopening works when enabled; the tested
+profile had reopening disabled. Commit `0c21ace` already sets **both** flags to
+true after the genuinely-fresh check. No production startup/activation/persistence
+change is needed for this clarification. Older default-off profiles and explicit
+opt-outs are intentionally preserved, as are preferences-only/recovery-only
+profiles. Enabling remembering in Settings on an existing profile deliberately
+passes `reopen:false`; reopening remains a separate choice. Any of these can
+explain an off setting, but which happened on Fedora is not established without
+that profile's history. Do not infer a reopening defect or overwrite its settings.
+
+The first-run/defaults and distinct-instance last-active reopen IPC tests already
+cover new installs. A separate parameterized IPC regression now covers all valid
+persisted flag combinations across distinct app instances, asserting byte-for-byte
+registry preservation and no demo/marker creation. Cargo remains unavailable in
+the VM, so these Rust tests still require the Fedora build/test commands below.
+
 There is **no automatic settings/schema migration** for existing installations.
 An existing `remember:false`, `reopen:false`, saved preferences-only installation,
 or recovery-only installation stays as it was, even if those were old defaults

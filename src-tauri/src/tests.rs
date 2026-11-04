@@ -229,6 +229,35 @@ fn m8_existing_optout_and_corrupt_registries_are_never_seeded() {
 }
 
 #[test]
+fn m8_startup_keeps_each_existing_history_preference_across_app_instances() {
+    use tauri::Manager;
+    for (remember, reopen) in [(false, false), (true, false), (true, true)] {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config");
+        let mut expected = None;
+        let mut saved = Vec::new();
+        for restart in [false, true] {
+            let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+            app.state::<crate::registry::RegistryState>().0.lock().unwrap().replace(config.clone());
+            app.state::<crate::startup::StartupState>().0.lock().unwrap().replace(dir.path().join("graphs"));
+            app.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(dir.path().join("recovery"));
+            let window = tauri::WebviewWindowBuilder::new(&app,"main",Default::default()).build().unwrap();
+            if !restart {
+                expected = Some(invoke(&window,"graph_registry_settings",json!({"remember":remember,"reopen":reopen})).unwrap());
+                saved = std::fs::read(config.join("graph-state.json")).unwrap();
+            }
+            let started = invoke(&window,"graph_first_run",json!({"date":"2024-02-29"})).unwrap();
+            assert_eq!(started["fresh"], false);
+            assert_eq!(started["demo"], Value::Null);
+            assert_eq!(&started["registry"], expected.as_ref().unwrap());
+            assert_eq!(std::fs::read(config.join("graph-state.json")).unwrap(), saved);
+            assert!(!dir.path().join("graphs").exists());
+            assert!(!config.join("first-run.json").exists());
+        }
+    }
+}
+
+#[test]
 fn native_dialog_plugin_has_no_frontend_permission_even_in_main() {
     let app = app_builder(mock_builder().plugin(tauri_plugin_dialog::init())).build(tauri::generate_context!()).unwrap();
     let main = tauri::WebviewWindowBuilder::new(&app,"main",Default::default()).build().unwrap();
