@@ -81,8 +81,9 @@ behavior still requires native testing.
 The adapter owns app-local language, calendar and search-mode preferences in
 `preferences.json`, using Tauri's platform path resolver and private atomic writes.
 Private recovery storage also stays outside graphs; the core remains independent
-of desktop directories. The separate opt-in graph registry described below also
-belongs to the adapter. No default graph directory exists. See
+of desktop directories. The separate configurable graph registry described below also
+belongs to the adapter. M8 adds only a first-run demo under app-data; other graphs
+remain user-selected local files. See [startup](startup-graphs.md) and
 [data locations and recovery](data.md).
 
 SQLite is authoritative; Markdown will be an interchange format, not a second database.
@@ -427,15 +428,17 @@ backups need the usual pre-upgrade precautions; older binaries reject graph vers
 ## Milestone 6 graph management and navigation
 
 The desktop adapter owns native graph dialogs and the separate versioned private
-graph registry. Remembering and startup reopening default to off. Registry entries
+graph registry. The original M6 off defaults are preserved for existing installations;
+M8 enables remembering/reopening only for genuinely fresh installations. Registry entries
 are bounded to ten, contain resolved absolute paths and expected graph UUIDs, and
 are ordered only by successful activation. No note/page/search/history data is
 stored. Files sharing a logical graph UUID remain separate path entries (copies
 also share recovery identity, so existing compare-before-recover guidance applies).
 Registry writes are serialized and atomic; failures are not graph-open failures.
 Corrupt/future registry data disables retention until explicit settings reset.
-There is no graph-directory scan, path relocation, file deletion or default graph
-directory. Forget/disable affects only metadata, not recovery or graph files.
+There is no graph-directory scan, path relocation or file deletion. M8 adds the
+one-time demo directory and memory-only session list described in [startup](startup-graphs.md).
+Forget/disable affects only metadata, not recovery or graph files.
 
 All frontend opening routes share `GraphSwitch`: flush and check source editor
 state; prepare a candidate without replacing the active graph; recheck composition,

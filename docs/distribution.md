@@ -81,6 +81,12 @@ Navigation Xvfb failure remains unclassified. The older recovery-draft
 recurrence is **unresolved**. Real-version upgrades, native assistive
 technology and native Wayland checks for the changed UI are outstanding.
 
+The subsequent startup/registry/Ctrl+Tab implementation changes fresh-install
+defaults but preserves existing choices. Its exact Fedora build and disposable
+native acceptance commands are in [Startup and graph management](startup-graphs.md).
+The earlier opt-in/default-off description above is historical, not the new-install
+behavior. Editor Jump and M9 plugins remain outside this change.
+
 The opt-in `src-tauri/tauri.linux-alpha.conf.json` turns on Tauri's existing
 bundler **only** when passed with `--config`. The normal unbundled developer
 build is unchanged. It preserves version `0.1.0`, identifier

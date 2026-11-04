@@ -32,19 +32,28 @@ uses the same intended block UUID, not another append.
 Graph opening creates today's journal even if empty. No automatic page switch occurs
 at midnight; Today/Capture calculate the local day when invoked. A date-shaped ordinary
 page is never silently converted: rename it before creating a journal for that date.
-**Switch graph** opens the same chooser used at startup. Native **Open graph…** and
+**Switch graph** opens an anchored popover without moving the workspace. Native **Open graph…** and
 **Create graph…** dialogs supplement manual paths. Cancelling a picker does not
 switch graphs. Creation never overwrites a file, even if a native dialog offers
 replacement. Only trusted local graph files are supported.
 
-**Remember recent graphs** and **Reopen last graph on startup** are initially off.
-Remembering is explicit opt-in and retains at most ten successfully activated graph
+Genuinely fresh installations open **GraphDesk Demo**, with **Remember recent graphs**
+and **Reopen last graph on startup** enabled. Existing preferences are preserved,
+including previous off defaults. Remembering retains at most ten successfully activated graph
 paths/UUIDs privately on this computer. Reopening requires remembering. Forgetting
 one entry, clearing the list, or turning remembering off never deletes graph or
 recovery data. Turning it off clears all stored paths. Missing graphs are not
 recreated; select their new path explicitly. Unexpected file identity blocks a
 remembered open. Automatic reopening also refuses old/unsupported graph formats;
 explicit opening retains the normal migration/backup precautions.
+
+Created/opened graphs appear immediately, including session-only history when
+remembering is off. Names come from filenames (the schema has no graph-name field);
+duplicate names include location context. Ctrl+Tab opens the anchored switcher and
+cycles forward; Ctrl+Shift+Tab cycles backward. Enter switches, Escape cancels and
+returns focus, and clicking a graph also switches. The current graph is marked
+separately. IME composition, other modal dialogs and pending operations are not
+intercepted. See [startup behavior and native acceptance](startup-graphs.md).
 
 Actual page/date/task/graph departures flush drafts and respect unfinished
 composition/errors. A pending first-note form must be submitted or explicitly

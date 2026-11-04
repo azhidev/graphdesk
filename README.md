@@ -28,7 +28,7 @@ is available; native Fedora installation and data-safety checks are still pendin
 - Independent Persian/English UI, Gregorian/Jalali presentation and date entry.
 - Optional Persian-friendly FTS5 search without rewriting notes or titles.
 - Private durable first-note capture before journal submission.
-- Native graph dialogs, opt-in recent graphs and optional startup reopening.
+- First-run sample graph, native graph dialogs, recent graphs and startup reopening.
 - Session-local Back/Forward and a lightweight keyboard page switcher.
 - Transactional migrations, SQLite constraints and atomic structural edits.
 - Native text inputs for Unicode/bidi text; Markdown stays literal source.
@@ -100,10 +100,13 @@ graph-core` needs no GTK/WebKit. See [testing](docs/testing.md) for scope and ev
 ## Data and limitations
 
 Choose **Open graph…** / **Create graph…**, or enter a native full database path in
-an existing writable directory. Create never overwrites an existing file. Recent
-graphs and automatic reopening are independently opt-in and initially off; disabling
-remembering clears stored paths, not databases or recovery. Language, calendar and
-search mode are remembered locally. No default graph directory is imposed.
+an existing writable directory. Create never overwrites an existing file. A genuinely
+new installation opens an editable **GraphDesk Demo** and enables recent graphs and
+startup reopening. Existing privacy/startup preferences remain unchanged; disabling
+remembering clears stored paths, not databases or recovery. Successfully activated
+graphs stay visible for the current session even with remembering off. Language,
+calendar and search mode are remembered locally. See [startup and graph management](docs/startup-graphs.md)
+for demo location, privacy, migration and native acceptance.
 An opened graph lands on today's journal; **Switch graph** remains accessible in the header. Browsing an
 absent day is read-only. Its first-note form creates the journal on submission,
 not while browsing or typing. Finalized form text targets private recovery capture

@@ -14,14 +14,20 @@ string-based UI. OS filename, path-length and permission restrictions still appl
 No automatic graph discovery or durable undo/collapse state exists. Language,
 calendar and search-mode preferences are remembered locally. A separate versioned
 `graph-state.json` under the adapter's app-config directory stores graph paths and
-expected UUIDs **only after explicit opt-in**. Both remembering and automatic startup
-reopening default to off. The list is capped at ten successful activations and
+expected UUIDs **only while Remember recent graphs is enabled**. Genuinely fresh
+installations enable remembering and startup reopening; existing settings (including
+opt-outs and legacy off defaults) stay unchanged. Session-only lists work with
+remembering off. The list is capped at ten successful activations and
 contains no page titles, content, searches or navigation history. Paths themselves
 can be sensitive. Forget/clear never removes a database or recovery file; disabling
 remembering clears paths and last-graph metadata. Private text recovery snapshots
 are described below; neither registry nor recovery replaces graph backups.
 The registry does not control independent OS/native-file-dialog history or OS
 backups. Clearing app metadata is not a forensic secure-erasure guarantee.
+First run creates an ordinary editable `graphs/GraphDesk Demo.sqlite3` under Tauri's
+app-data directory and a private `first-run.json` marker under app-config. No existing
+database is seeded or replaced, and any existing registry, preferences, marker or
+recovery directory suppresses seeding. See [startup details and acceptance](startup-graphs.md).
 Opening a graph now creates/opens today's journal. Browsing other absent dates does
 not write records. Their first-note form creates a journal only on explicit content
 submission; finalized pre-submit text targets private recovery capture within 700 ms.
