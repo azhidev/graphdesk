@@ -4,6 +4,7 @@ mod model;
 mod editor;
 mod references;
 mod search;
+pub mod demo;
 pub use search::normalize_persian;
 pub mod recovery;
 pub use references::InlineReference;

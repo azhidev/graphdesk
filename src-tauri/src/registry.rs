@@ -1,4 +1,6 @@
-//! Opt-in graph paths only, separate from preferences/recovery. Invalid or newer
+//! Configurable graph history, separate from preferences/recovery. Startup enables
+//! it only for genuinely fresh installs; existing privacy choices stay unchanged.
+//! Invalid or newer
 //! files are never repaired by load/record. Explicit settings resets invalid
 //! content; forget(null) is the explicit reset, defaulting opt-ins off if invalid.
 use std::{fs::{self, OpenOptions}, io::{self, Read, Write}, path::{Path, PathBuf}, sync::{Arc, Mutex}};
@@ -7,21 +9,21 @@ use tauri::{Manager, State};
 use uuid::Uuid;
 use crate::{AppState, preferences::{check_parents, check_root, check_file}};
 
-const FILE: &str = "graph-state.json";
+pub(crate) const FILE: &str = "graph-state.json";
 const LIMIT: usize = 10;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Entry { path: String, graph_id: Uuid }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Registry { version: u32, remember: bool, reopen: bool, entries: Vec<Entry> }
+pub(crate) struct Registry { version: u32, pub(crate) remember: bool, pub(crate) reopen: bool, pub(crate) entries: Vec<Entry> }
 impl Default for Registry {
     fn default() -> Self { Self { version: 1, remember: false, reopen: false, entries: Vec::new() } }
 }
 #[derive(Debug, Serialize)]
 pub(crate) struct Loaded { remember: bool, reopen: bool, entries: Vec<Entry>, warning: bool }
 impl Registry {
-    fn loaded(self, warning: bool) -> Loaded { Loaded { remember: self.remember, reopen: self.reopen, entries: self.entries, warning } }
+    pub(crate) fn loaded(self, warning: bool) -> Loaded { Loaded { remember: self.remember, reopen: self.reopen, entries: self.entries, warning } }
     fn record(&mut self, entry: Entry) {
         if !self.remember { return; }
         self.entries.retain(|e| e.path != entry.path);
@@ -35,7 +37,7 @@ pub(crate) struct RegistryState(pub Arc<Mutex<Option<PathBuf>>>);
 fn invalid() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "invalid graph registry storage") }
 fn unavailable() -> &'static str { "Graph registry unavailable; paths/settings were not saved." }
 
-fn load(root: &Path) -> io::Result<Registry> {
+pub(crate) fn load(root: &Path) -> io::Result<Registry> {
     check_parents(root)?;
     if !root.try_exists()? { return Ok(Registry::default()); }
     check_root(root)?;
@@ -66,7 +68,7 @@ fn load(root: &Path) -> io::Result<Registry> {
     Ok(registry)
 }
 
-fn save(root: &Path, registry: &Registry) -> io::Result<()> {
+pub(crate) fn save(root: &Path, registry: &Registry) -> io::Result<()> {
     check_parents(root)?;
     let mut directory = fs::DirBuilder::new();
     directory.recursive(true);

@@ -99,6 +99,24 @@ pub(crate) async fn recovery_note_remove<R: tauri::Runtime>(app: tauri::AppHandl
     run(app, state.inner().clone(), session, move |store, graph| store.note_remove(graph, id, version)).await
 }
 
+/// Resolve (and cache) the private recovery directory. Shared with startup so
+/// first-run detection can respect existing recovery data.
+pub(crate) fn root<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: &RecoveryState) -> Result<PathBuf, RecoveryError> {
+    let mut access = state.0.lock().map_err(failure)?;
+    if access.root.is_none() { access.root = Some(app.path().app_local_data_dir().map_err(failure)?.join("recovery")); }
+    Ok(access.root.as_ref().expect("resolved recovery directory").clone())
+}
+
+/// Any existing recovery directory (or inability to inspect it) is evidence of
+/// prior use. Never read, expire, or repair drafts during first-run detection.
+pub(crate) fn has_stores<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: &RecoveryState) -> bool {
+    let Ok(root) = root(app, state) else { return true; };
+    match std::fs::symlink_metadata(root) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        _ => true,
+    }
+}
+
 #[tauri::command]
 pub(crate) async fn recovery_inventory<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, RecoveryState>) -> Result<usize, RecoveryError> {
     let state = state.inner().clone();

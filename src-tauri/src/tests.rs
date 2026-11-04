@@ -49,11 +49,14 @@ fn m6_registry_staged_switch_cancel_reconcile_and_failures_ipc() {
     assert_eq!(recorded["entries"],json!([{"path":first["path"],"graph_id":first["graph_id"]}]));
     assert_eq!(invoke(&window,"graph_registry_record",json!({"session":Uuid::new_v4()})).is_err(),true);
     let page = invoke(&window,"editor_create_page",json!({"session":first["token"],"title":"source retained"})).unwrap();
+    let before_failure = std::fs::read(config.join("graph-state.json")).unwrap();
     for args in [json!({"path":dir.path().join("missing.db"),"create":false,"sourceSession":first["token"],"expectedGraph":null,"automatic":false}),
         json!({"path":path,"create":false,"sourceSession":first["token"],"expectedGraph":Uuid::new_v4(),"automatic":true})] {
         assert!(invoke(&window,"graph_prepare",args).is_err());
         assert!(invoke(&window,"editor_page",json!({"session":first["token"],"pageId":page["id"]})).is_ok());
     }
+    assert!(!dir.path().join("missing.db").exists());
+    assert_eq!(std::fs::read(config.join("graph-state.json")).unwrap(), before_failure);
     let second_path = dir.path().join("second.db");
     let candidate = invoke(&window,"graph_prepare",json!({"path":second_path,"create":true,"sourceSession":first["token"],"expectedGraph":null,"automatic":false})).unwrap();
     // A stale cancellation must not release another candidate.
@@ -97,6 +100,132 @@ fn m6_registry_staged_switch_cancel_reconcile_and_failures_ipc() {
     assert_eq!(invoke(&window,"graph_activate",json!({"ticket":pending["ticket"],"sourceSession":second["token"]})).unwrap_err()["code"],"stale_session");
     assert_eq!(invoke(&window,"recovery_notes",json!({"session":second["token"]})).unwrap_err()["code"],"stale_session");
     assert_eq!(invoke(&window,"recovery_notes",json!({"session":reopened["token"]})).unwrap(),json!([]));
+}
+
+#[test]
+fn m8_first_run_seeds_one_demo_graph_and_never_reseeds() {
+    use tauri::Manager;
+    let dir = tempfile::tempdir().unwrap();
+    let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+    app.state::<crate::registry::RegistryState>().0.lock().unwrap().replace(dir.path().join("config"));
+    app.state::<crate::startup::StartupState>().0.lock().unwrap().replace(dir.path().join("graphs"));
+    app.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(dir.path().join("recovery"));
+    let window = tauri::WebviewWindowBuilder::new(&app,"main",Default::default()).build().unwrap();
+
+    let first = invoke(&window,"graph_first_run",json!({"date":"2024-02-29"})).unwrap();
+    assert_eq!(first["fresh"], json!(true));
+    assert_eq!(first["warning"], json!(false));
+    assert_eq!(first["registry"]["remember"], json!(true));
+    assert_eq!(first["registry"]["reopen"], json!(true));
+    let demo = first["demo"].clone();
+    assert!(demo["path"].as_str().unwrap().ends_with("GraphDesk Demo.sqlite3"));
+    assert_eq!(first["registry"]["entries"], json!([])); // not active yet
+
+    // A second launch is an existing installation: no new demo, no duplication.
+    let second = invoke(&window,"graph_first_run",json!({"date":"2024-03-01"})).unwrap();
+    assert_eq!(second["fresh"], json!(false));
+    assert_eq!(second["demo"], Value::Null);
+    assert_eq!(second["registry"], first["registry"]);
+
+    // The seeded graph opens through the ordinary staged pipeline.
+    let prepared = invoke(&window,"graph_prepare",json!({"path":demo["path"],"create":false,"sourceSession":null,"expectedGraph":demo["graph_id"],"automatic":false})).unwrap();
+    let active = invoke(&window,"graph_activate",json!({"ticket":prepared["ticket"],"sourceSession":null})).unwrap();
+    let recorded = invoke(&window,"graph_registry_record",json!({"session":active["token"]})).unwrap();
+    assert_eq!(recorded["entries"], json!([demo.clone()]));
+    assert_eq!(invoke(&window,"graph_first_run",json!({"date":"2024-03-02"})).unwrap()["registry"], recorded);
+    let titles: Vec<String> = active["pages"].as_array().unwrap().iter().map(|p| p["title"].as_str().unwrap().to_owned()).collect();
+    for expected in ["Welcome", "Getting Started", "Tasks", "2024-02-29"] {
+        assert!(titles.iter().any(|t| t == expected), "{expected}");
+    }
+    let sqlite_files = std::fs::read_dir(dir.path().join("graphs")).unwrap()
+        .filter(|entry| entry.as_ref().unwrap().path().extension().and_then(|e| e.to_str()) == Some("sqlite3")).count();
+    assert_eq!(sqlite_files, 1);
+
+    // A distinct app instance loads the persisted last-active descriptor and
+    // can reopen through the same identity-checked automatic path as the UI.
+    let restarted = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+    restarted.state::<crate::registry::RegistryState>().0.lock().unwrap().replace(dir.path().join("config"));
+    restarted.state::<crate::startup::StartupState>().0.lock().unwrap().replace(dir.path().join("graphs"));
+    restarted.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(dir.path().join("recovery"));
+    let window = tauri::WebviewWindowBuilder::new(&restarted,"main",Default::default()).build().unwrap();
+    let startup = invoke(&window,"graph_first_run",json!({"date":"2024-03-03"})).unwrap();
+    assert_eq!(startup["fresh"], false);
+    let last = &startup["registry"]["entries"][0];
+    let prepared = invoke(&window,"graph_prepare",json!({"path":last["path"],"create":false,"sourceSession":null,"expectedGraph":last["graph_id"],"automatic":true})).unwrap();
+    let reopened = invoke(&window,"graph_activate",json!({"ticket":prepared["ticket"],"sourceSession":null})).unwrap();
+    assert_eq!(reopened["graph_id"], active["graph_id"]);
+    assert_eq!(reopened["pages"], active["pages"]);
+}
+
+#[test]
+fn m8_startup_preserves_preferences_recovery_and_existing_demo_files() {
+    use tauri::Manager;
+    for evidence in ["preferences", "recovery", "demo", "marker"] {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config");
+        let graphs = dir.path().join("graphs");
+        let recovery = dir.path().join("recovery");
+        let (path, bytes) = match evidence {
+            "preferences" => (config.join("preferences.json"), br#"{"language":"fa","calendar":"jalali","search_mode":"persian","theme":"dark"}"#.to_vec()),
+            "marker" => (config.join("first-run.json"), br#"{"version":1,"demo_path":null}"#.to_vec()),
+            "recovery" => (recovery.join("retained.sqlite3"), b"untouched recovery fixture".to_vec()),
+            _ => (graphs.join("GraphDesk Demo.sqlite3"), b"never replace an existing database".to_vec()),
+        };
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path.parent().unwrap(), std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+        app.state::<crate::registry::RegistryState>().0.lock().unwrap().replace(config);
+        app.state::<crate::startup::StartupState>().0.lock().unwrap().replace(graphs.clone());
+        app.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(recovery);
+        let window = tauri::WebviewWindowBuilder::new(&app,"main",Default::default()).build().unwrap();
+        let started = invoke(&window,"graph_first_run",json!({"date":"2024-02-29"})).unwrap();
+        assert_eq!(started["demo"], Value::Null, "{evidence}");
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "{evidence}");
+        if evidence != "demo" {
+            assert_eq!(started["fresh"], false, "{evidence}");
+            assert!(!graphs.exists(), "{evidence}");
+        } else { assert_eq!(started["warning"], true); }
+    }
+}
+
+#[test]
+fn m8_existing_optout_and_corrupt_registries_are_never_seeded() {
+    use tauri::Manager;
+    let cases: [(&str, Vec<u8>); 2] = [
+        ("opt-out", serde_json::to_vec(&crate::registry::Registry::default()).unwrap()),
+        ("future", br#"{"version":99,"remember":true,"reopen":true,"entries":[]}"#.to_vec()),
+    ];
+    for (label, content) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(config.join("graph-state.json"), &content).unwrap();
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::set_permissions(config.join("graph-state.json"), std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let app = app_builder(mock_builder()).build(tauri::generate_context!()).unwrap();
+        app.state::<crate::registry::RegistryState>().0.lock().unwrap().replace(config.clone());
+        app.state::<crate::startup::StartupState>().0.lock().unwrap().replace(dir.path().join("graphs"));
+        app.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(dir.path().join("recovery"));
+        let window = tauri::WebviewWindowBuilder::new(&app,"main",Default::default()).build().unwrap();
+        let started = invoke(&window,"graph_first_run",json!({"date":"2024-02-29"})).unwrap();
+        assert_eq!(started["fresh"], json!(false), "{label}");
+        assert_eq!(started["demo"], Value::Null, "{label}");
+        assert!(!dir.path().join("graphs").exists(), "{label}");
+        // Invalid registry content is preserved byte-for-byte; the valid opt-out
+        // is returned unchanged and no first-run marker is written.
+        assert_eq!(std::fs::read(config.join("graph-state.json")).unwrap(), content, "{label}");
+        assert!(!config.join("first-run.json").exists(), "{label}");
+        if label == "opt-out" { assert_eq!(started["registry"]["remember"], json!(false)); }
+        else { assert_eq!(started["warning"], json!(true)); }
+    }
 }
 
 #[test]
