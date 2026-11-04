@@ -2,6 +2,16 @@
 
 ## Automated checks
 
+### M8 startup-default clarification and editor flash
+
+The [visual-flash investigation](editor-visual-flash.md) records a reproduced
+pending-operation document-opacity change without an outline remount, the localized
+availability correction, 73 passing Node tests, 29 Python/SQLite checks, and
+before/after temporary Svelte/WebKitGTK fixtures at 3 and 5,000 rows. These are not
+native Fedora acceptance or rebuilt Rust/Tauri integration evidence. Startup defaults
+were already enabled for genuinely fresh installs; existing profile settings remain
+unchanged. Both tasks still require the documented Fedora retest.
+
 ### Fedora alpha evidence runner — Ubuntu rehearsal only
 
 The [developer-only runner](fedora-alpha-runner.md) reuses the production

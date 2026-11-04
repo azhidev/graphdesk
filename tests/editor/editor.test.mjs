@@ -219,6 +219,52 @@ test('structural operations flush before dispatch and focus the acknowledged new
   assert.equal(editor.blocks.length,2); assert.equal(editor.working,false);
 });
 
+test('structural IPC retains pending content and merges only acknowledged deltas without reloading 5,000 blocks', async () => {
+  const blocks = Array.from({ length: 5000 }, (_, i) => block(`b${i}`, `English فارسی ${i}`, null, i * 2));
+  const { editor, transport, calls } = fixture(blocks);
+  await editor.load('page'); editor.activate('b1');
+  const untouched = editor.blocks[0];
+  let resolveAck, entered;
+  transport.apply = async () => {
+    calls.push(['structural']); entered();
+    return new Promise(resolve => { resolveAck = resolve; });
+  };
+  for (const kind of ['split', 'indent', 'outdent']) {
+    const source = kind === 'split' ? 'b1' : 'new-block';
+    const original = editor.blocks.find(b => b.id === source);
+    const selection = { start: 2, end: 4, direction: 'backward' };
+    editor.remember(source, selection);
+    const before = editor.blocks, rows = editor.rows(), focus = editor.focus;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    const pending = editor.action(kind === 'split' ? { kind, id: source, start: 2, end: 4 } : { kind, id: source }, selection);
+    await waiting;
+    assert.equal(editor.blocks, before, 'pending IPC must not replace or empty acknowledged blocks');
+    assert.equal(editor.rows(), rows, 'pending IPC must retain visible rows');
+    assert.equal(editor.text('b4999'), 'English فارسی 4999');
+    assert.equal(editor.focus, focus);
+    await editor.action({ kind: 'append' }); // blocked, never sends a concurrent write
+    if (kind === 'split') {
+      resolveAck(result([{ ...original, content: original.content.slice(0, 2) },
+        block('new-block', original.content.slice(4), null, 3)], 'new-block'));
+    } else {
+      resolveAck(result([{ ...original, parent_id: kind === 'indent' ? 'b1' : null,
+        position: kind === 'indent' ? 0 : 3 }], source));
+    }
+    await pending;
+    assert.equal(editor.blocks.length, 5001);
+    assert.equal(editor.blocks.filter(b => b.id === 'new-block').length, 1);
+    assert.equal(editor.blocks[0], untouched, 'unrelated block DTO identity must remain stable');
+    assert.equal(editor.text('b4999'), 'English فارسی 4999');
+    assert.equal(editor.activeId, 'new-block');
+    const nested = editor.rows().find(row => row.block.id === 'new-block');
+    assert.equal(nested.depth, kind === 'indent' ? 1 : 0);
+    if (kind === 'split') assert.equal(editor.focus.start, 0);
+    else assert.deepEqual({ start: editor.focus.start, end: editor.focus.end, direction: editor.focus.direction }, selection);
+  }
+  assert.deepEqual(editor.rows().slice(0, 4).map(row => row.block.id), ['b0', 'b1', 'new-block', 'b2']);
+  assert.deepEqual(calls.map(c => c[0]), ['page', 'structural', 'structural', 'structural']);
+});
+
 test('collapse moves hidden focus to parent, navigation skips collapsed descendants', async () => {
   const { editor } = fixture([block('a'),block('child','','a'),block('b','last',null,1)]);
   await editor.load('page'); editor.activate('child'); await editor.toggle('a');

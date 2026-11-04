@@ -106,7 +106,10 @@
         }
       }}></textarea>
   {:else}
-    <button class="block-content" dir="auto" disabled={busy} onclick={() => editor.activate(row.block.id)}>{localText || $tr('Empty block — click to edit')}</button>
+    <!-- This button presents document text, not an unavailable mutation. Keep it
+      readable/focusable during IPC; aria-disabled plus the click guard blocks
+      activation without applying native disabled styling to the whole outline. -->
+    <button class="block-content" dir="auto" aria-disabled={busy} onclick={() => { if (!busy) editor.activate(row.block.id); }}>{localText || $tr('Empty block — click to edit')}</button>
   {/if}
 </div>
 {#if match && choices.length}

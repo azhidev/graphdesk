@@ -99,7 +99,7 @@
 {#if !rowsView.rows.length}
   <button disabled={view.busy} onclick={() => run(editor.action({ kind: 'append' }))}>{$tr('Add first block')}</button>
 {:else}
-  <div class="outline" role="group" aria-label={$tr('Page blocks')}>
+  <div class="outline" role="group" aria-label={$tr('Page blocks')} aria-busy={view.busy}>
     {#each rowsView.rows as row (row.block.id)}
       <BlockRow {row} {editor} {pages} text={editor.text(row.block.id)} active={rowsView.active === row.block.id}
         busy={rowsView.busy} collapsed={editor.collapsed.has(row.block.id)} focus={rowsView.focus} />
