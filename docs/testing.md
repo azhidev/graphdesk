@@ -2,6 +2,38 @@
 
 ## Automated checks
 
+### M8 Open Journal button — Fedora confirmation pending
+
+The date picker's `disabled={locked}` conflated temporary editor mutation locking
+with intrinsic unavailability. `locked` includes `editor.working`; the shared
+`button:disabled` rule therefore changed Open Journal opacity from 1 to .55.
+The full-App WebKitGTK regression reproduced that styling change before the fix;
+this is a native disabled-state transition, not conditional rendering/remounting.
+
+App now passes the existing lock as CalendarPicker's `busy` prop. The button uses
+the existing `busyControl` action; the submit handler also checks busy/disabled
+to cover implicit submission and `requestSubmit()`. Native `disabled` remains
+available for intrinsic unavailability, and date fields stay locked during busy
+operations. No editor, Rust, recovery or shared CSS logic changed.
+
+`npm run check` (zero errors/warnings), `npm run build` and all **78 editor tests**
+passed. The existing `tests/webview/editor_flicker.py 3` fixture, run through the
+documented Xvfb/D-Bus command, passed with the date disclosure expanded: unchanged
+button DOM/computed opacity, visibility and colors during Enter/Indent/Outdent,
+blocked pending click/form submission, successful Journal navigation afterward,
+Page navigation, focusability, Light/Dark and Persian RTL, plus all four intrinsic
+disabled/busy combinations. An initial post-fix focus check correctly failed while
+the fixture's disclosure was closed; the fixture now expands it before testing.
+Expected accessibility-bus/DRI warnings remain; no sandbox settings were changed.
+
+These are Ubuntu WebKitGTK synthetic-IPC checks, not native physical keyboard,
+IME, assistive-technology or Fedora acceptance. After review/commit and a native
+Fedora rebuild, expand Journal date on a disposable graph, select a block and
+repeat Enter/Tab/Shift+Tab in Light/Dark and RTL. Open Journal must not dim or
+blink; pending activation must be ignored, and activation after completion must
+open the chosen date normally. Confirm Page/Journal navigation remains stable.
+**M8 remains pending native Fedora confirmation.**
+
 ### M8 remaining structural-editor flicker — Fedora acceptance pending
 
 The [structural-editor investigation](editor-structural-flicker.md) reproduces

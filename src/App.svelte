@@ -717,7 +717,7 @@
           <div class="sidebar-divider"></div>
           <p class="sidebar-heading">{$tr('Journal date')}</p>
           <details class="date-disclosure"><summary><svg class="icon" aria-hidden="true"><use href="#shell-journal" /></svg><bdi>{presentDate(journalDate)}</bdi></summary>
-            <CalendarPicker day={journalDate} calendar={$preferences.calendar} disabled={locked} onOpen={journal} />
+            <CalendarPicker day={journalDate} calendar={$preferences.calendar} busy={locked} onOpen={journal} />
           </details>
         </div>
         <div class="pages-area"><div class="pages-heading"><h2>{$tr('Pages')}</h2>

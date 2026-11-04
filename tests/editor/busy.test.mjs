@@ -64,6 +64,25 @@ test('transient busy lock blocks delegated mouse/keyboard clicks without changin
   action.destroy(); click(); assert.equal(activations, 3, 'destroy must remove the capture listener');
 });
 
+test('journal picker separates transient busy state from intrinsic disabled availability', async () => {
+  const source = readFileSync(new URL('../../src/App.svelte', import.meta.url), 'utf8');
+  assert.match(source, /<CalendarPicker\b[^>]*busy=\{locked\}/);
+  assert.doesNotMatch(source, /<CalendarPicker\b[^>]*disabled=\{locked\}/);
+  const vite = await createServer({ server: { middlewareMode: true, hmr: false, watch: null }, logLevel: 'error' });
+  try {
+    const { default: Picker } = await vite.ssrLoadModule('/src/lib/CalendarPicker.svelte');
+    const { render } = await vite.ssrLoadModule('svelte/server');
+    for (const disabled of [false, true]) for (const busy of [false, true]) {
+      const { body } = render(Picker, { props: { day: '2026-11-04', calendar: 'gregorian', disabled, busy, onOpen() {} } });
+      const unavailable = attributes => /(?:^|\s)disabled(?:\s|=|$)/.test(attributes);
+      assert.equal(unavailable(body.match(/<button\b([^>]*)>/)[1]), disabled, 'busy alone must not dim the journal button');
+      const inputs = [...body.matchAll(/<input\b([^>]*)>/g)];
+      assert.equal(inputs.length, 3);
+      for (const [, attributes] of inputs) assert.equal(unavailable(attributes), disabled || busy);
+    }
+  } finally { await vite.close(); }
+});
+
 test('history destinations stay visually stable while actual navigation remains serialized; failures retain selection', async () => {
   const history = new NavigationHistory(); history.reset('graph');
   await history.visit({ kind: 'page', id: 'a' }, async () => {});

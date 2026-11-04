@@ -1,6 +1,8 @@
-import { mount, tick } from 'svelte';
+import { mount, tick, unmount } from 'svelte';
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
 import App from '../../src/App.svelte';
+import { preferences } from '../../src/lib/preferences';
+import CalendarPicker from '../../src/lib/CalendarPicker.svelte';
 import '../../src/foundation.css';
 
 const size = Number(new URL(location.href).searchParams.get('size') ?? 3);
@@ -56,10 +58,21 @@ const metrics = [];
 try {
   mount(App, { target: document.body });
   await until(() => reference('b2'));
+  document.querySelector('.date-disclosure').open = true;
+  await settle();
   row('b1').querySelector('.block-content').click(); await settle();
   let active = 'b1';
   for (const kind of ['split', 'indent', 'outdent']) {
     window.__progress = kind;
+    preferences.update(p => ({ ...p, theme: kind === 'split' ? 'light' : 'dark', language: kind === 'outdent' ? 'fa' : 'en' }));
+    await settle();
+    const journalForm = document.querySelector('form .fields').closest('form');
+    const journalButton = journalForm.querySelector('button');
+    const journalAppearance = () => {
+      const style = getComputedStyle(journalButton);
+      return [style.opacity, style.visibility, style.backgroundColor, style.color];
+    };
+    const idleJournal = journalAppearance();
     const input = row(active).querySelector('textarea');
     input.focus(); input.setSelectionRange(2, 4, 'backward');
     const neighbor = row('b2'), text = neighbor.querySelector('.block-content'), link = reference('b2');
@@ -69,6 +82,15 @@ try {
     holdLinks = true; releaseLinks = null; releaseEdit = null;
     input.dispatchEvent(new KeyboardEvent('keydown', { key: kind === 'split' ? 'Enter' : 'Tab', shiftKey: kind === 'outdent', bubbles: true, cancelable: true }));
     await until(() => releaseEdit); await settle();
+    metrics.push({ kind, journalOpacity: getComputedStyle(journalButton).opacity, journalDisabled: journalButton.disabled });
+    assert(JSON.stringify(journalAppearance()) === JSON.stringify(idleJournal), 'Open journal changed appearance during mutation');
+    assert(!journalButton.disabled && journalButton.getAttribute('aria-disabled') === 'true', 'journal busy lock must be guarded, not native disabled');
+    assert(journalForm.querySelector('input').disabled, 'date fields must remain locked');
+    const journalReads = calls.filter(c => c === 'editor_find_journal').length;
+    journalButton.click();
+    journalForm.requestSubmit(); // Also covers submission that bypasses the button click guard.
+    await settle();
+    assert(calls.filter(c => c === 'editor_find_journal').length === journalReads, 'pending journal submission navigated');
     metrics.push({ kind, phase: 'pending-edit', text: styles(text), link: styles(link), sameRow: row('b2') === neighbor, sameInput: row(active).querySelector('textarea') === input });
     assert(styles(text)[0] === '1' && styles(link)[0] === '1', 'unrelated content dimmed');
     assert(input.getBoundingClientRect().height === height, 'busy state resized input');
@@ -88,6 +110,9 @@ try {
     assert(calls.filter(c => c === 'editor_page').length === reads, 'stale reference navigated');
     if (kind !== 'split') assert(neighbor.getBoundingClientRect().top === top, 'refresh moved unrelated row');
     releaseLinks(); holdLinks = false; await settle();
+    assert(journalForm.querySelector('button') === journalButton, 'journal button replaced');
+    assert(JSON.stringify(journalAppearance()) === JSON.stringify(idleJournal), 'journal appearance changed after mutation');
+    assert(!journalButton.hasAttribute('aria-disabled'), 'journal remained blocked after mutation');
     assert(reference('b2') === link, 'equal refreshed reference replaced DOM');
     assert(document.querySelectorAll('[data-block-id]').length === size + 1, 'split count');
     assert(row('b2') === neighbor && neighbor.querySelector('.block-content') === text, 'unrelated text replaced');
@@ -125,5 +150,31 @@ try {
   assert(!document.querySelector('.outline bdi'), 'cancelled response installed old links');
   releaseLinks(); await settle();
   assert(row('other-block') && !document.querySelector('.outline bdi'), 'destination changed after latest response');
+  preferences.update(p => ({ ...p, language: 'fa', theme: 'light' })); await settle();
+  const journalForm = document.querySelector('form .fields').closest('form');
+  const readsBeforeJournal = calls.filter(c => c === 'editor_find_journal').length;
+  journalForm.querySelector('button').focus();
+  assert(document.activeElement === journalForm.querySelector('button'), 'journal button not focusable');
+  holdLinks = false;
+  journalForm.querySelector('button').click();
+  await until(() => calls.filter(c => c === 'editor_find_journal').length === readsBeforeJournal + 1 && row('b0'));
+  await settle();
+  assert(!journalForm.querySelector('button').hasAttribute('aria-disabled'), 'journal click did not unlock');
+  // Standalone availability contract: retain real disabled states and guard
+  // implicit/programmatic form submission independently of the button click.
+  for (const disabled of [false, true]) for (const busy of [false, true]) {
+    const target = document.body.appendChild(document.createElement('div'));
+    let opened = 0;
+    const picker = mount(CalendarPicker, { target, props: { day: '2026-11-04', calendar: 'gregorian', disabled, busy, onOpen() { opened++; } } });
+    await settle();
+    const form = target.querySelector('form'), button = target.querySelector('button');
+    assert(button.disabled === disabled, 'intrinsic journal availability changed');
+    assert(getComputedStyle(button).opacity === (disabled ? '0.55' : '1'), 'journal availability styling incorrect');
+    form.requestSubmit();
+    assert(opened === (disabled || busy ? 0 : 1), 'journal form submit guard incorrect');
+    button.click();
+    assert(opened === (disabled || busy ? 0 : 2), 'journal click guard incorrect');
+    await unmount(picker); target.remove();
+  }
   window.__result = { size, metrics };
 } catch (error) { window.__result = { error: String(error), metrics, calls }; }
