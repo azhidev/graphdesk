@@ -127,14 +127,24 @@
   }
   let links = $state<Links>({ references: [], backlinks: [] });
   let linksError = $state('');
+  let linksPending = $state(false);
+  let linksContext: { token: string | null; page: string | undefined } | undefined;
   $effect(() => {
     acknowledgedBlocks; pages;
     const token = session, page = selected?.id;
     let cancelled = false;
-    links = { references: [], backlinks: [] }; linksError = '';
+    // A same-document refresh must not collapse every inline reference region.
+    // Never retain another page/session's links, and keep stale links inert until
+    // the latest request succeeds (including after a refresh failure).
+    if (linksContext?.token !== token || linksContext?.page !== page) {
+      links = { references: [], backlinks: [] };
+      linksContext = { token, page };
+    }
+    linksError = ''; linksPending = !!(token && page);
     if (token && page) void api.links(token, page).then(value => {
       if (!cancelled) links = value;
-    }).catch(e => { if (!cancelled) linksError = errorMessage(e); });
+    }).catch(e => { if (!cancelled) linksError = errorMessage(e); })
+      .finally(() => { if (!cancelled) linksPending = false; });
     return () => { cancelled = true; };
   });
   let revision = $state(0);
@@ -754,13 +764,13 @@
             <button disabled={locked || !renameTitle.trim()}>{$tr('Rename page')}</button>
           </form>
           </details>
-          {#if !handoff}<PageEditor {editor} {revision} {rowsRevision} {pages} references={links.references} onReference={followReference} disabled={busy} />{/if}
+          {#if !handoff}<PageEditor {editor} {revision} {rowsRevision} {pages} references={links.references} referencesBusy={linksPending || !!linksError} onReference={followReference} disabled={busy} />{/if}
           <section class="backlinks" aria-label={$tr('Incoming backlinks')}>
             <h3>{$tr('Backlinks')}</h3>
             {#if linksError}<ErrorNotice message={linksError} />{/if}
             {#if !links.backlinks.length}<p>{$tr('No incoming links.')}</p>{/if}
             <ul>{#each links.backlinks as block (block.id)}
-              <li><button use:busyControl={locked} onclick={() => selectHit({ id: block.id, page_id: block.page_id, kind: 'block', text: block.content })}><bdi>{contextLabel(block.page_id)}</bdi>: <bdi>{block.content}</bdi></button></li>
+              <li><button use:busyControl={locked || linksPending || !!linksError} onclick={() => selectHit({ id: block.id, page_id: block.page_id, kind: 'block', text: block.content })}><bdi>{contextLabel(block.page_id)}</bdi>: <bdi>{block.content}</bdi></button></li>
             {/each}</ul>
           </section>
         {:else if previewDate}

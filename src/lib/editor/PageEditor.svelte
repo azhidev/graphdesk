@@ -7,9 +7,10 @@
   import { preferences, tr } from '../preferences';
   import { statusText } from '../i18n';
   import ErrorNotice from '../ErrorNotice.svelte';
-  let { editor, revision, rowsRevision, disabled = false, pages, references, onReference }: {
+  import { busyControl } from '../busyControl';
+  let { editor, revision, rowsRevision, disabled = false, pages, references, referencesBusy = false, onReference }: {
     editor: EditorController; revision: number; rowsRevision: number; disabled?: boolean; pages: Page[];
-    references: InlineReference[]; onReference: (reference: InlineReference) => void;
+    references: InlineReference[]; referencesBusy?: boolean; onReference: (reference: InlineReference) => void;
   } = $props();
   const view = $derived.by(() => { revision; return {
     busy: editor.working || disabled, status: editor.status, error: editor.error,
@@ -105,7 +106,7 @@
         busy={rowsView.busy} collapsed={editor.collapsed.has(row.block.id)} focus={rowsView.focus} />
       <div style:margin-inline-start={`${Math.min(row.depth, 20) * 25 + 26}px`}>
         {#each references.filter(r => r.source_block_id === row.block.id) as reference (reference.title_key)}
-          <button disabled={view.busy || editor.dirty} onclick={() => onReference(reference)}
+          <button use:busyControl={view.busy || view.dirty || referencesBusy} onclick={() => onReference(reference)}
             title={$tr(reference.target_page_id ? 'Open referenced page' : 'Create referenced page')}><bdi>[[{reference.label}]]</bdi>{#if reference.target_title && reference.target_title !== reference.label} → <bdi>{reference.target_title}</bdi>{/if}{reference.target_page_id ? '' : ` ${$tr('(create)')}`}</button>
         {/each}
       </div>

@@ -2,6 +2,16 @@
 
 ## Automated checks
 
+### M8 remaining structural-editor flicker — Fedora acceptance pending
+
+The [structural-editor investigation](editor-structural-flicker.md) reproduces
+inline-link dimming and refresh-time DOM removal without row/editor remounting.
+Same-document refreshes now retain inert link regions; page/session changes still
+clear them. Full-App WebKitGTK DOM/style fixtures passed at 3 and 5,000 rows with
+sparse links. Dense-link performance and native Fedora visual acceptance remain
+unverified; see the investigation for warnings, failed probe attempts and the
+focused native checklist. This does not claim all link-free native flicker resolved.
+
 ### M8 global navigation/editor flash — Fedora confirmation pending
 
 The [global flash investigation and native handoff](global-ui-flash.md) supersedes
