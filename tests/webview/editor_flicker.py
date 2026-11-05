@@ -1,7 +1,8 @@
 """Current full-App DOM probe; synthetic IPC, not native Rust/Fedora acceptance.
 
 Run: xvfb-run -a -s '-screen 0 1300x1000x24 -nolisten tcp' dbus-run-session --
-     /usr/bin/python3 tests/webview/editor_flicker.py [3|5000]
+     /usr/bin/python3 tests/webview/editor_flicker.py [3|5000] [width]
+Widths below 760 run isolated control checks, not full-App navigation assertions.
 Uses existing Vite and PyGObject/WebKitGTK; no sandbox overrides or real data.
 """
 import json
@@ -20,6 +21,8 @@ from gi.repository import GLib, Gtk, WebKit2
 root = Path(__file__).resolve().parents[2]
 size = int(sys.argv[1]) if len(sys.argv) > 1 else 3
 assert size in (3, 5000)
+width = int(sys.argv[2]) if len(sys.argv) > 2 else 1300
+assert 320 <= width <= 1300
 server_script = """
 import { createServer } from 'vite';
 const server = await createServer({
@@ -41,7 +44,7 @@ with tempfile.TemporaryFile(mode='w+') as log:
     server = subprocess.Popen(['node', '--input-type=module', '-e', server_script], cwd=root,
                               stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     try:
-        url = f'http://127.0.0.1:5179/__editor-flicker?size={size}'
+        url = f'http://127.0.0.1:5179/__editor-flicker?size={size}&controlsOnly={int(width < 760)}'
         for _ in range(100):
             if server.poll() is not None:
                 raise RuntimeError('Vite exited')
@@ -56,7 +59,7 @@ with tempfile.TemporaryFile(mode='w+') as log:
         view = WebKit2.WebView.new_with_context(context)
         view.get_settings().set_enable_write_console_messages_to_stdout(True)
         window = Gtk.Window()
-        window.set_default_size(1300, 1000)
+        window.set_default_size(width, 1000)
         window.add(view)
         window.show_all()
         outcome = []

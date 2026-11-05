@@ -2,6 +2,37 @@
 
 ## Automated checks
 
+### M8 editor controls polish — native acceptance pending
+
+Undo/Redo now distinguish intrinsic history exhaustion (`disabled`) from temporary
+mutation/composition locks (the existing `busyControl`). The task status control
+uses a compact, icon-labelled native popover instead of the disabled native select.
+Only acknowledged task state is displayed; the same controller/API handles task
+writes and history. Legacy CANCELLED remains readable, not newly assignable.
+
+Focused checks passed: `npm run check` (zero errors/warnings) and **43 tests** in
+the editor controller, render and busy test files. The extended WebKitGTK fixture
+passed at 1300px and its isolated control mode at 420px, checking pending control appearance/activation,
+task acknowledgement/failure, selection, undo/redo, composition guards, menu keys,
+selected-state semantics, focus return, viewport-edge placement and Light/Dark in
+LTR/RTL. Run via the existing Xvfb/D-Bus command with
+`tests/webview/editor_flicker.py 3` for full-App checks, or
+`tests/webview/editor_flicker.py 3 420` for isolated narrow control checks. The
+fixed-coordinate production smoke's keyboard task entry now explicitly opens
+the popover; that native Rust/Tauri suite requires a rebuilt executable and is
+not validated by these synthetic-IPC checks. The composition extension initially
+exposed a missing `recovery_clear` fixture response, producing a legitimate error
+notice/layout change; supplying that synthetic acknowledgement fixed the fixture,
+without changing production recovery behavior. WebKit's expected Xvfb DRI and
+accessibility-bus warnings remain. No full schema/Rust/native suite was rerun for
+this frontend-only control change.
+
+On a rebuilt Fedora application with disposable data, confirm stable Undo/Redo and
+status controls during Enter/Indent/Outdent, real keyboard/mouse menu operation,
+outside dismissal, Escape/Tab focus, task acknowledgement/failure and undo/redo.
+Repeat Light/Dark, RTL, narrow and scrolled top/middle/bottom positions, plus real
+IME composition. Ubuntu fixtures do not certify Fedora paint, accessibility or IME.
+
 ### M8 Open Journal button — Fedora confirmation pending
 
 The date picker's `disabled={locked}` conflated temporary editor mutation locking

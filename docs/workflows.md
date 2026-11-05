@@ -175,6 +175,15 @@ Task changes (No task / TODO / DOING / DONE) flush text, save transactionally an
 participate in undo/redo. Existing core CANCELLED values remain readable; the UI
 does not create them. Properties remain core APIs, not a UI workflow.
 
+The compact status button opens an icon-labelled popover. Use mouse, Enter/Space,
+or Arrow Down/Up to open it; arrows and Home/End move between choices, Enter/Space
+select, Escape cancels and restores focus, and Tab leaves the menu. Click outside
+to dismiss. On narrow layouts the trigger is icon-only with an accessible status
+name. The displayed status changes only after acknowledgement; failures retain
+the prior status and editor drafts. Status and available Undo/Redo controls remain
+visually stable but ignore activation during pending operations/composition;
+exhausted history buttons remain genuinely disabled.
+
 There is no fixed model nesting-depth cap. Visual indentation stops increasing after
 20 levels to preserve editing space, without flattening stored hierarchy. Traversal
 and editor subtree deletion are iterative; deletion uses leaf-first SQL statements

@@ -367,9 +367,10 @@ def main():
             tomorrow_id = sql('SELECT page_id FROM journals WHERE date!=?', (today,))[0][0]
             paste(' focused')
             wait_sql('SELECT content FROM blocks WHERE page_id=?', [('tomorrow task focused',)], (tomorrow_id,))
-            # The active block's task select precedes its textarea in tab order.
+            # The active block's task trigger precedes its textarea in tab order.
             # Geometry moved with the outline; follow focus rather than pixels.
             click(520, 333); xdo('key', 'shift+Tab'); pump()
+            xdo('key', 'space'); pump()  # Open the status popover before choosing.
             xdo('key', 'Home', 'Down', 'Return'); pump()
             wait_sql('SELECT task_status FROM blocks WHERE page_id=?', [('todo',)], (tomorrow_id,))
             click(100, 195); shot('06-tasks')

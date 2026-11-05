@@ -7,9 +7,10 @@
   import type { Page, TaskState } from './types';
   import { completion, suggestions, insertReference } from '../references';
   import { tr } from '../preferences';
-  let { row, editor, text, active, busy, collapsed, focus, pages }: {
+  import TaskStatus from './TaskStatus.svelte';
+  let { row, editor, text, active, busy, composing, collapsed, focus, pages }: {
     row: Row; editor: EditorController; text: string; active: boolean;
-    busy: boolean; collapsed: boolean; focus: Focus | null;
+    busy: boolean; composing: boolean; collapsed: boolean; focus: Focus | null;
     pages: Page[];
   } = $props();
   let input: HTMLTextAreaElement | undefined = $state();
@@ -34,16 +35,10 @@
     if (input) editor.remember(row.block.id, { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection });
   }
   function report(error: unknown) { /* Controller errors remain visible with retained drafts. */ console.warn('Editor operation failed', error); }
-  async function setTask(event: Event) {
-    const select = event.currentTarget as HTMLSelectElement;
-    const status = (select.value || null) as TaskState | null;
-    try { await editor.action({ kind: 'task', id: row.block.id, expected: row.block.task_status, status }); }
+  async function setTask(status: TaskState | null) {
+    if (busy || editor.composing) return;
+    try { await editor.action({ kind: 'task', id: row.block.id, expected: row.block.task_status, status }, editor.selection(row.block.id)); }
     catch (error) { report(error); }
-    finally {
-      // Native selects change before SQLite acknowledges; a failed write must not
-      // leave an unpersisted task value displayed as if it had been accepted.
-      select.value = editor.blocks.find(b => b.id === row.block.id)?.task_status ?? '';
-    }
   }
   function keydown(event: KeyboardEvent) {
     if (!input) return;
@@ -86,12 +81,7 @@
       disabled={busy} onclick={() => void editor.toggle(row.block.id).catch(report)}>{collapsed ? '▸' : '▾'}</button>
   {:else}<span class="bullet" aria-hidden="true">•</span>{/if}
   {#if active || row.block.task_status}
-    <select class="task-status" class:has-task={!!row.block.task_status} aria-label={$tr('Task status')} value={row.block.task_status ?? ''} disabled={busy}
-      onchange={setTask}>
-      <option value="">{$tr('No task')}</option><option value="todo">{$tr('TODO')}</option>
-      <option value="doing">{$tr('DOING')}</option><option value="done">{$tr('DONE')}</option>
-      {#if row.block.task_status === 'cancelled'}<option value="cancelled">{$tr('CANCELLED')}</option>{/if}
-    </select>
+    <TaskStatus status={row.block.task_status} busy={busy || composing} onChange={setTask} />
   {/if}
   {#if active}
     <textarea bind:this={input} value={localText} dir="auto" aria-label={$tr('Block text')} readonly={busy} rows="1"
@@ -136,7 +126,5 @@
   textarea { resize: none; overflow: hidden; border: 0; outline: 0; background: transparent; color: var(--ink); }
   textarea:focus-visible { outline: none; }
   .block-content { flex: 0 1 auto; width: max-content; max-width: calc(100% - 24px); white-space: pre-wrap; overflow-wrap: anywhere; background: transparent; border: 0; cursor: text; color: var(--ink); }
-  .task-status { flex: none; max-width: 105px; min-height: 27px; padding: 2px 4px; font-size: 11px; color: var(--muted); }
-  .task-status.has-task { background: var(--selected); color: var(--accent-ink); }
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 </style>

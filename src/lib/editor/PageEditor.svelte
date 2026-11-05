@@ -56,8 +56,8 @@
 </script>
 
 <div id="editor-toolbar" tabindex="-1" role="group" aria-label={$tr('Block editor actions')}>
-  <button disabled={view.busy || !view.canUndo} onclick={() => run(editor.action({ kind: 'undo' }))}>{$tr('Undo')}</button>
-  <button disabled={view.busy || !view.canRedo} onclick={() => run(editor.action({ kind: 'redo' }))}>{$tr('Redo')}</button>
+  <button disabled={!view.canUndo} use:busyControl={view.busy || view.composing} onclick={() => run(editor.action({ kind: 'undo' }))}>{$tr('Undo')}</button>
+  <button disabled={!view.canRedo} use:busyControl={view.busy || view.composing} onclick={() => run(editor.action({ kind: 'redo' }))}>{$tr('Redo')}</button>
   <details class="more-actions" bind:open={actionsOpen}>
     <summary aria-label={$tr('More block actions')} title={$tr('More block actions')}>{$tr('More')} ···</summary>
     <div class="more-list">
@@ -103,7 +103,7 @@
   <div class="outline" role="group" aria-label={$tr('Page blocks')} aria-busy={view.busy}>
     {#each rowsView.rows as row (row.block.id)}
       <BlockRow {row} {editor} {pages} text={editor.text(row.block.id)} active={rowsView.active === row.block.id}
-        busy={rowsView.busy} collapsed={editor.collapsed.has(row.block.id)} focus={rowsView.focus} />
+        busy={rowsView.busy} composing={view.composing} collapsed={editor.collapsed.has(row.block.id)} focus={rowsView.focus} />
       <div style:margin-inline-start={`${Math.min(row.depth, 20) * 25 + 26}px`}>
         {#each references.filter(r => r.source_block_id === row.block.id) as reference (reference.title_key)}
           <button use:busyControl={view.busy || view.dirty || referencesBusy} onclick={() => onReference(reference)}

@@ -15,6 +15,7 @@ test('pending editor markup retains readable text and correct availability at 5,
       id: `b${position}`, page_id: 'page', parent_id: null, position, content: `English فارسی ${position}`, task_status: null,
     }));
     editor.activeId = 'b1';
+    editor.canUndo = true; editor.canRedo = false;
     const props = { editor, revision: 0, rowsRevision: 0, pages: [], references: [], onReference() {} };
     for (const busy of [false, true, false]) {
       editor.working = busy;
@@ -31,6 +32,13 @@ test('pending editor markup retains readable text and correct availability at 5,
       const textarea = body.match(/<textarea\b([^>]*)>/)[1];
       assert.equal(/(?:^|\s)readonly(?:\s|=|$)/.test(textarea), busy, 'active input must remain read-only during structural IO');
       assert.equal((body.match(/data-block-id=/g) ?? []).length, 5000);
+      const toolbar = body.match(/<div id="editor-toolbar"[\s\S]*?<details/)[0];
+      const history = [...toolbar.matchAll(/<button\b([^>]*)>/g)];
+      assert.equal(history.length, 2);
+      assert.doesNotMatch(history[0][1], /(?:^|\s)disabled(?:\s|=|$)/, 'busy alone must not disable available undo');
+      assert.match(history[1][1], /(?:^|\s)disabled(?:\s|=|$)/, 'exhausted redo must remain genuinely disabled');
+      assert.match(body, /aria-haspopup="menu"/);
+      assert.doesNotMatch(body, /<select\b/, 'task status must use the compact popover');
     }
   } finally { await vite.close(); }
 });
