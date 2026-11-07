@@ -3,6 +3,8 @@ use super::*;
 use serde_json::{json, Value};
 use tauri::{ipc::{CallbackFn, InvokeBody}, test::{get_ipc_response, mock_builder, MockRuntime, INVOKE_KEY}, webview::InvokeRequest};
 
+mod extensions;
+
 fn invoke(window: &tauri::WebviewWindow<MockRuntime>, command: &str, args: Value) -> Result<Value, Value> {
     invoke_from(window, command, args, "tauri://localhost")
 }

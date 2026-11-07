@@ -27,6 +27,7 @@ mockIPC((cmd, args) => {
     case 'graph_activate': return { ...registry.entries[0], token: 'session', pages: [page, other] };
     case 'graph_registry_record': return registry;
     case 'recovery_inventory': return 0;
+    case 'extension_state': return { graph_id: 'graph', extensions: [{ id: 'graphdesk.tally', enabled: false }] };
     case 'recovery_clear': return null;
     case 'recovery_list': case 'recovery_notes': case 'editor_search': return [];
     case 'editor_journal': case 'editor_find_journal': return page;

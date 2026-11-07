@@ -65,6 +65,16 @@ impl Editor {
 
     pub fn graph(&self) -> &Graph { &self.graph }
 
+    /// Extension-only mutations cannot touch block replay preconditions. Do not
+    /// expose general mutable graph access here: graph_mut intentionally clears undo.
+    pub fn extension_configure(&mut self, id: &str, enabled: bool) -> Result<()> {
+        self.graph.extension_configure(id, enabled)
+    }
+
+    pub fn extension_write(&mut self, id: &str, expected_revision: i64, value: serde_json::Value) -> Result<crate::ExtensionDocument> {
+        self.graph.extension_write(id, expected_revision, value)
+    }
+
     pub fn prepare_delete(&mut self, page: Uuid, id: Uuid) -> Result<DeletePreview> {
         self.deletion = None;
         let tx = self.graph.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;

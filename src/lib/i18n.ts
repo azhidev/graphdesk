@@ -1,6 +1,10 @@
 /** English source keys are centralized and checked at call sites. Notes are never translated. */
 export type Language = 'en' | 'fa';
 export const messages = {
+  'Extensions': 'افزونه‌ها', 'Retry extensions': 'تلاش دوباره برای افزونه‌ها',
+  'Bundled extensions are enabled separately for each graph. Disabling keeps their saved data.': 'افزونه‌های همراه برنامه برای هر گراف جداگانه فعال می‌شوند. غیرفعال کردن، داده‌های ذخیره‌شده را نگه می‌دارد.',
+  'Extension unavailable': 'افزونه در دسترس نیست',
+  'Enable or retry this extension in Settings. Saved data has not been discarded.': 'این افزونه را در تنظیمات فعال کنید یا دوباره تلاش کنید. داده‌های ذخیره‌شده حذف نشده‌اند.',
   'Open graph…': 'باز کردن گراف…', 'Create graph…': 'ساخت گراف…',
   'Remember recent graphs': 'به‌خاطر سپردن گراف‌های اخیر', 'Reopen last graph on startup': 'باز کردن آخرین گراف هنگام شروع',
   'Remembering stores file paths privately on this computer, not notes. Turning it off clears remembered paths.': 'با فعال کردن این گزینه، فقط مسیر فایل‌ها به‌صورت خصوصی در این رایانه ذخیره می‌شود، نه یادداشت‌ها. غیرفعال کردن آن مسیرهای ذخیره‌شده را پاک می‌کند.',

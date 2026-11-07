@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick, untrack } from 'svelte';
+  import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { isTauri } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { api, editorApi, recoveryApi, noteApi, preferencesApi, type Page } from './lib/api';
@@ -30,6 +30,11 @@
   import { SearchController, type SearchHit } from './lib/search';
   import type { InlineReference, Links } from './lib/references';
   import { statusText } from './lib/i18n';
+  import { ExtensionHost } from './lib/extensions/host';
+  import { bundledExtensions } from './lib/extensions/bundled';
+  import { extensionTransport } from './lib/extensions/api';
+  import ExtensionSettings from './lib/extensions/ExtensionSettings.svelte';
+  import ExtensionView from './lib/extensions/ExtensionView.svelte';
 
   let path = $state('');
   let pages = $state<Page[]>([]);
@@ -55,7 +60,15 @@
   let navRevision = $state(0);
   const history = $derived.by(() => { navRevision; return { back: navigation.hasBack, forward: navigation.hasForward }; });
   let taskStatus = $state<TaskFilter>('active'), taskPage = $state('');
-  let view = $state<'notes' | 'tasks'>('notes');
+  let view = $state<'notes' | 'tasks' | 'extension'>('notes');
+  let extensionRevision = $state(0);
+  const extensions = new ExtensionHost(bundledExtensions(), extensionTransport, () => { extensionRevision += 1; });
+  const extensionState = $derived.by(() => { extensionRevision; return {
+    states: extensions.states(), navigation: extensions.navigation(), loading: extensions.loading, error: extensions.error,
+  }; });
+  let extensionTarget = $state({ extensionId: '', viewId: '' });
+  const extensionModel = $derived.by(() => { extensionRevision; return extensions.view(extensionTarget.extensionId, extensionTarget.viewId); });
+  onDestroy(() => extensions.detach());
   let searchOpen = $state(false), sidebarCollapsed = $state(false), sidebarOverlay = $state(false), narrow = $state(false);
   let settingsOpen = $state(false);
   let graphSwitchRoot = $state<HTMLElement>();
@@ -258,6 +271,7 @@
           search.reset(); query = ''; searchComposing = false;
           recoveryRecords = []; pendingNotes = []; recoveryError = ''; landingError = false;
           navigation.reset(result.token); navRevision++; installed = true;
+          void extensions.attach(result.token, result.graph_id);
         },
       });
     } finally { handoff = false; }
@@ -314,10 +328,17 @@
   function destination(page: Page, block?: string): Destination { return page.journal_date ? { kind: 'journal', date: page.journal_date, block } : { kind: 'page', id: page.id, block }; }
   function rememberLocation() {
     if (view === 'tasks') navigation.replace({ kind: 'tasks', status: taskStatus, page: taskPage });
+    else if (view === 'extension') navigation.replace({ kind: 'extension', ...extensionTarget });
     else if (selected) navigation.replace(destination(selected, editor.activeId ?? undefined));
     navRevision++;
   }
   async function loadDestination(target: Destination) {
+    if (target.kind === 'extension') {
+      const stamp = editor.departureStamp(); await editor.flush(); editor.assertDeparture(stamp);
+      if (!extensions.view(target.extensionId, target.viewId)) throw new Error('This destination is no longer available. Choose another page.');
+      extensionTarget = { extensionId: target.extensionId, viewId: target.viewId }; view = 'extension';
+      await tick(); document.getElementById('extension-heading')?.focus(); return;
+    }
     if (target.kind === 'tasks') {
       const stamp = editor.departureStamp(); await editor.flush(); editor.assertDeparture(stamp);
       taskStatus = target.status; taskPage = pages.some(p => p.id === target.page) ? target.page : '';
@@ -606,6 +627,8 @@
     <p>{$tr('Remembering stores file paths privately on this computer, not notes. Turning it off clears remembered paths.')}</p>
   </details>
   {#if prefsError}<ErrorNotice message={prefsError} />{/if}
+  {#if session}<ExtensionSettings host={extensions} states={extensionState.states} loading={extensionState.loading} error={extensionState.error}
+    disabled={locked || !!firstNoteDate || composing} onRetry={() => { const graph = sessionGraphs.find(graph => graph.path === activePath); if (session && graph) void extensions.attach(session, graph.graph_id); }} />{/if}
   <div class="settings-footer"><details><summary>{$tr('Keyboard shortcuts')}</summary><p>{$tr('Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Ctrl+Tab: switch graph · Alt+←/→: history outside text fields')}</p></details><button class="settings-done" onclick={closeSettings}>{$tr('Done')}</button></div>
 </dialog>
 
@@ -714,6 +737,16 @@
             <button use:busyControl={locked} onclick={showTasks} aria-current={view === 'tasks' ? 'page' : undefined}><svg class="icon" aria-hidden="true"><use href="#shell-tasks" /></svg>{$tr('Tasks')}</button>
             <button id="search-entry" use:busyControl={locked} onclick={openSearch}><svg class="icon" aria-hidden="true"><use href="#shell-search" /></svg>{$tr('Search')}<bdi dir="ltr" class="nav-hint">Ctrl/Cmd K</bdi></button>
           </nav>
+          {#if extensionState.navigation.length}
+            <nav class="primary-nav extension-nav" aria-label={$tr('Extensions')}>
+              {#each extensionState.navigation as entry (`${entry.extensionId}/${entry.id}`)}
+                <button use:busyControl={locked || composing} aria-current={view === 'extension' && extensionTarget.extensionId === entry.extensionId && extensionTarget.viewId === entry.viewId ? 'page' : undefined}
+                  onclick={() => run(() => navigate({ kind: 'extension', extensionId: entry.extensionId, viewId: entry.viewId }))}>
+                  <svg class="icon" aria-hidden="true"><use href="#shell-plus" /></svg>{entry.label[$preferences.language]}
+                </button>
+              {/each}
+            </nav>
+          {/if}
           <div class="sidebar-divider"></div>
           <p class="sidebar-heading">{$tr('Journal date')}</p>
           <details class="date-disclosure"><summary><svg class="icon" aria-hidden="true"><use href="#shell-journal" /></svg><bdi>{presentDate(journalDate)}</bdi></summary>
@@ -738,6 +771,10 @@
       </aside>
       <div class="content shell-scroll" inert={narrow && sidebarOverlay}>
       <OperationStatus label={operation} scope={operationScope} region="content" />
+      {#if view === 'extension'}
+        <ExtensionView host={extensions} extensionId={extensionTarget.extensionId} model={extensionModel}
+          state={extensionState.states.find(state => state.manifest.id === extensionTarget.extensionId)} disabled={locked || composing || !!firstNoteDate} />
+      {/if}
       {#if view === 'tasks' && session}
         <TasksView {session} {pages} refreshKey={acknowledgedBlocks} disabled={locked} bind:status={taskStatus} bind:page={taskPage} onFilter={rememberLocation}
           onOpen={hit => selectHit({ id: hit.id, page_id: hit.page_id, kind: 'block', text: hit.content })} />

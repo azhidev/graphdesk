@@ -1,5 +1,17 @@
 # Workflows and keyboard reference
 
+## Bundled extensions (M9)
+
+For an open graph, Settings → Extensions enables **Tally** in that graph only.
+Its sidebar entry opens a small persisted counter. Disable removes the entry but
+keeps its data; re-enable or restart restores acknowledged state. Other graphs
+start independently disabled. Failures are visible and retryable in Settings;
+they do not discard data or editor drafts. Back/Forward uses normal guarded
+navigation. No third-party installation or execution is available. See the
+[extension architecture and limitations](extensions.md).
+
+## Notes and navigation
+
 Create/open a graph to land on today's local-date journal. Choose **Capture today**
 (Ctrl/Cmd+Shift+J) to focus an empty root leaf or append a new block. Create/select
 other pages through the sidebar; empty pages offer **Add first block**.

@@ -1,5 +1,10 @@
 # Data, backup and recovery
 
+M9 schema 6 stores bundled-extension enablement and bounded JSON documents inside
+each graph, namespaced by graph UUID and extension ID. Disabling retains data;
+copies/backups include it. Older binaries reject schema 6. Extension storage is
+not editor recovery or block undo history; see [extension boundaries](extensions.md).
+
 ## Paths and application state
 
 Each graph is a user-selected SQLite file, with adjacent `-wal` / `-shm` sidecars

@@ -3,11 +3,13 @@ import type { TaskFilter } from './tasks.ts';
 export type Destination =
   | { kind: 'page'; id: string; block?: string }
   | { kind: 'journal'; date: string; block?: string }
-  | { kind: 'tasks'; status: TaskFilter; page: string };
+  | { kind: 'tasks'; status: TaskFilter; page: string }
+  | { kind: 'extension'; extensionId: string; viewId: string };
 
 function samePlace(a: Destination, b: Destination): boolean {
   return a.kind === b.kind && (a.kind === 'page' && b.kind === 'page' ? a.id === b.id
-    : a.kind === 'journal' && b.kind === 'journal' ? a.date === b.date : a.kind === 'tasks');
+    : a.kind === 'journal' && b.kind === 'journal' ? a.date === b.date
+    : a.kind === 'extension' && b.kind === 'extension' ? a.extensionId === b.extensionId && a.viewId === b.viewId : a.kind === 'tasks');
 }
 
 /** Session-only locations, never persisted content or browser history. Commit only

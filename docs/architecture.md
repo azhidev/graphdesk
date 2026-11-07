@@ -1,5 +1,10 @@
 # GraphDesk architecture (Milestones 1–6)
 
+M9 adds the [bundled extension foundation](extensions.md): an internal versioned
+host contract, per-graph activation and bounded Rust-owned JSON storage (schema 6).
+No third-party execution/loading, public SDK or unrestricted extension access.
+Historical sections below retain their original milestone scope.
+
 ## Boundaries
 
 Modular monolith: Svelte → typed IPC wrappers → Tauri commands → `graph-core`.

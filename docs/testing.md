@@ -2,6 +2,32 @@
 
 ## Automated checks
 
+### M9 extension foundation — Rust/native integration pending
+
+The [extension architecture](extensions.md) describes the bundled registry, graph
+lifecycle, API-v1 declarative UI and bounded schema-6 storage. Ubuntu results:
+`npm run check` zero errors/warnings, production build PASS, **86 Node tests PASS**,
+and **36 Python/SQLite tests PASS**, including seven new extension-schema fixtures.
+Eight new Node cases cover lifecycle, revocation, graph/restart isolation, stale
+replies, capabilities, failure containment and navigation. Added Rust core/protocol/
+IPC tests are **uncompiled and unexecuted: Cargo is unavailable**. SQL fixtures do
+not replace Rust execution.
+
+Full-App WebKitGTK synthetic-IPC extension fixture PASS at 1300px and 420px:
+Settings enable/disable,
+acknowledgement/rapid-action suppression, A→B→A isolation, failure/retry, Page
+navigation after failure, Persian RTL/Dark presentation, viewport bounds and remount restoration.
+The existing editor/control fixture also PASS with a disabled-extension response.
+Early extension runs timed out when a synthetic graph shortcut fired before the
+previous navigation wrapper unlocked; awaiting normal UI settlement corrected the
+fixture, without changing production guards. Expected Xvfb DRI/accessibility-bus
+warnings remain.
+
+These results do not prove Rust IPC integration, native restart/durability,
+keyboard/IME or Fedora acceptance. Run the locked Rust suites and rebuilt Fedora
+steps in `extensions.md` before accepting native integration. No third-party
+execution or M10 work is included.
+
 ### M8 editor controls polish — native acceptance pending
 
 Undo/Redo now distinguish intrinsic history exhaustion (`disabled`) from temporary

@@ -6,6 +6,7 @@ use tauri::State;
 use uuid::Uuid;
 
 mod editor;
+mod extensions;
 mod recovery;
 mod preferences;
 mod registry;
@@ -72,6 +73,7 @@ fn app_builder<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<
             editor::editor_open, editor::editor_page, editor::editor_apply, editor::editor_history, editor::editor_create_page,
             editor::editor_rename_page, editor::editor_journal, editor::editor_find_journal, editor::editor_tasks, editor::editor_search, editor::editor_links, editor::editor_prepare_delete,
             editor::editor_submit_note, editor::editor_note_state,
+            extensions::extension_state, extensions::extension_configure, extensions::extension_request,
             recovery::recovery_note_put, recovery::recovery_notes, recovery::recovery_note_remove,
             preferences::preferences_load, preferences::preferences_save,
             registry::graph_registry_load, registry::graph_registry_settings, registry::graph_registry_forget, registry::graph_registry_record,
