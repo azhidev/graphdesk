@@ -75,6 +75,20 @@ impl Editor {
         self.graph.extension_write(id, expected_revision, value)
     }
 
+    // Habit-only writes preserve block undo and pending deletion preconditions.
+    pub fn habit_create(&mut self, input: crate::habits::HabitCreate) -> Result<crate::habits::Habit> {
+        self.graph.habit_create(input)
+    }
+    pub fn habit_update(&mut self, id: Uuid, revision: i64, definition: crate::habits::HabitDefinition) -> Result<crate::habits::Habit> {
+        self.graph.habit_update(id, revision, definition)
+    }
+    pub fn habit_record(&mut self, input: crate::habits::EventInput, recorded_at: i64) -> Result<crate::habits::HabitEvent> {
+        self.graph.habit_record(input, recorded_at)
+    }
+    pub fn habit_correct(&mut self, id: Uuid, revision: i64, voided: bool) -> Result<crate::habits::HabitEvent> {
+        self.graph.habit_correct(id, revision, voided)
+    }
+
     pub fn prepare_delete(&mut self, page: Uuid, id: Uuid) -> Result<DeletePreview> {
         self.deletion = None;
         let tx = self.graph.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;

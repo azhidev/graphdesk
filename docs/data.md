@@ -1,5 +1,17 @@
 # Data, backup and recovery
 
+M10.1 adds timezone identity inside each new habit's definition JSON/revision, not
+a new schema migration. Old JSON missing timezone stays UTC without rewriting its
+history. Event/audit timestamps and resolved due instants remain UTC seconds. The
+app-private `habit_timezone` preference (null = System) affects new definitions
+only; the IANA name is snapshotted into the graph when a habit is created.
+
+M10 schema 7 adds graph-scoped habit definitions, retained definition versions and
+timestamped immutable event payloads with revisioned void/restore corrections.
+Disabling Habits retains its history; events are not stored in the 16 KiB extension
+document or editor undo/recovery. Older binaries reject schema 7; use the normal
+explicit-open upgrade path and SQLite-aware backup precautions. See [Habits core](habits-core.md).
+
 M9 schema 6 stores bundled-extension enablement and bounded JSON documents inside
 each graph, namespaced by graph UUID and extension ID. Disabling retains data;
 copies/backups include it. Older binaries reject schema 6. Extension storage is

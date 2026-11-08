@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::{AppState, editor::{blocking, with_session, EditorError}};
 
 const BUNDLED_ID: &str = "graphdesk.tally";
+const BUNDLED_IDS: &[&str] = &[BUNDLED_ID, "graphdesk.habits"];
 const API_VERSION: u32 = 1;
 
 #[derive(Serialize)]
@@ -22,7 +23,7 @@ pub(crate) enum ExtensionRequest {
 }
 
 fn registered(id: &str) -> graph_core::Result<()> {
-    if id != BUNDLED_ID { return Err(Error::Invalid("extension is not bundled or registered".into())); }
+    if !BUNDLED_IDS.contains(&id) { return Err(Error::Invalid("extension is not bundled or registered".into())); }
     Ok(())
 }
 
@@ -33,7 +34,7 @@ pub(crate) async fn extension_state(session: Uuid, state: State<'_, AppState>) -
         let states = g.editor.graph().extension_states()?;
         Ok(ExtensionStatus {
             graph_id: g.editor.graph().id()?,
-            extensions: vec![ExtensionState { id: BUNDLED_ID.into(), enabled: states.iter().any(|s| s.id == BUNDLED_ID && s.enabled) }],
+            extensions: BUNDLED_IDS.iter().map(|id| ExtensionState { id: (*id).into(), enabled: states.iter().any(|s| s.id == *id && s.enabled) }).collect(),
         })
     })).await
 }

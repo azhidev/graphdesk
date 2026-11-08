@@ -10,6 +10,7 @@ serde.workspace = true
 uuid.workspace = true
 thiserror = "2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+jiff = "=0.2.38"
 unicode-normalization = "0.1"
 serde_json = "1"
 

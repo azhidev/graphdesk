@@ -7,6 +7,7 @@ import '../../src/foundation.css';
 
 const graphs = new Map(['A', 'B'].map(id => [id, { enabled: false, revision: 0, value: null }]));
 let current = 'A', picked = 'B', serial = 0, session, releaseWrite, failWrite = false;
+let storedPreferences = { language: 'en', calendar: 'gregorian', search_mode: 'original', theme: 'light', habit_timezone: null };
 const page = () => ({ id: `page-${current}`, title: `Page ${current}`, journal_date: '2026-11-05' });
 const entry = () => ({ path: `/${current}.sqlite3`, graph_id: current });
 const registry = () => ({ remember: true, reopen: true, entries: [entry()], warning: false });
@@ -14,7 +15,12 @@ mockWindows('main'); window.isTauri = true;
 mockIPC((cmd, args) => {
   if (['extension_state', 'extension_configure', 'extension_request'].includes(cmd) && args.session !== session) throw new Error('stale session');
   switch (cmd) {
-    case 'preferences_load': return { preferences: { language: 'en', calendar: 'gregorian', search_mode: 'original', theme: 'light' }, warning: false };
+    case 'preferences_load': return { preferences: structuredClone(storedPreferences), warning: false };
+    case 'preferences_save': {
+      if (args.preferences.habit_timezone) new Intl.DateTimeFormat('en', { timeZone: args.preferences.habit_timezone });
+      storedPreferences = structuredClone(args.preferences); return null;
+    }
+    case 'habits_timezone': return { system: 'America/New_York', resolved: storedPreferences.habit_timezone ?? 'America/New_York' };
     case 'graph_first_run': return { fresh: true, demo: entry(), registry: registry(), warning: false };
     case 'graph_pick': return `/${picked}.sqlite3`;
     case 'graph_prepare': return { path: args.path, graph_id: args.path.slice(1, 2), ticket: args.path.slice(1, 2) };
@@ -51,6 +57,11 @@ const value = () => document.querySelector('.extension-document .value')?.textCo
 const action = () => document.querySelector('.extension-document .actions button');
 const settings = () => [...document.querySelectorAll('.sidebar-bottom button')].find(button => ['Settings', 'تنظیمات'].includes(button.textContent.trim())).click();
 const closeSettings = () => document.querySelector('.settings-header button').click();
+async function setTimezone(value) {
+  const input = document.getElementById('habit-timezone');
+  input.value = value; input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.closest('form').requestSubmit(); await settle();
+}
 const switchGraph = async id => {
   await settle();
   picked = id;
@@ -63,6 +74,17 @@ try {
   let app = mount(App, { target: document.body });
   await until(() => checkbox() && !checkbox().disabled);
   assert(!nav() && !checkbox().checked, 'extension must default to disabled');
+  window.__stage = 'timezone-settings';
+  settings(); await until(() => document.querySelector('.habit-timezone-settings [role="status"]').textContent.includes('America/New_York'));
+  assert(document.getElementById('habit-timezone').value === '', 'System must be default timezone preference');
+  await setTimezone('Europe/Berlin');
+  assert(storedPreferences.habit_timezone === 'Europe/Berlin', 'timezone override did not save');
+  assert(document.querySelector('.habit-timezone-settings [role="status"]').textContent.includes('Europe/Berlin'), 'resolved override not displayed');
+  await setTimezone('Invalid/Timezone');
+  assert(storedPreferences.habit_timezone === 'Europe/Berlin', 'invalid override replaced acknowledged preference');
+  await setTimezone('');
+  assert(storedPreferences.habit_timezone === null && storedPreferences.calendar === 'gregorian', 'System reset altered calendar or did not save');
+  closeSettings(); await settle();
   window.__stage = 'enable';
   settings(); await settle(); checkbox().click(); await until(nav); closeSettings();
   window.__stage = 'open-view';
@@ -86,9 +108,14 @@ try {
   document.querySelector('.page-list button').click(); await until(() => document.querySelector('.notes-view')?.hidden === false);
   settings(); await settle(); document.querySelector('.extension-setting button').click(); await until(nav); closeSettings();
   nav().click(); await until(() => value() === '1');
+  settings(); await settle(); await setTimezone('Asia/Tehran'); closeSettings(); await settle();
+  assert(storedPreferences.language === 'fa' && storedPreferences.theme === 'dark', 'timezone preference disturbed language/theme');
   await unmount(app); await settle();
   app = mount(App, { target: document.body }); await until(nav); nav().click(); await until(() => value() === '1');
   assert(checkbox().checked, 'restart did not restore enabled state');
+  settings(); await settle();
+  assert(document.getElementById('habit-timezone').value === 'Asia/Tehran', 'timezone preference did not restore on remount');
+  closeSettings(); await settle();
   const bounds = document.querySelector('.extension-document').getBoundingClientRect();
   assert(bounds.width > 0 && bounds.left >= 0 && bounds.right <= innerWidth, 'extension view overflows viewport');
   await unmount(app);

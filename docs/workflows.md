@@ -2,6 +2,13 @@
 
 ## Bundled extensions (M9)
 
+Settings → **Habit timezone** controls the default IANA zone for new Habits
+schedules. Leave blank for System or save a name such as `Asia/Tehran`. Existing
+habits retain their recorded zone, even after this preference or the system zone
+changes. Gregorian/Jalali display selection remains independent. Legacy Habits
+schedules without a timezone retain UTC semantics. Habits remains headless in
+this phase; this setting adds no dashboard or reminders.
+
 For an open graph, Settings → Extensions enables **Tally** in that graph only.
 Its sidebar entry opens a small persisted counter. Disable removes the entry but
 keeps its data; re-enable or restart restores acknowledged state. Other graphs

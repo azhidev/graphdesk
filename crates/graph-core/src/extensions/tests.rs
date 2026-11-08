@@ -42,7 +42,7 @@ fn migration_six_preserves_graph_and_reopens_durable_preferences_and_data() -> R
     assert!(graph.extension_read(ID).is_err());
     graph.extension_configure(ID, true)?;
     assert_eq!(graph.extension_read(ID)?, expected);
-    assert_eq!(graph.conn.query_row("SELECT max(version) FROM schema_migrations", [], |r| r.get::<_, i64>(0))?, 6);
+    assert_eq!(graph.conn.query_row("SELECT max(version) FROM schema_migrations", [], |r| r.get::<_, i64>(0))?, migrations::MIGRATIONS.len() as i64);
     drop(graph);
     assert_eq!(Graph::inspect_identity(&path, true)?, graph_id);
     assert_eq!(Graph::open(&path)?.extension_read(ID)?, expected);

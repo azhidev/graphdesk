@@ -21,6 +21,7 @@ export const api = {
 export const preferencesApi = {
   load: () => invoke<{ preferences: Preferences; warning: boolean }>('preferences_load'),
   save: (preferences: Preferences) => invoke<void>('preferences_save', { preferences }),
+  habitTimezone: () => invoke<{ system: string | null; resolved: string | null }>('habits_timezone'),
 };
 export const noteApi = {
   list: (session: string) => invoke<PendingNote[]>('recovery_notes', { session }),

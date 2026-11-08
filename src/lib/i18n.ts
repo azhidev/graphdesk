@@ -1,6 +1,12 @@
 /** English source keys are centralized and checked at call sites. Notes are never translated. */
 export type Language = 'en' | 'fa';
 export const messages = {
+  'Habit timezone': 'منطقهٔ زمانی عادت‌ها',
+  'IANA timezone override (blank uses System)': 'منطقهٔ زمانی IANA (خالی یعنی سیستم)',
+  'Resolved timezone': 'منطقهٔ زمانی تعیین‌شده',
+  'System timezone unavailable. Choose an IANA timezone.': 'منطقهٔ زمانی سیستم در دسترس نیست. یک منطقهٔ زمانی IANA انتخاب کنید.',
+  'Applies to new habits only. Existing schedules keep their saved timezone; display calendars are independent.': 'فقط برای عادت‌های جدید است. برنامه‌های موجود منطقهٔ زمانی ذخیره‌شده را نگه می‌دارند؛ گاه‌شماری نمایش مستقل است.',
+  'Save timezone': 'ذخیرهٔ منطقهٔ زمانی',
   'Extensions': 'افزونه‌ها', 'Retry extensions': 'تلاش دوباره برای افزونه‌ها',
   'Bundled extensions are enabled separately for each graph. Disabling keeps their saved data.': 'افزونه‌های همراه برنامه برای هر گراف جداگانه فعال می‌شوند. غیرفعال کردن، داده‌های ذخیره‌شده را نگه می‌دارد.',
   'Extension unavailable': 'افزونه در دسترس نیست',

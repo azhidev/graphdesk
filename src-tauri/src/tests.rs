@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use tauri::{ipc::{CallbackFn, InvokeBody}, test::{get_ipc_response, mock_builder, MockRuntime, INVOKE_KEY}, webview::InvokeRequest};
 
 mod extensions;
+mod habits;
 
 fn invoke(window: &tauri::WebviewWindow<MockRuntime>, command: &str, args: Value) -> Result<Value, Value> {
     invoke_from(window, command, args, "tauri://localhost")
@@ -281,12 +282,12 @@ fn m5_notes_search_preferences_and_stale_sessions_ipc() {
     app.state::<crate::recovery::RecoveryState>().0.lock().unwrap().root = Some(directory.path().join("recovery"));
     app.state::<crate::preferences::PreferencesState>().0.lock().unwrap().replace(directory.path().join("config"));
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
-    let defaults = json!({"language":"en","calendar":"gregorian","search_mode":"original","theme":"system"});
+    let defaults = json!({"language":"en","calendar":"gregorian","search_mode":"original","theme":"system","habit_timezone":null});
     assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap(), json!({"preferences":defaults,"warning":false}));
     let legacy = json!({"language":"fa","calendar":"jalali","search_mode":"persian"});
     invoke(&window,"preferences_save",json!({"preferences":legacy})).unwrap();
-    assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap()["preferences"],json!({"language":"fa","calendar":"jalali","search_mode":"persian","theme":"system"}));
-    let prefs = json!({"language":"fa","calendar":"jalali","search_mode":"persian","theme":"dark"});
+    assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap()["preferences"],json!({"language":"fa","calendar":"jalali","search_mode":"persian","theme":"system","habit_timezone":null}));
+    let prefs = json!({"language":"fa","calendar":"jalali","search_mode":"persian","theme":"dark","habit_timezone":null});
     invoke(&window,"preferences_save",json!({"preferences":prefs})).unwrap();
     assert_eq!(invoke(&window,"preferences_load",json!({})).unwrap(), json!({"preferences":prefs,"warning":false}));
     assert!(invoke(&window,"preferences_save",json!({"preferences":{"language":"unknown","calendar":"gregorian","search_mode":"original"}})).is_err());

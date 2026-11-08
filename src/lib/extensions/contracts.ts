@@ -1,9 +1,10 @@
 /** Internal M9 protocol, not a public SDK. All payloads are JSON-compatible.
  * A future isolated runtime can proxy these methods without exposing UI stores. */
+import type { HabitsRequest, HabitsResponse } from './habits-contracts.ts';
 export const EXTENSION_API_VERSION = 1;
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Localized = { en: string; fa: string };
-export type Capability = 'storage.document' | 'ui.views' | 'ui.navigation';
+export type Capability = 'storage.document' | 'ui.views' | 'ui.navigation' | 'habits.core';
 export interface Manifest {
   id: string; version: string; apiVersion: number; name: Localized; description: Localized;
   capabilities: readonly Capability[];
@@ -16,6 +17,7 @@ export interface ViewModel {
 export interface NavigationEntry { id: string; viewId: string; label: Localized }
 export interface ExtensionAPI {
   readonly version: 1;
+  habits: { request(request: HabitsRequest): Promise<HabitsResponse> };
   storage: {
     read(): Promise<ExtensionDocument>;
     write(expectedRevision: number, value: Json): Promise<ExtensionDocument>;
@@ -40,4 +42,5 @@ export interface ExtensionTransport {
   state(session: string): Promise<{ graph_id: string; extensions: { id: string; enabled: boolean }[] }>;
   configure(session: string, extensionId: string, enabled: boolean): Promise<void>;
   request(session: string, extensionId: string, apiVersion: number, request: StorageRequest): Promise<ExtensionDocument>;
+  habits?(session: string, extensionId: string, apiVersion: number, request: HabitsRequest): Promise<HabitsResponse>;
 }

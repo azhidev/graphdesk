@@ -17,7 +17,7 @@ fn m9_bundled_protocol_persists_filters_registry_and_preserves_editor_history() 
     let request = |request: Value| invoke(&window, "extension_request", json!({"session":token,"extensionId":ID,"apiVersion":1,"request":request}));
     let configure = |enabled: bool| invoke(&window, "extension_configure", json!({"session":token,"extensionId":ID,"enabled":enabled}));
     assert_eq!(invoke(&window, "extension_state", json!({"session":token})).unwrap(),
-        json!({"graph_id":opened["graph_id"],"extensions":[{"id":ID,"enabled":false}]}));
+        json!({"graph_id":opened["graph_id"],"extensions":[{"id":ID,"enabled":false},{"id":"graphdesk.habits","enabled":false}]}));
     assert!(request(json!({"op":"storage_read"})).is_err());
     assert!(request(json!({"op":"storage_write","expected_revision":0,"value":3})).is_err());
     for id in ["other.extension", "Graphdesk.tally", "graphdesk.unknown", "../graphdesk.tally"] {
@@ -55,7 +55,7 @@ fn m9_bundled_protocol_persists_filters_registry_and_preserves_editor_history() 
     let reopened = invoke(&window, "editor_open", json!({"path":path,"create":false})).unwrap();
     assert_ne!(reopened["token"], token);
     assert_eq!(invoke(&window, "extension_state", json!({"session":reopened["token"]})).unwrap(),
-        json!({"graph_id":opened["graph_id"],"extensions":[{"id":ID,"enabled":true}]}));
+        json!({"graph_id":opened["graph_id"],"extensions":[{"id":ID,"enabled":true},{"id":"graphdesk.habits","enabled":false}]}));
     assert_eq!(invoke(&window, "extension_request", json!({"session":reopened["token"],"extensionId":ID,"apiVersion":1,"request":{"op":"storage_read"}})).unwrap(), saved);
     assert_eq!(request(json!({"op":"storage_write","expected_revision":1,"value":99})).unwrap_err()["code"], "stale_session");
     let retained = Graph::open(&path).unwrap();
@@ -86,7 +86,7 @@ fn m9_all_extension_commands_reject_stale_sessions_and_switches_are_graph_scoped
     for (command, args) in commands(first["token"].clone()) {
         assert_eq!(invoke(&main, command, args).unwrap_err()["code"], "stale_session");
     }
-    assert_eq!(invoke(&main, "extension_state", json!({"session":second["token"]})).unwrap()["extensions"], json!([{"id":ID,"enabled":false}]));
+    assert_eq!(invoke(&main, "extension_state", json!({"session":second["token"]})).unwrap()["extensions"], json!([{"id":ID,"enabled":false},{"id":"graphdesk.habits","enabled":false}]));
     invoke(&main, "extension_configure", json!({"session":second["token"],"extensionId":ID,"enabled":true})).unwrap();
     assert_eq!(invoke(&main, "extension_request", json!({"session":second["token"],"extensionId":ID,"apiVersion":1,"request":{"op":"storage_read"}})).unwrap(), json!({"revision":0,"value":null}));
     // Valid payloads are still ACL-denied from non-main windows and remote URLs.

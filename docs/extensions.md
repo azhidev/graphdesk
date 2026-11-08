@@ -1,5 +1,10 @@
 # M9 bundled extension foundation
 
+M10 phase 1 adds the separate headless `graphdesk.habits` definition and scoped
+`habits.core` API. Its dedicated schema-7 event tables do not use the generic JSON
+document. See [Habits core](habits-core.md) for recurrence, time and retry semantics.
+The original Tally example and M9 trust boundaries below remain unchanged.
+
 Implemented: a bundled registry, graph-scoped lifecycle, versioned host contract,
 namespaced views/navigation and bounded Rust-owned storage. This is an **internal
 foundation, not a public SDK or third-party runtime**. No dynamic imports, local

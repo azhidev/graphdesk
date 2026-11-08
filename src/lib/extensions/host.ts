@@ -3,7 +3,7 @@ import type { Capability, Definition, ExtensionAPI, ExtensionInstance, Extension
 
 const extensionId = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 const localId = /^[a-z][a-z0-9-]{0,63}$/;
-const capabilities = new Set(['storage.document', 'ui.views', 'ui.navigation']);
+const capabilities = new Set(['storage.document', 'ui.views', 'ui.navigation', 'habits.core']);
 const message = (error: unknown) => error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error);
 const localized = (value: unknown): value is Localized => !!value && typeof value === 'object'
   && ['en', 'fa'].every(key => typeof (value as Record<string, unknown>)[key] === 'string'
@@ -107,6 +107,14 @@ export class ExtensionHost {
     };
     const api: ExtensionAPI = {
       version: EXTENSION_API_VERSION,
+      habits: {
+        request: async payload => {
+          assertLive('habits.core');
+          if (slot.manifest.id !== 'graphdesk.habits' || !this.transport.habits) throw new Error('Habits capability denied');
+          const result = await this.transport.habits(session, slot.manifest.id, EXTENSION_API_VERSION, structuredClone(payload));
+          assertLive('habits.core'); return structuredClone(result);
+        },
+      },
       storage: {
         read: () => request({ op: 'storage_read' }),
         write: (expectedRevision, value) => request({ op: 'storage_write', expected_revision: expectedRevision, value }),

@@ -8,6 +8,7 @@ pub(crate) const MIGRATIONS: &[(&str, &str)] = &[
     ("reliability", include_str!("../migrations/004_reliability.sql")),
     ("persian_search", include_str!("../migrations/005_persian_search.sql")),
     ("extensions", include_str!("../migrations/006_extensions.sql")),
+    ("habits", include_str!("../migrations/007_habits.sql")),
 ];
 
 #[cfg(test)]

@@ -87,6 +87,10 @@
   let pendingNotes = $state<PendingNote[]>([]);
   let noteComparison = $state<NoteState | null>(null);
   let prefsReady = $state(false), prefsSaving = $state(false), prefsError = $state('');
+  let habitTimezoneDraft = $state('');
+  let habitTimezoneResolved = $state<string | null>(null);
+  let habitTimezoneLoading = $state(false);
+  let habitTimezoneRequest = 0;
   let confirmCancelNote = $state(false);
   let error = $state('');
   let title = $state('');
@@ -126,7 +130,7 @@
   function unsupportedDate(day: string) { try { calendarFields(day, $preferences.calendar); return false; } catch { return true; } }
   function pageLabel(page: Page) { return displayPageTitle(page, $preferences.calendar, $preferences.language); }
   function contextLabel(id: string) { const page = pages.find(p => p.id === id); return page ? pageLabel(page) : ''; }
-  async function changePreference(key: keyof typeof $preferences, select: HTMLSelectElement) {
+  async function changePreference(key: Exclude<keyof typeof $preferences, 'habit_timezone'>, select: HTMLSelectElement) {
     if (locked || prefsSaving || editor.composing || searchComposing) { select.value = get(preferences)[key]; return; }
     const next = { ...$preferences, [key]: select.value };
     const restoreFocus = document.activeElement === select;
@@ -226,7 +230,27 @@
     if (settingsDialog.open || editor.composing || searchComposing) return;
     settingsReturn = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     settingsDialog.showModal(); settingsOpen = true;
+    habitTimezoneDraft = $preferences.habit_timezone ?? '';
+    void refreshHabitTimezone();
     await tick(); document.getElementById('settings-theme')?.focus();
+  }
+  async function refreshHabitTimezone() {
+    const request = ++habitTimezoneRequest;
+    habitTimezoneLoading = true;
+    try { const result = await preferencesApi.habitTimezone(); if (request === habitTimezoneRequest) habitTimezoneResolved = result.resolved; }
+    catch { if (request === habitTimezoneRequest) habitTimezoneResolved = null; }
+    finally { if (request === habitTimezoneRequest) habitTimezoneLoading = false; }
+  }
+  async function saveHabitTimezone(event: SubmitEvent) {
+    event.preventDefault();
+    if (locked || prefsSaving || !prefsReady || firstNoteDate || editor.composing) return;
+    const next = { ...$preferences, habit_timezone: habitTimezoneDraft.trim() || null };
+    prefsSaving = true;
+    try {
+      await preferencesApi.save(next); preferences.set(next); prefsError = '';
+      await refreshHabitTimezone();
+    } catch { prefsError = 'Preferences could not be saved. Your previous settings remain active.'; }
+    finally { prefsSaving = false; }
   }
   function closeSettings() {
     settingsDialog.close(); settingsOpen = false;
@@ -626,6 +650,14 @@
     {#if registry.remember && registry.entries.length}<button disabled={locked} onclick={() => forget(null)}>{$tr('Clear remembered graphs')}</button>{/if}
     <p>{$tr('Remembering stores file paths privately on this computer, not notes. Turning it off clears remembered paths.')}</p>
   </details>
+  <form class="habit-timezone-settings" onsubmit={saveHabitTimezone} aria-label={$tr('Habit timezone')}>
+    <label for="habit-timezone">{$tr('IANA timezone override (blank uses System)')}</label>
+    <input id="habit-timezone" dir="ltr" bind:value={habitTimezoneDraft} placeholder="America/New_York" autocomplete="off" spellcheck="false" maxlength="100"
+      disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate} aria-describedby="habit-timezone-help" />
+    <p id="habit-timezone-help">{$tr('Applies to new habits only. Existing schedules keep their saved timezone; display calendars are independent.')}</p>
+    <p role="status">{#if habitTimezoneLoading}{$tr('Loading…')}{:else if habitTimezoneResolved}{$tr('Resolved timezone')}: <bdi>{habitTimezoneResolved}</bdi>{:else}{$tr('System timezone unavailable. Choose an IANA timezone.')}{/if}</p>
+    <button disabled={locked || prefsSaving || !prefsReady || !!firstNoteDate}>{$tr('Save timezone')}</button>
+  </form>
   {#if prefsError}<ErrorNotice message={prefsError} />{/if}
   {#if session}<ExtensionSettings host={extensions} states={extensionState.states} loading={extensionState.loading} error={extensionState.error}
     disabled={locked || !!firstNoteDate || composing} onRetry={() => { const graph = sessionGraphs.find(graph => graph.path === activePath); if (session && graph) void extensions.attach(session, graph.graph_id); }} />{/if}
@@ -911,6 +943,11 @@
   .settings-fields { display: grid; gap: 20px; }
   .settings-fields label { display: grid; gap: 7px; font-size: 13px; font-weight: 620; }
   .settings-fields select { min-height: 36px; width: 100%; padding: 6px 10px; font-weight: 400; }
+  .habit-timezone-settings { border-block-start: 1px solid var(--line); margin-block-start: 16px; padding-block-start: 12px; }
+  .habit-timezone-settings label { font-size: 13px; font-weight: 620; }
+  .habit-timezone-settings input { width: 100%; min-height: 36px; margin-block-start: 7px; padding: 6px 10px; }
+  .habit-timezone-settings p { color: var(--muted); font-size: 12px; }
+  .habit-timezone-settings button { padding: 6px 10px; }
   .graph-options { margin-block-start: var(--space-4); color: var(--muted); font-size: 13px; }
   .graph-options summary { cursor: pointer; }.graph-options label { display: block; margin-block: 10px; }
   .graph-options input { margin-inline-end: 8px; }

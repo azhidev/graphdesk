@@ -5,6 +5,7 @@ mod editor;
 mod references;
 mod search;
 mod extensions;
+pub mod habits;
 pub mod demo;
 pub use search::normalize_persian;
 pub use extensions::{ExtensionDocument, ExtensionState};

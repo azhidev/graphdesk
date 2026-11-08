@@ -2,6 +2,56 @@
 
 ## Automated checks
 
+### M10.1 habit timezone policy — Rust/Fedora validation pending
+
+The [headless Habits contract](habits-core.md) now snapshots IANA timezone names,
+uses elapsed UTC hours and local-calendar days/weeks/months/years, and explicitly
+resolves folds earlier and gaps forward by their exact size. Legacy definition
+JSON stays UTC without rewriting migration 007, events or historical revisions.
+Settings adds only the default-zone override/resolved-zone feedback.
+
+Current targeted results: `npm run check` **PASS, zero errors/warnings**;
+**11 Node lifecycle/capability tests PASS**; **14 SQLite extension/habit tests
+PASS**, including additive timezone JSON and unchanged historical instants.
+Full-App WebKitGTK synthetic-IPC Settings/extension fixture **PASS**: System
+default, explicit override, rejected override retaining saved preference, reset to
+System, independent language/calendar/theme and remount restoration. These mocks
+validate UI wiring, not Rust timezone calculations or native persistence.
+
+Eight additional timezone Rust tests and updated legacy tests cover DST folds,
+gaps, Lord Howe half-hour transitions, Apia's skipped date, leap/month clamping,
+Fixed/After Completion, legacy UTC, persisted defaults/revisions/retries and graph
+isolation. **Cargo remains unavailable: Rust compilation/tests and Cargo lock
+resolution are unverified.** Jiff 0.2.38 was already locked/cached; the lock change
+adds only a direct graph-core dependency edge. Registry requests timed out; no
+runtime installation or infrastructure repair was attempted. Initial frontend
+check caught the nullable preference in the select-only helper; narrowing its key
+type corrected that error. Expected Xvfb DRI/accessibility warnings remain.
+
+Before native acceptance run the locked Rust habit/preferences and workspace
+tests on Fedora with timezone data, then rebuild. Use disposable graphs to check
+Settings changes affect new schedules only, explicit zone edits create revisions,
+UTC legacy schedules/events remain unchanged, and switch/restart/disable retain
+data. No Habits dashboard, reminders or M10.2 work is included.
+
+### M10 Habits headless core — Rust/Fedora validation required
+
+[Habits core](habits-core.md) documents UTC interval/calendar semantics, Fixed vs
+After Completion, negative explicit reports, event retry identity and correction.
+`npm run check`: zero errors/warnings. **11 focused Node tests PASS** (Habits/M9
+lifecycle, capability and revoked-call checks). **32 SQLite checks PASS** across
+Habits, extension and existing schema fixtures; six new Habits cases cover schema
+constraints, indexed queries/keyset history, graph/revision FKs, failure rollback,
+reopen/retention and upgrade rollback. These execute actual SQL, not Rust logic.
+
+**18 new Rust tests added but not compiled or executed**: eight recurrence/domain,
+seven storage, one strict protocol and two adapter/ACL cases. Cargo is unavailable;
+the UTC/DST/leap-boundary recurrence implementation and real session IPC remain
+Fedora validation requirements. Review also corrected the response discriminator
+to snake_case to match TypeScript and added a Rust serialization assertion.
+No full frontend/UI, notifications or native acceptance is claimed for this phase.
+No dependency or historical migration changes were needed; schema 7 is additive.
+
 ### M9 extension foundation — Rust/native integration pending
 
 The [extension architecture](extensions.md) describes the bundled registry, graph

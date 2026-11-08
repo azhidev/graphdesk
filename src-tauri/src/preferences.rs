@@ -1,4 +1,5 @@
-//! App-only presentation preferences. No graph paths, registry, or note content.
+//! App-only preferences, including the default timezone for new habits.
+//! No graph paths, registry, or note content.
 use std::{fs::{self, OpenOptions}, io::{self, Read, Write}, path::{Path, PathBuf}, sync::{Arc, Mutex}};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
@@ -18,7 +19,7 @@ pub(crate) enum SearchMode { #[default] Original, Persian }
 pub(crate) enum Theme { #[default] System, Light, Dark }
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Preferences { pub language: Language, pub calendar: Calendar, pub search_mode: SearchMode, #[serde(default)] pub theme: Theme }
+pub(crate) struct Preferences { pub language: Language, pub calendar: Calendar, pub search_mode: SearchMode, #[serde(default)] pub theme: Theme, #[serde(default)] pub habit_timezone: Option<String> }
 #[derive(Serialize)]
 pub(crate) struct Loaded { preferences: Preferences, warning: bool }
 #[derive(Default, Clone)]
@@ -82,9 +83,19 @@ fn load(root: &Path) -> io::Result<Preferences> {
     }
     file.take(65537).read_to_end(&mut bytes)?;
     if bytes.len() > 65536 { return Err(invalid()); }
-    serde_json::from_slice(&bytes).map_err(|_| invalid())
+    let mut preferences: Preferences = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+    validate(&mut preferences)?;
+    Ok(preferences)
+}
+fn validate(preferences: &mut Preferences) -> io::Result<()> {
+    if let Some(name) = &preferences.habit_timezone {
+        preferences.habit_timezone = Some(graph_core::habits::validate_timezone(name).map_err(|_| invalid())?);
+    }
+    Ok(())
 }
 fn save(root: &Path, preferences: &Preferences) -> io::Result<()> {
+    let mut preferences = preferences.clone();
+    validate(&mut preferences)?;
     check_parents(root)?;
     let mut directory = fs::DirBuilder::new();
     directory.recursive(true);
@@ -102,7 +113,7 @@ fn save(root: &Path, preferences: &Preferences) -> io::Result<()> {
     #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
     let mut file = options.open(&temporary)?;
     let result = (|| {
-        let bytes = serde_json::to_vec(preferences).map_err(|_| invalid())?;
+        let bytes = serde_json::to_vec(&preferences).map_err(|_| invalid())?;
         file.write_all(&bytes)?;
         file.sync_all()?;
         drop(file);
@@ -118,6 +129,31 @@ fn save(root: &Path, preferences: &Preferences) -> io::Result<()> {
     })();
     if result.is_err() { let _ = fs::remove_file(&temporary); }
     result
+}
+
+// Called on the blocking worker, never while holding the graph/session lock.
+pub(crate) fn resolved_habit_timezone<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: &PreferencesState) -> graph_core::Result<String> {
+    let preferences = (|| {
+        let mut guard = state.0.lock().map_err(|_| invalid())?;
+        if guard.is_none() { *guard = Some(app.path().app_config_dir().map_err(|_| invalid())?); }
+        load(guard.as_ref().expect("config directory"))
+    })().map_err(|_| graph_core::Error::Invalid("Habit timezone preferences unavailable".into()))?;
+    match preferences.habit_timezone {
+        Some(name) => graph_core::habits::validate_timezone(&name),
+        None => graph_core::habits::system_timezone(),
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct HabitTimezone { system: Option<String>, resolved: Option<String> }
+
+#[tauri::command]
+pub(crate) async fn habits_timezone<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, PreferencesState>) -> Result<HabitTimezone, &'static str> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || HabitTimezone {
+        system: graph_core::habits::system_timezone().ok(),
+        resolved: resolved_habit_timezone(&app, &state).ok(),
+    }).await.map_err(|_| unavailable())
 }
 
 #[tauri::command]
@@ -148,6 +184,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn timezone_validation_rejects_before_replacing_preferences() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("config");
+        let mut prefs = Preferences { habit_timezone: Some("Asia/Tehran".into()), ..Preferences::default() };
+        save(&root, &prefs).unwrap();
+        let bytes = fs::read(root.join("preferences.json")).unwrap();
+        for zone in ["unknown/nowhere", "/etc/localtime", "../UTC", "EST5EDT,M3.2.0,M11.1.0"] {
+            prefs.habit_timezone = Some(zone.into());
+            assert!(save(&root, &prefs).is_err());
+            assert_eq!(fs::read(root.join("preferences.json")).unwrap(), bytes);
+        }
+        assert_eq!(load(&root).unwrap().habit_timezone.as_deref(), Some("Asia/Tehran"));
+        fs::write(root.join("preferences.json"), r#"{"language":"en","calendar":"gregorian","search_mode":"original","habit_timezone":"unknown/nowhere"}"#).unwrap();
+        assert!(load(&root).is_err());
+    }
+
+    #[test]
     fn private_atomic_roundtrip_defaults_malformed_and_concurrent_writes() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("config");
@@ -156,8 +209,8 @@ mod tests {
         // Files written before theme existed retain their independent preferences.
         save(&root, &Preferences::default()).unwrap();
         fs::write(root.join("preferences.json"),r#"{"language":"fa","calendar":"jalali","search_mode":"persian"}"#).unwrap();
-        assert_eq!(load(&root).unwrap(), Preferences { language: Language::Fa, calendar: Calendar::Jalali, search_mode: SearchMode::Persian, theme: Theme::System });
-        let preferences = Preferences { language: Language::Fa, calendar: Calendar::Jalali, search_mode: SearchMode::Persian, theme: Theme::Dark };
+        assert_eq!(load(&root).unwrap(), Preferences { language: Language::Fa, calendar: Calendar::Jalali, search_mode: SearchMode::Persian, theme: Theme::System, habit_timezone: None });
+        let preferences = Preferences { language: Language::Fa, calendar: Calendar::Jalali, search_mode: SearchMode::Persian, theme: Theme::Dark, habit_timezone: None };
         save(&root, &preferences).unwrap();
         assert_eq!(load(&root).unwrap(),preferences);
         #[cfg(unix)] {
