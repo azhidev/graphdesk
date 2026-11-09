@@ -9,7 +9,7 @@ fn schedule(anchor: &str, every: u32, unit: IntervalUnit, mode: RecurrenceMode) 
 #[test]
 fn late_fixed_completion_never_moves_anchor_or_accumulates_tasks() -> Result<()> {
     let s = schedule("2024-01-01T00:00:00Z", 14, IntervalUnit::Days, RecurrenceMode::Fixed);
-    let day = |n| s.anchor + n * 86400;
+    let day = |n: i32| s.anchor + i64::from(n) * 86400;
     let overdue = due_state(&s, None, day(60))?;
     assert_eq!(overdue, DueState { due: true, occurrence: day(56), next_occurrence: day(70) });
     assert!(!due_state(&s, Some(day(60)), day(69))?.due);
@@ -23,7 +23,7 @@ fn late_fixed_completion_never_moves_anchor_or_accumulates_tasks() -> Result<()>
 #[test]
 fn after_completion_keeps_one_overdue_deadline_then_resets_from_actual_time() -> Result<()> {
     let s = schedule("2024-01-01T00:00:00Z", 14, IntervalUnit::Days, RecurrenceMode::AfterCompletion);
-    let day = |n| s.anchor + n * 86400;
+    let day = |n: i32| s.anchor + i64::from(n) * 86400;
     assert_eq!(due_state(&s, None, day(60))?, DueState { due: true, occurrence: day(0), next_occurrence: day(0) });
     assert_eq!(due_state(&s, Some(day(60)), day(60))?, DueState { due: false, occurrence: day(74), next_occurrence: day(74) });
     assert!(!due_state(&s, Some(day(60)), day(74) - 1)?.due);
