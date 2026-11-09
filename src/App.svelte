@@ -35,6 +35,7 @@
   import { extensionTransport } from './lib/extensions/api';
   import ExtensionSettings from './lib/extensions/ExtensionSettings.svelte';
   import ExtensionView from './lib/extensions/ExtensionView.svelte';
+  import HabitsView from './lib/habits/HabitsView.svelte';
 
   let path = $state('');
   let pages = $state<Page[]>([]);
@@ -67,6 +68,8 @@
     states: extensions.states(), navigation: extensions.navigation(), loading: extensions.loading, error: extensions.error,
   }; });
   let extensionTarget = $state({ extensionId: '', viewId: '' });
+  let habitsBlocked = $state(false);
+  const habitsClient = $derived.by(() => { extensionRevision; return extensions.habitsClient(); });
   const extensionModel = $derived.by(() => { extensionRevision; return extensions.view(extensionTarget.extensionId, extensionTarget.viewId); });
   onDestroy(() => extensions.detach());
   let searchOpen = $state(false), sidebarCollapsed = $state(false), sidebarOverlay = $state(false), narrow = $state(false);
@@ -270,6 +273,7 @@
     finally { busy = false; operation = ''; navRevision++; }
   }
   function departureAllowed() {
+    if (habitsBlocked) throw new Error($tr('Finish or cancel the Habits form and resolve pending mutations before leaving.'));
     if (firstNoteDate) throw new Error('Finish or cancel the first-note form before switching graphs.');
     if (editor.composing || searchComposing || graphComposing) throw new Error('Finish text composition before leaving the editor');
   }
@@ -579,6 +583,7 @@
     event.preventDefault();
     if (!session) return;
     await run(async () => {
+      departureAllowed();
       await editor.flush();
       const page = await api.createPage(session!, title);
       pages = [...pages, page]; title = '';
@@ -609,6 +614,7 @@
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void getCurrentWindow().onCloseRequested(async event => {
+      if (habitsBlocked) { event.preventDefault(); error = $tr('Finish or cancel the Habits form and resolve pending mutations before leaving.'); return; }
       if (firstNoteDate) { event.preventDefault(); try { await firstNote!.flush(); } catch (e) { error = errorMessage(e); return; } error = 'Finish or cancel the first-note form before closing.'; return; }
       if (locked) { event.preventDefault(); error = 'Wait for the current operation before closing.'; return; }
       busy = true;
@@ -660,7 +666,7 @@
   </form>
   {#if prefsError}<ErrorNotice message={prefsError} />{/if}
   {#if session}<ExtensionSettings host={extensions} states={extensionState.states} loading={extensionState.loading} error={extensionState.error}
-    disabled={locked || !!firstNoteDate || composing} onRetry={() => { const graph = sessionGraphs.find(graph => graph.path === activePath); if (session && graph) void extensions.attach(session, graph.graph_id); }} />{/if}
+    disabled={locked || !!firstNoteDate || composing || habitsBlocked} onRetry={() => { const graph = sessionGraphs.find(graph => graph.path === activePath); if (session && graph) void extensions.attach(session, graph.graph_id); }} />{/if}
   <div class="settings-footer"><details><summary>{$tr('Keyboard shortcuts')}</summary><p>{$tr('Ctrl/Cmd+K: search · Ctrl/Cmd+P: pages · Ctrl/Cmd+O: open graph · Ctrl/Cmd+Shift+J: capture · Ctrl+Tab: switch graph · Alt+←/→: history outside text fields')}</p></details><button class="settings-done" onclick={closeSettings}>{$tr('Done')}</button></div>
 </dialog>
 
@@ -804,8 +810,12 @@
       <div class="content shell-scroll" inert={narrow && sidebarOverlay}>
       <OperationStatus label={operation} scope={operationScope} region="content" />
       {#if view === 'extension'}
+        {#if extensionTarget.extensionId === 'graphdesk.habits' && habitsClient}
+          {#key habitsClient}<HabitsView client={habitsClient} disabled={locked || composing || !!firstNoteDate} onGuard={blocked => habitsBlocked = blocked} />{/key}
+        {:else}
         <ExtensionView host={extensions} extensionId={extensionTarget.extensionId} model={extensionModel}
           state={extensionState.states.find(state => state.manifest.id === extensionTarget.extensionId)} disabled={locked || composing || !!firstNoteDate} />
+        {/if}
       {/if}
       {#if view === 'tasks' && session}
         <TasksView {session} {pages} refreshKey={acknowledgedBlocks} disabled={locked} bind:status={taskStatus} bind:page={taskPage} onFilter={rememberLocation}

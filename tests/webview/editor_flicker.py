@@ -1,7 +1,7 @@
 """Current full-App DOM probe; synthetic IPC, not native Rust/Fedora acceptance.
 
 Run: xvfb-run -a -s '-screen 0 1300x1000x24 -nolisten tcp' dbus-run-session --
-     /usr/bin/python3 tests/webview/editor_flicker.py [3|5000] [width] [editor|extensions]
+     /usr/bin/python3 tests/webview/editor_flicker.py [3|5000] [width] [editor|extensions|habits]
 Widths below 760 run isolated control checks, not full-App navigation assertions.
 Uses existing Vite and PyGObject/WebKitGTK; no sandbox overrides or real data.
 """
@@ -24,7 +24,7 @@ assert size in (3, 5000)
 width = int(sys.argv[2]) if len(sys.argv) > 2 else 1300
 assert 320 <= width <= 1300
 suite = sys.argv[3] if len(sys.argv) > 3 else 'editor'
-assert suite in ('editor', 'extensions')
+assert suite in ('editor', 'extensions', 'habits')
 server_script = """
 import { createServer } from 'vite';
 const server = await createServer({
@@ -44,6 +44,8 @@ await server.listen();
 """
 if suite == 'extensions':
     server_script = server_script.replace('/tests/webview/editor_flicker.mjs', '/tests/webview/extensions.mjs')
+elif suite == 'habits':
+    server_script = server_script.replace('/tests/webview/editor_flicker.mjs', '/tests/webview/habits.mjs')
 with tempfile.TemporaryFile(mode='w+') as log:
     server = subprocess.Popen(['node', '--input-type=module', '-e', server_script], cwd=root,
                               stdout=log, stderr=subprocess.STDOUT, start_new_session=True)

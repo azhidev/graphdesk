@@ -20,16 +20,19 @@ function setup(definition = habits) {
   return { host: new ExtensionHost(registry, transport), transport, requests };
 }
 
-test('headless Habits registration/lifecycle has no navigation, events, storage document or background work', async () => {
+test('Habits registration/lifecycle contributes bounded navigation, no events or storage document', async () => {
   const { host, requests } = setup();
   assert.equal(habits.manifest.id, 'graphdesk.habits');
-  assert.deepEqual(habits.manifest.capabilities, ['habits.core']);
+  assert.deepEqual(habits.manifest.capabilities, ['habits.core', 'ui.views', 'ui.navigation']);
   await host.attach('A', 'A'); assert.equal(requests.length, 0);
   await host.configure('graphdesk.habits', true);
   assert.equal(host.states()[0].status, 'active');
   assert.deepEqual(requests, [{ session: 'A', extensionId: 'graphdesk.habits', version: 1, request: { op: 'list', after: null, limit: 1 } }]);
-  assert.deepEqual(host.navigation(), []); assert.deepEqual(host.states()[0].views, []);
+  assert.equal(host.navigation()[0].viewId, 'habits'); assert.equal(host.states()[0].views[0].actions.length, 0);
+  const client = host.habitsClient(); assert.ok(client);
   await host.configure('graphdesk.habits', false);
+  assert.equal(host.habitsClient(), undefined);
+  await assert.rejects(client.request({ op: 'list', after: null, limit: 1 }), /revoked/);
   await host.attach('B', 'B'); assert.equal(host.states()[0].enabled, false);
   await host.attach('A', 'A'); assert.equal(host.states()[0].enabled, false);
   await host.configure('graphdesk.habits', true); host.detach();

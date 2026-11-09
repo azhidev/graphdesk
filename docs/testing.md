@@ -2,6 +2,50 @@
 
 ## Automated checks
 
+### M10.2 Habits UI — native acceptance pending
+
+Implementation/limitations and disposable Fedora steps: [Habits UI](habits-ui.md).
+The operator-reported M10.1 Fedora results (21 core/four desktop Habits tests,
+existing `graphdesk test`, basic two-graph/Tally/restart) are historical; they do
+not certify this new interface. Older pending statements below are retained as
+historical evidence from those revisions.
+
+Current Ubuntu agent-lab checks: Svelte check **zero errors/warnings**, production
+frontend build PASS; **100 Node tests and 43 Python/SQLite tests PASS**. The final
+Node integration run emitted ENOSPC file-watcher-limit warnings while inspecting
+existing build artifacts, but all tests completed successfully; no system limits
+or VM configuration were changed. Initial check caught a Svelte rune/local-name collision and
+missing translation; both were fixed before the passing check. Node tests exercise
+both creation paths, offset-only conversions/folds, validation, event semantics,
+archive/correction, retained-ID uncertain retry, CAS conflicts, stale replies,
+bounded cursor pages, due refresh and enablement revocation. Python/SQLite fixtures
+exercise existing migrations/constraints, not Rust execution.
+
+Compiled full-App WebKitGTK synthetic-IPC Habits fixtures pass at 1300px and 420px:
+loading/error/empty, forms/default zone/summary, acknowledgement and duplicate
+suppression, event history/confirmation/void/restore/archive, composition/cancel
+guards, initial/return/detail focus, dirty departure and mocked close, A→B→A, disable/re-enable, RTL/Dark
+and viewport bounds. These use programmatic events, including dialog cancellation,
+not physical keyboard/real IME or native close delivery. Existing full-App Tally
+and editor/control fixtures also pass at 1300px. Initial Habits fixture failed
+because its exact-text Journal selector omitted the nested Today label; corrected
+selector then passed. Expected Xvfb DRI/accessibility-bus warnings remain.
+
+Run the Habits fixture (temporary loopback Vite is stopped by the runner):
+
+```sh
+xvfb-run -a -s '-screen 0 1300x1000x24 -nolisten tcp' dbus-run-session -- /usr/bin/python3 tests/webview/editor_flicker.py 3 1300 habits
+# Repeat with width 420.
+```
+
+**Blocked:** `cargo test --locked -p graph-core habits`,
+`cargo test --locked -p graphdesk-desktop habits`,
+`cargo test --locked --workspace`, and
+`cargo test --locked --workspace --features tauri/custom-protocol` each report
+`cargo: command not found`. No tool installation/VM repair was attempted. No Rust,
+production-protocol IPC, native Fedora/Wayland, real IME or restart-persistence
+acceptance for this UI is claimed. No schema/dependency/ACL change was made.
+
 ### M10.1 habit timezone policy — Rust/Fedora validation pending
 
 The [headless Habits contract](habits-core.md) now snapshots IANA timezone names,

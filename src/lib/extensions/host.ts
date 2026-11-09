@@ -30,7 +30,7 @@ export interface ExtensionState {
   manifest: Manifest; enabled: boolean; status: 'disabled' | 'starting' | 'active' | 'error';
   error: string; pending: boolean; navigation: NavigationEntry[]; views: ViewModel[];
 }
-interface Slot extends ExtensionState { live: boolean; instance?: ExtensionInstance }
+interface Slot extends ExtensionState { live: boolean; instance?: ExtensionInstance; habits?: ExtensionAPI['habits'] }
 
 /** One graph-session lifetime. No editor/store/connection/path is given to an
  * extension. Capabilities are revoked synchronously on disable, error or switch. */
@@ -60,7 +60,14 @@ export class ExtensionHost {
     const view = slot?.status === 'active' ? slot.views.find(view => view.id === id) : undefined;
     return view && structuredClone(view);
   }
+  /** Shell-only bounded renderer bridge for the trusted bundled Habits view.
+   * Captures the same revocable capability closure, never the raw transport. */
+  habitsClient(): ExtensionAPI['habits'] | undefined {
+    const slot = this.slots.get('graphdesk.habits');
+    return slot?.status === 'active' ? slot.habits : undefined;
+  }
   private revoke(slot: Slot): void {
+    slot.habits = undefined;
     slot.live = false; slot.navigation = []; slot.views = [];
     const instance = slot.instance; slot.instance = undefined;
     if (instance) { try { instance.dispose(); } catch (error) { slot.error = message(error); } }
@@ -139,6 +146,7 @@ export class ExtensionHost {
       },
     };
     try {
+      if (slot.manifest.id === 'graphdesk.habits') slot.habits = api.habits;
       const instance = await definition.activate(api);
       if (!slot.live || generation !== this.generation) { try { instance.dispose(); } catch { /* Old graph; already revoked. */ } return; }
       slot.instance = instance; slot.status = 'active';

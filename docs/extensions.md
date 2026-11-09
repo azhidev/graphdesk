@@ -1,5 +1,10 @@
 # M9 bundled extension foundation
 
+M10.2 adds a bounded **host-rendered Habits interface**, described in
+[Habits UI](habits-ui.md). Its navigation marker uses M9; forms/lists are not new
+generic extension contracts. Only the trusted bundled Habits ID receives this
+renderer and its existing revocable `habits.core` client.
+
 M10 phase 1 adds the separate headless `graphdesk.habits` definition and scoped
 `habits.core` API. Its dedicated schema-7 event tables do not use the generic JSON
 document. See [Habits core](habits-core.md) for recurrence, time and retry semantics.

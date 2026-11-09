@@ -1,5 +1,10 @@
 # GraphDesk architecture (Milestones 1–6)
 
+M10.2 adds the [Habits host renderer](habits-ui.md) in `src/lib/habits/`, using
+the existing typed, revocable M10.1 capability. App only selects the trusted
+renderer and applies departure guards. No generic UI-contract expansion or schema
+change is needed; the editor remains mounted during Habits navigation.
+
 M9 adds the [bundled extension foundation](extensions.md): an internal versioned
 host contract, per-graph activation and bounded Rust-owned JSON storage (schema 6).
 No third-party execution/loading, public SDK or unrestricted extension access.

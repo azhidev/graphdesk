@@ -1,5 +1,10 @@
 # M10.1 Habits: headless core and timezone scheduling
 
+This document describes the M10.1 core boundary. M10.2 now supplies the separate
+[minimal Habits interface](habits-ui.md); statements below about no UI/navigation
+describe the historical first phase, not current shell behavior. Core storage,
+recurrence, transport and timezone semantics remain unchanged.
+
 This phase adds definitions, events, recurrence and a scoped API, **not a dashboard,
 reminders, notifications, background service, streak/analytics engine or Routines**.
 `graphdesk.habits` is bundled using the M9 registry/lifecycle and is disabled per

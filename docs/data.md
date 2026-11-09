@@ -1,5 +1,10 @@
 # Data, backup and recovery
 
+M10.2 [Habits UI](habits-ui.md) uses the existing graph tables and immutable event
+payloads; no schema change. Archive/disable retain history. Habit forms and retained
+mutation retry requests are session-local, **not** editor recovery drafts. Normal
+departure/close is guarded, but forced termination can lose unsaved input/retry IDs.
+
 M10.1 adds timezone identity inside each new habit's definition JSON/revision, not
 a new schema migration. Old JSON missing timezone stays UTC without rewriting its
 history. Event/audit timestamps and resolved due instants remain UTC seconds. The
